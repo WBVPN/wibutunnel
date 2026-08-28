@@ -209,7 +209,7 @@ if ! grep -q "tmpfs /tmp" /etc/fstab; then
 fi
 
 if ! grep -q "tmpfs /var/log/xray" /etc/fstab; then
-    echo "tmpfs /var/log/xray tmpfs defaults,nosuid,nodev,noexec,mode=0755,size=30M 0 0" >> /etc/fstab
+    echo "tmpfs /var/log/xray tmpfs defaults,nosuid,nodev,noexec,mode=0755,uid=65534,gid=65534,size=30M 0 0" >> /etc/fstab
     mkdir -p /var/log/xray
     mount /var/log/xray 2>/dev/null || true
 fi
@@ -609,6 +609,8 @@ RestartSec=5s
 EOF
 cat <<EOF > /etc/systemd/system/xray.service.d/override.conf
 [Service]
+ExecStartPre=/bin/mkdir -p /var/log/xray
+ExecStartPre=/bin/chown -R nobody:nogroup /var/log/xray
 Restart=on-failure
 RestartSec=5s
 EOF
