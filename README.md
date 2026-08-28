@@ -64,7 +64,7 @@ Semua operasi edit `config.json` dilindungi file locking (`flock`) — aman dari
 ## ⚡ Instalasi Cepat (1-Click)
 
 ```bash
-apt update -y && apt install -y curl wget && bash <(curl -s https://ghproxy.net/https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh)
+apt update -y && apt install -y curl wget && bash <(curl -s https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh)
 ```
 
 > **Syarat:** VPS Ubuntu/Debian fresh (baru rebuild). Jalankan sebagai `root`.
@@ -135,7 +135,7 @@ wibutunnel/
 ## 🗑️ Uninstall (Hapus Bersih)
 
 ```bash
-bash <(curl -s https://ghproxy.net/https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh)
+bash <(curl -s https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh)
 ```
 
 ---
