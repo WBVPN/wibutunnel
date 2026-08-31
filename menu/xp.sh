@@ -145,7 +145,7 @@ fi
 # AUTO TRUNCATE LOGS (PREVENT DISK FULL)
 # ==========================================
 LOG_SIZE=$(stat -c%s "/var/log/xray/access.log" 2>/dev/null || echo 0)
-if [[ $LOG_SIZE -gt 52428800 ]]; then # 50MB
+if [[ $LOG_SIZE -gt 41943040 ]]; then # 40MB
     > /var/log/xray/access.log
     > /var/log/xray/error.log
 fi
