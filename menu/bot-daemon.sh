@@ -279,7 +279,7 @@ delete_account() {
 
     systemctl restart xray >/dev/null 2>&1
     
-    local kb=""
+    kb=""
     [[ -n "$proto" ]] && kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
     send_msg "<b>Berhasil!</b>\nAkun <code>${user}</code> telah dimusnahkan secara permanen." "$kb"
 }
@@ -349,7 +349,7 @@ renew_account() {
     safe_sed_delete "$user" "$exp_file"
     echo "${user}:${exp_date}" >> "$exp_file"
     
-    local kb=""
+    kb=""
     [[ -n "$proto" ]] && kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
     send_msg "<b>Berhasil Perpanjang Akun!</b>\n\n<b>User :</b> <code>${user}</code>\n<b>Ditambah :</b> ${hari}\n<b>Expired Baru :</b> <code>${tampil_exp}</code>" "$kb"
 }
@@ -382,7 +382,7 @@ change_limit() {
     local ip_str="Bebas"; [[ "$limit_ip" -ne 0 ]] && ip_str="${limit_ip} IP"
     local bw_str="Unlimited"; [[ "$limit_bw" -ne 0 ]] && bw_str="${limit_bw} GB"
     
-    local kb=""
+    kb=""
     [[ -n "$proto" ]] && kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
     send_msg "<b>Limit Berhasil Diubah!</b>\n\n<b>User :</b> <code>${user}</code>\n<b>Limit IP :</b> ${ip_str}\n<b>Limit Kuota :</b> ${bw_str}" "$kb"
 }
@@ -430,7 +430,7 @@ list_account() {
     fi
     
     msg+="\n━━━━━━━━━━━━━━━━━━━━"
-    local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
+    kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
     send_msg "$msg" "$kb"
 }
 
@@ -619,11 +619,11 @@ check_login() {
 
     if [[ -z "$LOGIN_DATA" ]]; then
         local msg="<b>ONLINE USERS (LIVE)</b>\n━━━━━━━━━━━━━━━━━━━━\n<i>Saat ini tidak ada user yang aktif.</i>\n━━━━━━━━━━━━━━━━━━━━"
-        local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
+        kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
         send_msg "$msg" "$kb"
     else
         LOG_MSG=$(format_online_users "$LOGIN_DATA" "$target_proto")
-        local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
+        kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
         send_msg "$LOG_MSG" "$kb"
     fi
 }
@@ -633,7 +633,7 @@ show_main_menu() {
     local msg_id="$2"
     local text="━━━━━━━━━━━━━━━━━━━━\n 🤖 <b>WIBUTUNNEL PANEL BOT</b>\n━━━━━━━━━━━━━━━━━━━━\n\nSelamat datang di Panel Kendali VPS. Silakan pilih menu di bawah ini:"
     
-    local kb='{"inline_keyboard":['
+    kb='{"inline_keyboard":['
     kb+='[{"text":"🔹 VLESS","callback_data":"menu_vless"},{"text":"🔸 VMESS","callback_data":"menu_vmess"}],'
     kb+='[{"text":"♦️ TROJAN","callback_data":"menu_trojan"},{"text":"⚙️ SYSTEM","callback_data":"menu_system"}]'
     kb+=']}'
@@ -652,7 +652,7 @@ show_proto_menu() {
     
     if [[ "$proto" == "SYSTEM" ]]; then
         local text="⚙️ <b>MENU SYSTEM</b>\nSilakan pilih opsi:"
-        local kb='{"inline_keyboard":['
+        kb='{"inline_keyboard":['
         kb+='[{"text":"📊 Cek Trafik Global","callback_data":"act_trafik_ALL"}],'
         kb+='[{"text":"🟢 Cek Login Global","callback_data":"act_login_ALL"}],'
         kb+='[{"text":"💻 Info VPS","callback_data":"act_info_ALL"}],'
@@ -664,7 +664,7 @@ show_proto_menu() {
     fi
     
     local text="🛡 <b>MENU ${proto}</b>\nSilakan pilih opsi manajemen akun:"
-    local kb='{"inline_keyboard":['
+    kb='{"inline_keyboard":['
     kb+='[{"text":"➕ Create","callback_data":"act_create_'"$proto"'"},{"text":"⏱ Trial","callback_data":"act_trial_'"$proto"'"}],'
     kb+='[{"text":"♻️ Renew","callback_data":"act_renew_'"$proto"'"},{"text":"🗑 Delete","callback_data":"act_del_'"$proto"'"}],'
     kb+='[{"text":"🟢 Cek Login","callback_data":"act_login_'"$proto"'"},{"text":"📋 List Akun","callback_data":"act_list_'"$proto"'"}],'
@@ -690,7 +690,7 @@ ask_input() {
         detail) text="🔎 <b>DETAIL AKUN ${proto}</b>\n\nKirim <b>Username</b>:\nContoh: <code>budi</code>" ;;
     esac
     
-    local kb='{"inline_keyboard":[[{"text":"❌ Batal","callback_data":"menu_'"${proto,,}"'"}]]}'
+    kb='{"inline_keyboard":[[{"text":"❌ Batal","callback_data":"menu_'"${proto,,}"'"}]]}'
     send_msg "$text" "$kb" "$target"
 }
 
@@ -744,7 +744,7 @@ if [[ -n "$CB_ID" ]]; then
                             [[ $idx -gt 10 ]] && break
                         done < <(awk -F':' '{ if ($1 ~ /^(vless|vmess|trojan)-(ws|grpc)-(tls|ntls)$/ || $1 ~ /^(vless|vmess|trojan)-grpc$/ || $1 == "api" || $1 == "direct" || $1 == "blocked") next; down=($2=="null"||$2=="")?0:$2; up=($3=="null"||$3=="")?0:$3; print (down+up)":"$1 }' /etc/wibutunnel/user_usage.db 2>/dev/null | sort -t: -k1 -nr)
                         TRF_MSG+="━━━━━━━━━━━━━━━━━━━━"
-                        local kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
+                        kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
                         send_msg "$TRF_MSG" "$kb"
                     else
                         send_msg "📊 <b>Belum ada data trafik pemakaian.</b>" '{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
@@ -758,7 +758,7 @@ if [[ -n "$CB_ID" ]]; then
                     DISK=$(df -h / | awk 'NR==2 {print $3" / "$2" ("$5")"}')
                     OS=$(cat /etc/os-release | grep -w PRETTY_NAME | cut -d= -f2 | tr -d '"')
                     INFO_MSG="💻 <b>INFORMASI VPS SERVER</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>🖥 OS     :</b> <code>${OS}</code>\n<b>🌐 IP     :</b> <code>${IP}</code>\n<b>⏱ Uptime :</b> <code>${UPTIME}</code>\n<b>🧠 RAM    :</b> <code>${RAM}</code>\n<b>⚡️ CPU    :</b> <code>${CPU}%</code>\n<b>💾 Disk   :</b> <code>${DISK}</code>\n━━━━━━━━━━━━━━━━━━━━"
-                    local kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
+                    kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
                     send_msg "$INFO_MSG" "$kb"
                     ;;
                 backup)
