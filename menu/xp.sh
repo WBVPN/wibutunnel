@@ -53,7 +53,7 @@ process_expired() {
         [[ -z "$exp_sec" ]] && { NEW_EXP_CONTENT+="${line}\n"; continue; }
 
         # Check if user exists in RAM instead of reading file
-        if [[ " $ACTIVE_USERS " =~ " $user " ]]; then
+        if [[ " $ACTIVE_USERS " == *" $user "* ]]; then
             if [ "$today_sec" -ge "$exp_sec" ]; then
                 
                 # Mencegah spam jika user sudah dalam status EXPIRED di recovery
@@ -82,7 +82,7 @@ process_expired() {
                     FOOTER="Move to Recovery"
                 fi
 
-                if [[ ! "$NOTIFIED_USERS" =~ " ${user}_${PROTO_NAME} " ]]; then
+                if [[ ! "$NOTIFIED_USERS" == *" ${user}_${PROTO_NAME} "* ]]; then
                     NOTIFIED_USERS+=" ${user}_${PROTO_NAME} "
                     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
                         DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
