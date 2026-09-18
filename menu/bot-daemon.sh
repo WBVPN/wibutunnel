@@ -6,14 +6,17 @@ BOT_CONF="/etc/wibutunnel/bot.conf"
 source /usr/local/bin/common.sh 2>/dev/null
 OFFSET_FILE="/etc/wibutunnel/tmp/bot_offset"
 CONFIG_FILE="/usr/local/etc/xray/config.json"
+BOT_LOG="/etc/wibutunnel/tmp/bot_error.log"
 
 mkdir -p /etc/wibutunnel/tmp
 touch $OFFSET_FILE
 
-# [FIX] Cegah bot_error.log tumbuh tanpa batas (trim kalau > 1 MB)
-if [[ -f /etc/wibutunnel/tmp/bot_error.log ]]; then
-    _log_size=$(stat -c%s /etc/wibutunnel/tmp/bot_error.log 2>/dev/null || echo 0)
-    [[ "$_log_size" -gt 1048576 ]] && : > /etc/wibutunnel/tmp/bot_error.log
+# [FIX] Cegah bot_error.log tumbuh tanpa batas (trim kalau > 1 MB).
+# Catatan: setelah fix send_msg/edit_msg, log hanya berisi error asli, jadi
+# jarang menyentuh batas ini. Trim tetap dijaga sebagai pengaman.
+if [[ -f "$BOT_LOG" ]]; then
+    _log_size=$(stat -c%s "$BOT_LOG" 2>/dev/null || echo 0)
+    [[ "$_log_size" -gt 1048576 ]] && : > "$BOT_LOG"
 fi
 
 get_random_quote() {
@@ -41,19 +44,28 @@ send_msg() {
     local text=$(echo -e "$1")
     local keyboard="$2"
     local target_id="${3:-${SENDER_ID:-$CHAT_ID}}"
+    local resp
     if [[ -n "$keyboard" ]]; then
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${target_id}" \
             --data-urlencode "disable_web_page_preview=true" \
             --data-urlencode "parse_mode=html" \
             --data-urlencode "text=${text}" \
-            --data-urlencode "reply_markup=${keyboard}" >> /etc/wibutunnel/tmp/bot_error.log 2>&1
+            --data-urlencode "reply_markup=${keyboard}" 2>&1)
     else
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${target_id}" \
             --data-urlencode "disable_web_page_preview=true" \
             --data-urlencode "parse_mode=html" \
-            --data-urlencode "text=${text}" >> /etc/wibutunnel/tmp/bot_error.log 2>&1
+            --data-urlencode "text=${text}" 2>&1)
+    fi
+    # [FIX] Hanya catat ke log kalau BENAR-BENAR gagal: response kosong
+    # (curl error / timeout) atau berisi "ok":false dari Telegram.
+    # Sebelumnya stdout curl (response sukses) ikut dialihkan ke log penuh
+    # dengan ribuan {"ok":true,...} sehingga error asli tenggelam.
+    if [[ -z "$resp" || "$resp" == *'"ok":false'* ]]; then
+        printf '[%s] send_msg FAIL: %s\n' "$(date '+%F %T')" \
+            "${resp:-<kosong - curl/gangguan jaringan>}" >> "$BOT_LOG"
     fi
 }
 
@@ -63,13 +75,19 @@ edit_msg() {
     local text=$(echo -e "$3")
     local keyboard="$4"
     
-    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
+    local resp
+    resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
         --data-urlencode "chat_id=${target_id}" \
         --data-urlencode "message_id=${msg_id}" \
         --data-urlencode "disable_web_page_preview=true" \
         --data-urlencode "parse_mode=html" \
         --data-urlencode "text=${text}" \
-        --data-urlencode "reply_markup=${keyboard}" >> /etc/wibutunnel/tmp/bot_error.log 2>&1
+        --data-urlencode "reply_markup=${keyboard}" 2>&1)
+    # [FIX] sama dengan send_msg: hanya catat kejadian gagal.
+    if [[ -z "$resp" || "$resp" == *'"ok":false'* ]]; then
+        printf '[%s] edit_msg FAIL: %s\n' "$(date '+%F %T')" \
+            "${resp:-<kosong - curl/gangguan jaringan>}" >> "$BOT_LOG"
+    fi
 }
 
 format_online_users() {
