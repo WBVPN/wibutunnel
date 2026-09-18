@@ -31,9 +31,9 @@ user_json_exists() {
 
 get_user_proto() {
     local u=$1
-    if grep -q "^${u}:" /etc/xray/vless_exp.conf 2>/dev/null; then echo "VLESS"
-    elif grep -q "^${u}:" /etc/xray/vmess_exp.conf 2>/dev/null; then echo "VMESS"
-    elif grep -q "^${u}:" /etc/xray/trojan_exp.conf 2>/dev/null; then echo "TROJAN"
+    if db_has "$u" /etc/xray/vless_exp.conf; then echo "VLESS"
+    elif db_has "$u" /etc/xray/vmess_exp.conf; then echo "VMESS"
+    elif db_has "$u" /etc/xray/trojan_exp.conf; then echo "TROJAN"
     else echo "UNKNOWN"; fi
 }
 
@@ -70,7 +70,7 @@ fi
 
 # Per-protocol validation
 if [[ -n "$FILTER_PROTO" ]]; then
-    if ! grep -q "^${user}:" "/etc/xray/${proto_lower}_exp.conf" 2>/dev/null; then
+    if ! db_has "$user" "/etc/xray/${proto_lower}_exp.conf"; then
         echo -e "\n ${RED}User '$user' tidak ditemukan di protokol ${FILTER_PROTO}!${NC}"
         read -p " Tekan Enter..."
         exec "m-${proto_lower}"
@@ -83,7 +83,7 @@ else
     fi
 fi
 
-if grep -q "^${user}:" "$DB_LOCK" 2>/dev/null; then
+if db_has "$user" "$DB_LOCK"; then
     echo -e "\n ${YELLOW}User '$user' sudah dalam status TERKUNCI!${NC}"
     echo -e " ${CYAN}Gunakan menu Recovery untuk mengaktifkan kembali.${NC}"
     read -p " Tekan Enter..."
@@ -96,7 +96,7 @@ else
     proto=$(get_user_proto "$user")
 fi
 
-limit_ip=$(grep "^${user}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
+limit_ip=$(db_lookup "$user" "$DB_IP" | cut -d: -f2)
 [[ -z "$limit_ip" || "$limit_ip" == "0" ]] && limit_str="Bebas" || limit_str="${limit_ip} IP"
 
 /usr/local/bin/lock-user "$user" "0" "MANUAL" "$proto" "$limit_str" "Manual Lock"

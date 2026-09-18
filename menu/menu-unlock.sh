@@ -109,7 +109,7 @@ for line in "${locked_list[@]}"; do
     if [[ -z "$proto" ]]; then
         safe_sed_delete "$u" "$DB_LOCK"
         safe_sed_delete "$u" /etc/wibutunnel/user_usage.db
-        safe_jq_edit_args --arg user \"$u\" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))'
+        safe_jq_edit_args --arg user "$u" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))'
         GHOST_FOUND=true
         continue
     fi
@@ -159,7 +159,7 @@ else
     user="$target"
 fi
 
-is_locked=$(grep "^${user}:" "$DB_LOCK" 2>/dev/null)
+is_locked=$(db_lookup "$user" "$DB_LOCK")
 if [[ -z "$is_locked" ]]; then
     echo -e "\n ${RED}[!] User '$user' tidak ditemukan di ruang Recovery!${NC}"
     sleep 2
@@ -204,10 +204,12 @@ echo "${user}:${bw_baru}" >> /etc/wibutunnel/limit_bw.db
 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
 # UNLOCK DARI XRAY
-safe_jq_edit_args --arg u \"$user\" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
-safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
-systemctl restart xray >/dev/null 2>&1
-
-echo -e "\n ${GREEN}BERHASIL! Akun ${user} telah aktif kembali.${NC}"
+if safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'; then
+    safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+    systemctl restart xray >/dev/null 2>&1
+    echo -e "\n ${GREEN}BERHASIL! Akun ${user} telah aktif kembali.${NC}"
+else
+    echo -e "\n ${RED}GAGAL! Config xray tidak bisa diedit, akun masih terkunci.${NC}"
+fi
 read -p " Tekan Enter Untuk Kembali..."
 [[ -n "$FILTER_PROTO" ]] && exec "m-${proto_lower}" || exec menu

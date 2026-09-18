@@ -187,6 +187,9 @@ EOF
 sysctl -p >/dev/null 2>&1
 fi
 
+# Backup limits.conf yang asli supaya bisa direstore saat uninstall
+[ -f /etc/security/limits.conf ] && cp /etc/security/limits.conf /etc/security/limits.conf.wibu.bak
+
 cat <<EOF > /etc/security/limits.conf
 root soft nofile 512000
 root hard nofile 512000
@@ -280,6 +283,20 @@ systemctl enable --now network-tune.service >/dev/null 2>&1
 # SSL
 systemctl stop haproxy 2>/dev/null
 
+# [SSH TUNNEL] Bebaskan port 80/443 dari layanan lawan (nginx/apache/sslh/stunnel)
+# supaya certbot standalone & HAProxy bisa bind.
+if command -v ss >/dev/null 2>&1; then
+    if ss -tlnp 2>/dev/null | grep -q ':80 .*nginx'; then
+        systemctl stop nginx >/dev/null 2>&1; systemctl disable nginx >/dev/null 2>&1
+    elif ss -tlnp 2>/dev/null | grep -q ':80 .*apache2'; then
+        sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf 2>/dev/null
+        systemctl restart apache2 >/dev/null 2>&1
+    fi
+fi
+systemctl stop sslh stunnel4 2>/dev/null
+systemctl disable sslh stunnel4 2>/dev/null
+systemctl mask sslh stunnel4 2>/dev/null
+
 # [FIX] Deteksi versi certbot untuk kompatibilitas flag
 if certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
     # Certbot 2.x+ tidak support --register-unsafely-without-email
@@ -327,8 +344,40 @@ cat <<'XEOF' > /usr/local/etc/xray/config.json
 }
 XEOF
 
-# HAProxy Config
+# HAProxy Config (MERGED: Xray + SSH Enhanced)
 cat <<HFEOF > /etc/haproxy/haproxy.cfg
+# =====================================================================
+# WIBU TUNNELING v4.0 — HAProxy (MERGED: Xray + SSH Enhanced)
+# =====================================================================
+# Arsitektur (satu proses HAProxy, dua tahap):
+#
+#   :443 (TLS terminate, mode tcp)
+#     "SSH-2.0"            -> dropbear:143   (SNI / SSH-over-TLS)
+#     h2 (gRPC)            -> http_hub:8444
+#     /vless /vmess /trojan-> http_hub:8444  (xray WS, proxy-v2)
+#     /telehook            -> http_hub:8444  (webhook)
+#     lainnya              -> ws-stunnel:10015 (WS-SSH + ENHANCED, raw)
+#
+#   :80 (mode tcp)
+#     "SSH-2.0"               -> dropbear:143  (DIRECT)
+#     /vless-ntls /vmess-ntls -> http_hub:8445 (xray non-TLS, proxy-v2)
+#     lainnya                 -> ws-stunnel:10015 (WS-SSH + ENHANCED, raw)
+#
+#   ws-stunnel:10015 -> dropbear:109
+#
+# PAYLOAD ENHANCED (ssh-dropbear-enhanced / WIBULITE):
+#   GET / HTTP/1.1 [Host: bug] \r\n\r\n
+#   PATCH / HTTP/1.1 [Host: host] Upgrade: websocket \r\n\r\n
+#   [split] HTTP/ 69 \r\n\r\n  + banner SSH
+# Request pertama tanpa Upgrade; request kedua hanya "Upgrade: websocket"
+# (TANPA Connection & Sec-WebSocket-Key). HAProxy http-mode menolak 101
+# tanpa handshake lengkap (502) dan ACL payload biasa pada data pipelined
+# tidak reliabel. Solusi: "tcp-request content accept if HTTP" mengaktifkan
+# HTTP analyzer di mode tcp (ACL path_beg/hdr jadi可用), lalu semua request
+# non-SSH/non-xray di-route mentah (raw tcp) ke ws-stunnel yang menjawab 101
+# untuk request apa pun & meneruskan banner SSH ke dropbear. Sama persis
+# efeknya dgn referensi (sslh+nginx -> ws-stunnel) tapi tetap 1 HAProxy.
+# =====================================================================
 global
     log /dev/log local0
     log /dev/log local1 notice
@@ -354,8 +403,68 @@ defaults
     timeout client-fin 20s
     timeout server-fin 20s
 
+# ===================== TAHAP 1 =====================
 frontend ssl_sni
-    bind *:443 ssl crt /etc/haproxy/certs/${domain}.pem alpn h2,http/1.1
+    bind *:443 ssl crt /etc/haproxy/certs/wibuvpn.priasawit.web.id.pem alpn h2,http/1.1 tfo
+    mode tcp
+    tcp-request inspect-delay 5s
+
+    # SSH-over-TLS diterima segera (tidak menunggu inspect-delay).
+    tcp-request content accept if { payload(0,7) -m bin 5353482d322e30 }
+    # HTTP analyzer aktif di mode tcp -> ACL path_beg / hdr()可用.
+    tcp-request content accept if HTTP
+
+    acl is_ssh payload(0,7) -m bin 5353482d322e30          # "SSH-2.0"
+    acl is_h2 ssl_fc_alpn -i h2
+    acl is_xray path_beg /vless /vmess /trojan
+    acl is_xray path_beg %2Fvless %2Fvmess %2Ftrojan
+    acl is_telehook path_beg /telehook
+
+    use_backend ssh_dropbear if is_ssh
+    use_backend bk_hub if is_h2
+    use_backend bk_hub if is_xray
+    use_backend bk_hub if is_telehook
+    # WS-SSH & payload ENHANCED -> raw tunnel ke ws-stunnel.
+    default_backend ws_tunnel
+
+frontend http_80_front
+    bind *:80
+    mode tcp
+    tcp-request inspect-delay 5s
+
+    tcp-request content accept if { payload(0,7) -m bin 5353482d322e30 }
+    tcp-request content accept if HTTP
+
+    acl is_ssh payload(0,7) -m bin 5353482d322e30          # "SSH-2.0"
+    acl is_xray_vless path_beg /vless-ntls
+    acl is_xray_vless path_beg %2Fvless-ntls
+    acl is_xray_vmess path_beg /vmess-ntls
+    acl is_xray_vmess path_beg %2Fvmess-ntls
+
+    use_backend ssh_dropbear if is_ssh
+    use_backend bk_hub80 if is_xray_vless || is_xray_vmess
+    # bug request + payload ENHANCED + request HTTP biasa -> raw tunnel.
+    default_backend ws_tunnel
+
+backend ssh_dropbear
+    mode tcp
+    server dropbear 127.0.0.1:143 check
+
+backend bk_hub
+    mode tcp
+    server hub 127.0.0.1:8444
+
+backend bk_hub80
+    mode tcp
+    server hub80 127.0.0.1:8445
+
+backend ws_tunnel
+    mode tcp
+    server ws-stunnel 127.0.0.1:10015
+
+# ===================== TAHAP 2 =====================
+listen http_hub
+    bind 127.0.0.1:8444
     mode http
     option forwardfor
     acl is_vless_grpc path_beg /vless/
@@ -372,6 +481,10 @@ frontend ssl_sni
     acl is_trojan_ws path_beg %2Ftrojan
     acl is_telehook path_beg /telehook
     acl is_telehook path_beg %2Ftelehook
+    acl is_ws_upgrade hdr(Upgrade) -i websocket
+    # WS-SSH: client kirim handshake lengkap. Payload ENHANCED (hanya
+    # "Upgrade: websocket") sudah ditangani di tahap-1 lewat raw tunnel;
+    # jika ada yang sampai ke sini, suntik header handshake yang hilang.
     use_backend webhook_server if is_telehook
     use_backend xray_vless_grpc if is_vless_grpc
     use_backend xray_vmess_grpc if is_vmess_grpc
@@ -379,6 +492,22 @@ frontend ssl_sni
     use_backend xray_vless if is_vless_ws
     use_backend xray_vmess if is_vmess_ws
     use_backend xray_trojan if is_trojan_ws
+    use_backend ws_tunnel_http if is_ws_upgrade
+    default_backend ws_tunnel_http
+
+listen http_hub80
+    bind 127.0.0.1:8445
+    mode http
+    option forwardfor
+    acl is_vless_ntls path_beg /vless-ntls
+    acl is_vless_ntls path_beg %2Fvless-ntls
+    acl is_vmess_ntls path_beg /vmess-ntls
+    acl is_vmess_ntls path_beg %2Fvmess-ntls
+    acl is_ws_upgrade hdr(Upgrade) -i websocket
+    use_backend xray_vless_ntls if is_vless_ntls
+    use_backend xray_vmess_ntls if is_vmess_ntls
+    use_backend ws_tunnel_http if is_ws_upgrade
+    default_backend ws_tunnel_http
 
 backend xray_vless
     mode http
@@ -398,29 +527,76 @@ backend xray_trojan
 backend xray_trojan_grpc
     mode http
     server local_trojan_grpc 127.0.0.1:10093 send-proxy-v2 proto h2 check
-
-frontend vless_ntls_front
-    bind *:80
-    mode http
-    option forwardfor
-    acl is_vless_ntls path_beg /vless-ntls
-    acl is_vless_ntls path_beg %2Fvless-ntls
-    acl is_vmess_ntls path_beg /vmess-ntls
-    acl is_vmess_ntls path_beg %2Fvmess-ntls
-    use_backend xray_vless_ntls if is_vless_ntls
-    use_backend xray_vmess_ntls if is_vmess_ntls
-
 backend xray_vless_ntls
     mode http
     server vless_ntls_server 127.0.0.1:10087 send-proxy-v2 check
 backend xray_vmess_ntls
     mode http
     server vmess_ntls_server 127.0.0.1:10090 send-proxy-v2 check
-
+backend ws_tunnel_http
+    mode http
+    server ws-stunnel 127.0.0.1:10015
 backend webhook_server
     mode http
     server local_webhook 127.0.0.1:8443
 HFEOF
+
+# =========================================================
+# SSH TUNNEL STACK (Dropbear 2019.78 + ws-stunnel + badvpn-udpgw)
+# =========================================================
+echo -e "\e[1;36m[+] Memasang SSH Tunnel Stack (Dropbear 2019.78 + ws-stunnel + udpgw)...\e[0m"
+
+# ws-stunnel & installer SSH diunduh dari repo (source of truth)
+download_ssh_tool() {
+    local path="$1" name="$2"
+    local src="${WIBU_LOCAL_REPO:-}/${path}"
+    if [[ -n "$WIBU_LOCAL_REPO" && -f "$src" ]] && head -n 1 "$src" | grep -q '^#!'; then
+        install -m 0755 "$src" "/usr/local/bin/${name}"
+        return 0
+    fi
+    curl -sS -L --max-time 30 -o "/usr/local/bin/${name}" "${GITHUB_RAW}/${path}?v=$RANDOM"
+    if [ -s "/usr/local/bin/${name}" ] && head -n 1 "/usr/local/bin/${name}" | grep -q '^#!'; then
+        chmod +x "/usr/local/bin/${name}"
+    else
+        : > "/usr/local/bin/${name}" 2>/dev/null
+        echo -e "\e[31m[!] Gagal mengunduh ${name}\e[0m"
+    fi
+}
+GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
+download_ssh_tool "bin/ws-stunnel" "ws-stunnel"
+download_ssh_tool "bin/ssh-tunnel-install" "ssh-tunnel-install"
+
+# Jalankan installer stack SSH (idempoten: compile dropbear, keys, systemd,
+# ws-stunnel, udpgw, ip_forward + NAT, dan melepas port 80/443 dari layanan lain)
+if [ -x /usr/local/bin/ssh-tunnel-install ]; then
+    bash /usr/local/bin/ssh-tunnel-install || echo -e "\e[33m[!] Beberapa komponen SSH Tunnel gagal dipasang.\e[0m"
+else
+    echo -e "\e[31m[!] ssh-tunnel-install tidak tersedia — fitur SSH Tunnel tidak akan jalan.\e[0m"
+fi
+
+# Banner SSH (ditampilkan sebelum prompt login, seperti WIBULITE)
+mkdir -p /etc/wibutunnel
+cat > /etc/wibutunnel/ssh-banner <<'BANNEREOF'
+<html><body><center>
+<h2><font color="blue">WIBU TUNNELLING v4.0 KURUMI</font></h2>
+<b>SSH Tunnel Active</b><br>
+<font color="green">Powered by WIBU VPN</font><br>
+</center></body></html>
+BANNEREOF
+# dropbear membaca banner dari argumen -b (systemd EnvironmentFile tidak
+# ekspansi $VAR di dalam DROPBEAR_EXTRA_ARGS -> tulis argumen lengkap).
+if [ -f /etc/default/dropbear ]; then
+    sed -i 's|^DROPBEAR_EXTRA_ARGS=.*|DROPBEAR_EXTRA_ARGS="-W 65536 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222 -b /etc/wibutunnel/ssh-banner"|' /etc/default/dropbear
+    grep -q '^DROPBEAR_BANNER=' /etc/default/dropbear \
+        && sed -i 's|^DROPBEAR_BANNER=.*|DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"|' /etc/default/dropbear \
+        || echo 'DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"' >> /etc/default/dropbear
+    systemctl restart dropbear 2>/dev/null || true
+fi
+
+# Inisialisasi group & database akun SSH
+if [ -f /usr/local/bin/common.sh ]; then
+    ( source /usr/local/bin/common.sh >/dev/null 2>&1; ssh_init ) >/dev/null 2>&1 || true
+fi
 
 # Bypass GitHub 429 Rate Limit menggunakan GHProxy
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
@@ -429,6 +605,19 @@ GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
 download_menu() {
     local url="${GITHUB_RAW}/$1?v=$RANDOM"
     local dest="/usr/local/bin/$2"
+    local src="${WIBU_LOCAL_REPO:-}/$1"
+
+    # [LOCAL INSTALL] bila installer dijalankan dari clone repo lokal, pakai
+    # file tersebut (versi terbaru hasil edit) alih-alih versi di GitHub.
+    if [[ -n "$WIBU_LOCAL_REPO" && -f "$src" ]]; then
+        if [ -s "$src" ] && head -n 1 "$src" | grep -q '^#!'; then
+            cp -f "$src" "/etc/wibutunnel/tmp/$2"
+            mv "/etc/wibutunnel/tmp/$2" "$dest"
+            chmod +x "$dest"
+            return 0
+        fi
+    fi
+
     curl -sS -L -o "/etc/wibutunnel/tmp/$2" "$url"
     
     # Validasi apakah file yang diunduh adalah bash script (bukan HTML 429 Error)
@@ -438,11 +627,12 @@ download_menu() {
         curl -sS -L -o "/etc/wibutunnel/tmp/$2" "$url"
     fi
     
-    if [ -s "/etc/wibutunnel/tmp/$2" ]; then
+    # Validasi: tidak boleh kosong & baris pertama harus shebang (bukan halaman 404/429)
+    if [ -s "/etc/wibutunnel/tmp/$2" ] && head -n 1 "/etc/wibutunnel/tmp/$2" | grep -q '^#!'; then
         mv "/etc/wibutunnel/tmp/$2" "$dest"
         chmod +x "$dest"
     else
-        echo -e "\e[31m[!] Gagal mengunduh $2\e[0m"
+        echo -e "\e[31m[!] Gagal mengunduh $2 (file tidak valid)\e[0m"
     fi
 }
 
@@ -450,6 +640,7 @@ download_menu "menu/menu.sh" "menu"
 download_menu "menu/m-vless.sh" "m-vless"
 download_menu "menu/m-vmess.sh" "m-vmess"
 download_menu "menu/m-trojan.sh" "m-trojan"
+download_menu "menu/m-ssh.sh" "m-ssh"
 download_menu "menu/m-setting.sh" "m-setting"
 download_menu "menu/xp.sh" "xp"
 download_menu "menu/m-backup.sh" "m-backup"
@@ -607,10 +798,14 @@ cat <<EOF > /etc/systemd/system/haproxy.service.d/override.conf
 Restart=on-failure
 RestartSec=5s
 EOF
+# [FIX] /var/log/xray di-mount tmpfs (RAM disk) dengan uid=65534 -> sudah
+#       dimiliki nobody. chown pada root filesystem yang di-mount selalu
+#       EPERM, jadi ExecStartPre bawaan unit xray yang melakukan chown
+#       HARUS direset agar xray bisa start.
 cat <<EOF > /etc/systemd/system/xray.service.d/override.conf
 [Service]
+ExecStartPre=
 ExecStartPre=/bin/mkdir -p /var/log/xray
-ExecStartPre=/bin/chown -R nobody:nogroup /var/log/xray
 Restart=on-failure
 RestartSec=5s
 EOF
@@ -652,9 +847,18 @@ haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1 && echo -e "HAProxy Confi
 [ -f /etc/haproxy/certs/$domain.pem ] && echo -e "SSL Certificate     : \e[32m[OK]\e[0m" || echo -e "SSL Certificate     : \e[31m[FAIL]\e[0m"
 ss -tlnp | grep -q ":10085" && echo -e "Xray API (10085)    : \e[32m[OK]\e[0m" || echo -e "Xray API (10085)    : \e[33m[WARNING]\e[0m"
 systemctl is-active --quiet wibu-daemon && echo -e "Algojo Daemon       : \e[32m[OK]\e[0m" || echo -e "Algojo Daemon       : \e[31m[FAIL]\e[0m"
+systemctl is-active --quiet dropbear && echo -e "Dropbear SSH        : \e[32m[OK]\e[0m" || echo -e "Dropbear SSH        : \e[33m[WARNING]\e[0m"
+systemctl is-active --quiet ws-stunnel && echo -e "ws-stunnel (WS)     : \e[32m[OK]\e[0m" || echo -e "ws-stunnel (WS)     : \e[33m[WARNING]\e[0m"
+ss -tlnp | grep -q ":143" && echo -e "SSH Port 143        : \e[32m[OK]\e[0m" || echo -e "SSH Port 143        : \e[33m[WARNING]\e[0m"
+ss -tlnp | grep -q ":10015" && echo -e "ws-stunnel 10015    : \e[32m[OK]\e[0m" || echo -e "ws-stunnel 10015    : \e[33m[WARNING]\e[0m"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "    INSTALASI SELESAI! REBOOT DALAM 8 DETIK...    "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [[ "${WIBU_NO_REBOOT:-0}" == "1" ]]; then
+    echo -e "\e[33m[!] WIBU_NO_REBOOT=1 -> reboot dilewati. Semua layanan sudah direstart di atas.\e[0m"
+    echo -e "\e[33m    Disarankan reboot manual di waktu luang untuk menerapkan tuning sepenuhnya.\e[0m"
+    exit 0
+fi
 sleep 8
 reboot

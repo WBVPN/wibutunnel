@@ -46,11 +46,12 @@ echo -e "${LINE}"
 /usr/local/sbin/algojo-kuota >/dev/null 2>&1
 
 declare -A USER_PROTOS
-for conf in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf; do
+for conf in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf; do
     [[ ! -f "$conf" ]] && continue
     if [[ "$conf" == *"vless"* ]]; then proto="VLESS"
     elif [[ "$conf" == *"vmess"* ]]; then proto="VMESS"
     elif [[ "$conf" == *"trojan"* ]]; then proto="TROJAN"
+    elif [[ "$conf" == *"ssh"* ]]; then proto="SSH"
     fi
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -59,6 +60,15 @@ for conf in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_e
     done < "$conf"
 done
 
+# [SSH TUNNEL] Untuk user SSH, IP aktif didapat dari koneksi dropbear langsung
+# (tidak ada log xray). Dipakai pada loop tampilan di bawah.
+declare -A SSH_USER_IPS
+while read -r ssh_u; do
+    [[ -z "$ssh_u" ]] && continue
+    ssh_ips=$(ssh_active_ips "$ssh_u")
+    [[ -n "$ssh_ips" ]] && SSH_USER_IPS["$ssh_u"]="$ssh_ips"
+done < <(ssh_list_users 2>/dev/null)
+
 # [MATA ELANG V2 - NEW LOGIC] Deteksi real IP via Log 3 Menit (Support Cloudflare/CDN)
 declare -A USER_IPS
 THRESH=$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')
@@ -66,7 +76,7 @@ while IFS="|" read -r email count iplist; do
     if [[ -n "$email" ]]; then
         USER_IPS["$email"]="$iplist"
     fi
-done < <(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; counts[email]++ } } } } END { for (e in ips) print e "|" counts[e] "|" ips[e] }' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null)
+done < <(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[ \t\r\n]+$/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; counts[email]++ } } } } END { for (e in ips) print e "|" counts[e] "|" ips[e] }' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null)
 
 declare -A ALL_USERS
 while read -r line; do
@@ -94,16 +104,20 @@ else
 
         [[ -z "$proto_user" ]] && proto_user="${YELLOW}UNKNOWN${NC}"
         
-        limit_ip=$(grep "^${user}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
-        limit_bw=$(grep "^${user}:" "$DB_BW" 2>/dev/null | cut -d: -f2)
+        limit_ip=$(db_lookup "$user" "$DB_IP" | cut -d: -f2)
+        limit_bw=$(db_lookup "$user" "$DB_BW" | cut -d: -f2)
         [[ -z "$limit_ip" || "$limit_ip" == "0" ]] && str_limit_ip="Bebas" || str_limit_ip="${limit_ip} IP"
         [[ -z "$limit_bw" || "$limit_bw" == "0" ]] && str_limit_bw="Unli" || str_limit_bw="${limit_bw} GB"
         
-        ip_list=${USER_IPS[$user]}
+        if [[ "$proto_user" == "SSH" ]]; then
+            ip_list=${SSH_USER_IPS[$user]}
+        else
+            ip_list=${USER_IPS[$user]}
+        fi
         active_ip_count=$(echo "$ip_list" | wc -w)
         [[ -z "$ip_list" ]] && active_ip_count=0
         
-        is_locked=$(grep "^${user}:" "$DB_LOCK" 2>/dev/null)
+        is_locked=$(db_lookup "$user" "$DB_LOCK")
         
         if [[ -n "$is_locked" ]]; then
             status="${RED}TERKUNCI / LOCKED ⛔${NC}"
@@ -117,7 +131,7 @@ else
 
         ((online_count++))
 
-        raw_bytes=$(grep "^${user}:" "$DB_USAGE" | cut -d: -f2)
+        raw_bytes=$(db_lookup "$user" "$DB_USAGE" | cut -d: -f2)
         [[ -z "$raw_bytes" ]] && raw_bytes=0
         usage_quota=$(convert_size "$raw_bytes")
 
@@ -152,5 +166,6 @@ read -r
 if [[ "$PROTOCOL_FILTER" == "VLESS" ]]; then exec m-vless
 elif [[ "$PROTOCOL_FILTER" == "VMESS" ]]; then exec m-vmess
 elif [[ "$PROTOCOL_FILTER" == "TROJAN" ]]; then exec m-trojan
+elif [[ "$PROTOCOL_FILTER" == "SSH" ]]; then exec m-ssh
 else exec menu
 fi

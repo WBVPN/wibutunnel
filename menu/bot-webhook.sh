@@ -19,8 +19,16 @@ while IFS= read -r line; do
 done
 shopt -u nocasematch
 
-# Validasi secret token jika dikonfigurasi
-if [[ -n "$WEBHOOK_SECRET" && "$SECRET_HEADER" != "$WEBHOOK_SECRET" ]]; then
+# Validasi secret token — FAIL CLOSED.
+# Kalau secret belum dikonfigurasi, tolak SEMUA request (siapa pun tidak boleh
+# mengendalikan bot tanpa otentikasi).
+if [[ -z "$WEBHOOK_SECRET" ]]; then
+    echo -e "[SECURITY] WEBHOOK_SECRET belum dikonfigurasi di /etc/wibutunnel/bot.conf — request ditolak" >&2
+    echo -en "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n{\"error\":\"webhook secret not configured\"}"
+    exit 0
+fi
+if [[ "$SECRET_HEADER" != "$WEBHOOK_SECRET" ]]; then
+    echo -e "[SECURITY] Webhook secret token tidak valid — request ditolak" >&2
     echo -en "HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n{\"error\":\"unauthorized\"}"
     exit 0
 fi

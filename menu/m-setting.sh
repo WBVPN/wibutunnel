@@ -34,16 +34,27 @@ safe_update() {
     local repo_path="$1"
     local base_name=$(basename "$repo_path")
     local target_name="${base_name%.sh}"
-    
+
+    # [FIX] Script sbin (algojo & unlocker) HARUS ke /usr/local/sbin,
+    #       lock-user/unlock-user & menu ke /usr/local/bin (sesuai setup.sh).
+    local target_dir="/usr/local/bin"
+    case "$base_name" in
+        algojo-wibu|algojo-kuota|unlocker-wibu) target_dir="/usr/local/sbin" ;;
+    esac
+
     local raw_url="https://raw.githubusercontent.com/WBVPN/WIBUTUNNEL/main/${repo_path}?$(date +%s)"
-    
-    wget -q -O "/etc/wibutunnel/tmp/${base_name}" "$raw_url" 2>/dev/null
-    if [[ -s "/etc/wibutunnel/tmp/${base_name}" ]]; then
-        mv "/etc/wibutunnel/tmp/${base_name}" "/usr/local/bin/${target_name}"
-        chmod +x "/usr/local/bin/${target_name}"
+    local tmp="/etc/wibutunnel/tmp/${base_name}"
+
+    curl -fsS -L --max-time 30 -o "$tmp" "$raw_url" 2>/dev/null
+
+    # Validasi: tidak boleh kosong & baris pertama harus shebang (bukan halaman 404/429)
+    if [[ -s "$tmp" ]] && [[ "$(head -n 1 "$tmp" 2>/dev/null)" == "#!"* ]]; then
+        mv "$tmp" "${target_dir}/${target_name}"
+        chmod +x "${target_dir}/${target_name}"
         echo -e "${GREEN}√ Berhasil memperbarui ${target_name}${NC}"
     else
-        echo -e "${RED}× Gagal mengunduh ${base_name} (Sistem dilindungi dari file kosong)${NC}"
+        : > "$tmp" 2>/dev/null
+        echo -e "${RED}× Gagal mengunduh ${base_name} (Sistem dilindungi dari file kosong/error)${NC}"
     fi
 }
 
@@ -66,6 +77,7 @@ echo -e " ${WHITE}[6] Setup Bot Telegram${NC}"
 echo -e " ${CYAN}[7] Setup Auto Reboot VPS${NC}"
 echo -e " ${YELLOW}[8] Ganti Domain & Renew SSL${NC}"
 echo -e " ${GREEN}[9] Atur Durasi Lock Otomatis${NC}"
+echo -e " ${BLUE}[10] Edit Banner SSH${NC}"
 echo -e " ${RED}[0] Kembali ke Dashboard Utama${NC}"
 echo -e "$LINE"
 
@@ -75,7 +87,7 @@ read -r sub_setting
 case $sub_setting in
     1)
         clear; echo -e "$LINE"; echo -e "         ${WHITE}MERESTART SERVICES...${NC}"; echo -e "$LINE"
-        systemctl restart xray haproxy cron
+        systemctl restart xray haproxy dropbear ws-stunnel wibu-daemon cron
         echo -e "${GREEN}Semua service berhasil direstart!${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
@@ -102,10 +114,13 @@ case $sub_setting in
             chmod +x /usr/bin/speedtest 2>/dev/null
         fi
         if command -v speedtest &> /dev/null; then
+            if [[ ! -x /usr/bin/speedtest ]]; then
+                chmod +x /usr/bin/speedtest 2>/dev/null
+            fi
             echo -e "${GREEN}[+] Speedtest Ookla Resmi Berhasil Diinstal!${NC}"
-            speedtest --accept-license --accept-gdpr
+            speedtest --accept-license --accept-gdpr || echo -e "${RED}Speedtest gagal dijalankan (mungkin koneksi terblokir).${NC}"
         else
-            echo -e "${RED}Speedtest gagal diinstall.${NC}"
+            echo -e "${RED}Speedtest gagal diinstall. Coba: apt-get update lalu ulangi.${NC}"
         fi
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
@@ -113,6 +128,7 @@ case $sub_setting in
     4)
         clear; echo -e "$LINE"; echo -e "          ${WHITE}MONITOR BANDWIDTH VPS${NC}"; echo -e "$LINE"
         if ! command -v vnstat &> /dev/null; then
+            apt-get update -qq >/dev/null 2>&1
             apt-get install -y vnstat >/dev/null 2>&1
             systemctl enable --now vnstat >/dev/null 2>&1
         fi
@@ -155,11 +171,23 @@ case $sub_setting in
     5)
         clear; echo -e "$LINE"; echo -e "         ${WHITE}UPDATE SCRIPT (SAFE MODE)${NC}"; echo -e "$LINE"
         echo -e "${YELLOW}Mengecek dan mengunduh pembaruan...${NC}"
-        
+
+        # [FIX] BACKUP SEMUA file lokal sebelum update, karena repo GitHub
+        # mungkin berisi versi lama. Kalau update hancurkan konfigurasi,
+        # bisa di-restore dari /etc/wibutunnel/backup/pre-update
+        BK_DIR="/etc/wibutunnel/backup/pre-update-$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$BK_DIR/bin" "$BK_DIR/sbin"
+        cp /usr/local/bin/* "$BK_DIR/bin/" 2>/dev/null
+        cp /usr/local/sbin/* "$BK_DIR/sbin/" 2>/dev/null
+        cp /usr/local/etc/xray/config.json "$BK_DIR/" 2>/dev/null
+        ls -d /etc/wibutunnel/backup/pre-update-* 2>/dev/null | head -5 > "$BK_DIR/../.backup_list" 2>/dev/null
+        echo -e "${CYAN}[+] Backup aman tersimpan: ${BK_DIR}${NC}"
+
         safe_update "menu/menu.sh"
         safe_update "menu/m-vless.sh"
         safe_update "menu/m-vmess.sh"
         safe_update "menu/m-trojan.sh"
+        safe_update "menu/m-ssh.sh"
         safe_update "menu/m-setting.sh"
         safe_update "menu/xp.sh"
         safe_update "menu/m-backup.sh"
@@ -174,12 +202,15 @@ case $sub_setting in
         safe_update "sbin/lock-user"
         safe_update "sbin/unlock-user"
         safe_update "sbin/unlocker-wibu"
+        safe_update "bin/ssh-tunnel-install"
         
         safe_update "common.sh"
         
-        dos2unix /usr/local/bin/* >/dev/null 2>&1
-        systemctl restart wibutunnel-bot >/dev/null 2>&1
+        dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
+        systemctl restart wibu-daemon >/dev/null 2>&1
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"
+        echo -e "${YELLOW}Catatan: kalau ada yg rusak setelah update, backup lama ada di:${NC}"
+        echo -e "${CYAN}$BK_DIR${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
         ;;
@@ -203,7 +234,15 @@ case $sub_setting in
             1)
                 read -p "Masukkan BOT TOKEN : " input_token
                 read -p "Masukkan CHAT ID   : " input_chatid
+                # [FIX] validasi token dulu sebelum disimpan
                 if [[ -n "$input_token" && -n "$input_chatid" ]]; then
+                    local tk_test
+                    tk_test=$(curl -s --max-time 10 "https://api.telegram.org/bot${input_token}/getMe")
+                    if ! echo "$tk_test" | grep -q '"ok":true'; then
+                        echo -e "${RED}BOT TOKEN tidak valid! (cek token dari @BotFather)${NC}"
+                        read -n 1 -s -r -p "Tekan tombol apa saja..."
+                        exec m-setting
+                    fi
                     WEBHOOK_SECRET=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
                     cat <<EOF > /etc/wibutunnel/bot.conf
 BOT_TOKEN="${input_token}"
@@ -256,12 +295,17 @@ EOF
         ;;
     7)
         clear; echo -e "$LINE"; echo -e "            ${WHITE}SETUP AUTO REBOOT${NC}"; echo -e "$LINE"
-        read -p "Masukkan Jam (0-23): " input_jam
-        if [[ "$input_jam" =~ ^[0-9]+$ ]] && [ "$input_jam" -le 23 ]; then
+        echo -e "Auto reboot memutus SEMUA koneksi client saat jam tersebut."
+        read -p "Masukkan Jam (0-23, kosongkan untuk membatalkan): " input_jam
+        if [[ -z "$input_jam" ]]; then
+            echo -e "${YELLOW}Dibatalkan.${NC}"
+        elif [[ "$input_jam" =~ ^[0-9]+$ ]] && [ "$input_jam" -le 23 ]; then
             crontab -l 2>/dev/null | grep -v "/sbin/reboot" | crontab -
             (crontab -l 2>/dev/null; echo "0 $input_jam * * * /sbin/reboot") | crontab -
-            systemctl restart cron
-            echo -e "${GREEN}Auto Reboot disetel jam $input_jam:00 WIB${NC}"
+            systemctl restart cron 2>/dev/null
+            echo -e "${GREEN}Auto Reboot disetel jam $input_jam:00 WIB tiap hari${NC}"
+        else
+            echo -e "${RED}Jam tidak valid! Harus angka 0-23.${NC}"
         fi
         read -p "Tekan Enter..." dummy
         exec m-setting
@@ -277,14 +321,20 @@ EOF
             else
                 certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos -d "$new_domain" --force-renewal 2>/dev/null
             fi
+            local ssl_ok=false
             if [[ -f "/etc/letsencrypt/live/${new_domain}/fullchain.pem" ]]; then
                 cat "/etc/letsencrypt/live/${new_domain}/fullchain.pem" "/etc/letsencrypt/live/${new_domain}/privkey.pem" > "/etc/haproxy/certs/${new_domain}.pem"
                 echo "$new_domain" > /etc/xray/domain
                 sed -i "s|bind \*:443 ssl crt .*\.pem|bind *:443 ssl crt /etc/haproxy/certs/${new_domain}.pem|g" /etc/haproxy/haproxy.cfg
-                systemctl start haproxy xray
+                ssl_ok=true
+            fi
+            # [FIX] SELALU start service kembali, walau SSL gagal — kalau tidak
+            # haproxy & xray akan terhenti dan VPS tidak bisa diakses lagi!
+            systemctl start xray haproxy
+            if [[ "$ssl_ok" == true ]]; then
                 echo -e "${GREEN}Domain berhasil diganti!${NC}"
             else
-                echo -e "${RED}SSL gagal untuk $new_domain!${NC}"
+                echo -e "${RED}SSL gagal untuk $new_domain! Service tetap dijalankan kembali (domain lama dipakai).${NC}"
             fi
         fi
         read -p "Tekan Enter..." dummy
@@ -301,6 +351,28 @@ EOF
         fi
         echo "LOCK_DURATION=$new_duration" > /etc/wibutunnel/lock.conf
         echo -e "${GREEN}Berhasil! Durasi lock diubah menjadi ${new_duration} menit.${NC}"
+        read -p "Tekan Enter..." dummy
+        exec m-setting
+        ;;
+    10)
+        clear; echo -e "$LINE"; echo -e "         ${WHITE}EDIT BANNER SSH${NC}"; echo -e "$LINE"
+        BANNER_FILE="/etc/wibutunnel/ssh-banner"
+        if [[ ! -f "$BANNER_FILE" ]]; then
+            mkdir -p /etc/wibutunnel
+            printf '<html><body><center>\n<h2><font color="blue">WIBU TUNNELLING v4.0 KURUMI</font></h2>\n<b>SSH Tunnel Active</b><br>\n<font color="green">Powered by WIBU VPN</font><br>\n</center></body></html>\n' > "$BANNER_FILE"
+        fi
+        echo -e "${CYAN}Banner saat ini (ditampilkan ke client sebelum prompt login SSH):${NC}"
+        echo -e "$LINE"
+        cat "$BANNER_FILE"
+        echo -e "$LINE"
+        echo -e "${YELLOW}Simpan: CTRL+O lalu Enter. Keluar: CTRL+X (nano).${NC}"
+        read -p "Tekan Enter untuk membuka editor..." dummy
+        ${EDITOR:-nano} "$BANNER_FILE"
+        if ! grep -q -- '-b /etc/wibutunnel/ssh-banner' /etc/default/dropbear; then
+            sed -i 's|^DROPBEAR_EXTRA_ARGS=.*|DROPBEAR_EXTRA_ARGS="-W 65536 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222 -b /etc/wibutunnel/ssh-banner"|' /etc/default/dropbear
+        fi
+        systemctl restart dropbear
+        echo -e "${GREEN}Banner SSH diperbarui & dropbear direstart!${NC}"
         read -p "Tekan Enter..." dummy
         exec m-setting
         ;;

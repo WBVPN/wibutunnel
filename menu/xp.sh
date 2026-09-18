@@ -57,7 +57,7 @@ process_expired() {
             if [ "$today_sec" -ge "$exp_sec" ]; then
                 
                 # Mencegah spam jika user sudah dalam status EXPIRED di recovery
-                if grep -q "^${user}:.*:EXPIRED" /etc/wibutunnel/locked_users.db 2>/dev/null; then
+                if [[ -n "$(awk -F: -v u="$user" '$1==u && $4=="EXPIRED"' /etc/wibutunnel/locked_users.db 2>/dev/null)" ]]; then
                     NEW_EXP_CONTENT+="${line}\n"
                     continue
                 fi
@@ -86,21 +86,21 @@ process_expired() {
                     NOTIFIED_USERS+=" ${user}_${PROTO_NAME} "
                     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
                         DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-                        IP_VPS=$(curl -sS --max-time 5 ipv4.icanhazip.com)
+                        IP_VPS="${MYIP:-$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null)}"
                         ISP=$(cat /etc/wibutunnel/tmp/ipapi.txt 2>/dev/null | sed -n '2p')
-                        [[ -z "$ISP" ]] && ISP=$(curl -sS --max-time 5 ip-api.com/line/?fields=isp | head -n 1)
+                        [[ -z "$ISP" ]] && ISP=$(curl -sS --max-time 5 "http://ip-api.com/line/?fields=isp" | head -n 1)
 
-                        PESAN="IP     : <code>${IP_VPS}</code>
-DOMAIN : <code>${DOMAIN}</code>
-ISP    : <code>${ISP}</code>
-Expired Account ${PROTO_NAME}
-✓ <code>${user}</code>
-Limit - Time Expired
-Expired On - ${exp_date}
-
+                        THICKLINE=$(printf '\u2501%.0s' {1..24})
+                        PESAN="<b>⛔ EXPIRED ACCOUNT ${PROTO_NAME}</b>
+${THICKLINE}
+<code>Host        : ${DOMAIN}</code>
+<code>Username    : ${user}</code>
+${THICKLINE}
+<code>Expired On  : ${exp_date}</code>
+${THICKLINE}
 <i>${FOOTER}</i>"
                         curl -s --max-time 8 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-                            -F "chat_id=${CHAT_ID}" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1 &
+                            --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1 &
                     fi
                 fi
             else
@@ -136,9 +136,65 @@ if [[ ${#TRIAL_TO_DELETE[@]} -gt 0 || ${#NORMAL_TO_RECOVERY[@]} -gt 0 ]]; then
         JQ_FILTER+=" | (.routing.rules[] | select(.user != null and .outboundTag == \"blocked\") | .user) |= (. + ${USERS_JSON} | unique)"
     fi
     
-    safe_jq_edit "$JQ_FILTER"
-    
-    systemctl restart xray >/dev/null 2>&1
+    if safe_jq_edit "$JQ_FILTER"; then
+        systemctl restart xray >/dev/null 2>&1
+    else
+        echo "[ERROR] xp.sh: gagal mengedit config xray, restart dibatalkan" >&2
+    fi
+fi
+
+# ==========================================
+# SSH TUNNEL: auto-lock akun yang sudah kadaluarsa
+# ==========================================
+# Akun SSH pakai user sistem; chage -E sudah menolak login otomatis, tapi sesi
+# yang masih aktif harus diputus, dan status dicatat ke locked_users.db
+# (reason=EXPIRED) agar muncul di Recovery Center & bisa diperpanjang kembali.
+if [[ -f /etc/xray/ssh_exp.conf ]]; then
+    today_sec=$(date +%s)
+    NEW_SSH_EXP=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && { NEW_SSH_EXP+="${line}\n"; continue; }
+        ssh_user=$(echo "$line" | cut -d: -f1)
+        ssh_exp=$(echo "$line" | cut -d: -f2-)
+        [[ "$ssh_user" == *"dummy"* ]] && { NEW_SSH_EXP+="${line}\n"; continue; }
+
+        ssh_exp_sec=$(date -d "$ssh_exp" +%s 2>/dev/null)
+        [[ -z "$ssh_exp_sec" ]] && { NEW_SSH_EXP+="${line}\n"; continue; }
+
+        if ssh_user_exists "$ssh_user"; then
+            if [[ "$today_sec" -ge "$ssh_exp_sec" ]]; then
+                if ! db_has "$ssh_user" /etc/wibutunnel/locked_users.db; then
+                    passwd -l "$ssh_user" >/dev/null 2>&1
+                    pkill -u "$ssh_user" 2>/dev/null
+                    now=$(date +%s)
+                    echo "${ssh_user}:${now}:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
+                    [[ "$ssh_user" == trial-* ]] && del_ssh_user "$ssh_user" >/dev/null 2>&1
+                    FOOTER="Move to Recovery (lock)"
+                    [[ "$ssh_user" == trial-* ]] && FOOTER="Deleted Permanently"
+                    if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+                        (
+                        DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                        THICKLINE=$(printf '\u2501%.0s' {1..24})
+                        PESAN="<b>⛔ EXPIRED ACCOUNT SSH</b>
+${THICKLINE}
+<code>Host        : ${DOMAIN}</code>
+<code>Username    : ${ssh_user}</code>
+${THICKLINE}
+<code>Expired On  : ${ssh_exp}</code>
+${THICKLINE}
+<i>${FOOTER}</i>"
+                        curl -s --max-time 8 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                            --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
+                        ) &
+                    fi
+                fi
+                NEW_SSH_EXP+="${line}\n"
+            else
+                NEW_SSH_EXP+="${line}\n"
+            fi
+        fi
+    done < /etc/xray/ssh_exp.conf
+    echo -e -n "$NEW_SSH_EXP" > /etc/xray/ssh_exp.conf
 fi
 
 # ==========================================

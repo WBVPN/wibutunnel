@@ -51,7 +51,7 @@ for line in "${locked_list[@]}"; do
     [[ -n "$FILTER_PROTO" && "$proto" != "$FILTER_PROTO" ]] && continue
     if [[ -z "$proto" ]]; then
         safe_sed_delete "$u" "$DB_LOCK"; safe_sed_delete "$u" /etc/wibutunnel/user_usage.db
-        safe_jq_edit_args --arg user \"$u\" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))'
+        safe_jq_edit_args --arg user "$u" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))'
         GHOST_FOUND=true; continue
     fi
     USER_NAMES[$idx]=$u
@@ -79,7 +79,7 @@ read -p " Pilih akun [1-$total] / [nama] / [0] Batal: " target
 if [[ "$target" == "deleteallusers" ]]; then
     for user in "${USER_NAMES[@]}"; do
         [[ -z "$user" ]] && continue
-        safe_jq_edit_args --arg u \"$user\" '
+        safe_jq_edit_args --arg u "$user" '
             .inbounds[1].settings.clients |= map(select(.email != $u)) |
             .inbounds[2].settings.clients |= map(select(.email != $u)) |
             .inbounds[3].settings.clients |= map(select(.email != $u)) |
@@ -109,7 +109,7 @@ fi
 if [[ "$target" =~ ^[0-9]+$ ]] && [ "$target" -ge 1 ] && [ "$target" -le "$total" ]; then user="${USER_NAMES[$target]}"
 else user="$target"; fi
 
-[[ -z $(grep "^${user}:" "$DB_LOCK" 2>/dev/null) ]] && { echo -e "\n ${RED}User '$user' tidak di Recovery!${NC}"; sleep 2; exec menu-recovery; }
+[[ -z $(db_lookup "$user" "$DB_LOCK") ]] && { echo -e "\n ${RED}User '$user' tidak di Recovery!${NC}"; sleep 2; exec menu-recovery; }
 
 echo -e "\n ${WHITE}Reaktivasi: ${GREEN}$user${NC}\n${LINE}"
 read -p " Masa Aktif Baru (Hari): " hari_baru
@@ -126,8 +126,11 @@ safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db; echo "${user}:${ip_baru}" >
 safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db; echo "${user}:${bw_baru}" >> /etc/wibutunnel/limit_bw.db
 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
-safe_jq_edit_args --arg u \"$user\" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
-safe_sed_delete "$user" /etc/wibutunnel/locked_users.db; systemctl restart xray >/dev/null 2>&1
-
-echo -e "\n ${GREEN}BERHASIL! Akun ${user} telah aktif kembali.${NC}"
+if safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'; then
+    safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+    systemctl restart xray >/dev/null 2>&1
+    echo -e "\n ${GREEN}BERHASIL! Akun ${user} telah aktif kembali.${NC}"
+else
+    echo -e "\n ${RED}GAGAL! Config xray tidak bisa diedit, akun masih terkunci.${NC}"
+fi
 read -p " Tekan Enter..."; [[ -n "$FILTER_PROTO" ]] && exec "m-${proto_lower}" || exec menu

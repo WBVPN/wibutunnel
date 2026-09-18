@@ -33,7 +33,7 @@ select_user() {
     
     declare -a user_array
     for u in "${raw_user_array[@]}"; do
-        if [[ "$SHOW_LOCKED" != "YES" ]] && grep -q "^${u}:" "$DB_LOCK" 2>/dev/null; then continue; fi
+        if [[ "$SHOW_LOCKED" != "YES" ]] && db_has "$u" "$DB_LOCK"; then continue; fi
         user_array+=("$u")
     done
 
@@ -49,16 +49,16 @@ select_user() {
     for i in "${!user_array[@]}"; do
         u="${user_array[$i]}"
         if [[ "$DISPLAY_TYPE" == "IP" ]]; then
-            val=$(grep "^${u}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
+            val=$(db_lookup "$u" "$DB_IP" | cut -d: -f2)
             [[ -z "$val" || "$val" == "0" ]] && val="Bebas" || val="${val} IP"
             color="${CYAN}"
         elif [[ "$DISPLAY_TYPE" == "BW" ]]; then
-            val=$(grep "^${u}:" "$DB_BW" 2>/dev/null | cut -d: -f2)
+            val=$(db_lookup "$u" "$DB_BW" | cut -d: -f2)
             [[ -z "$val" || "$val" == "0" ]] && val="Unlimited" || val="${val} GB"
             color="${CYAN}"
         else
-            val=$(grep "^${u}:" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
-            is_locked=$(grep -q "^${u}:" "$DB_LOCK" 2>/dev/null && echo " ${RED}LOCKED${NC}" || echo "")
+            val=$(db_lookup "$u" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
+            is_locked=$(db_has "$u" "$DB_LOCK" && echo " ${RED}LOCKED${NC}" || echo "")
             [[ -z "$val" ]] && val="Lifetime"
             color="${YELLOW}Exp: "
         fi
@@ -102,6 +102,7 @@ add_user() {
     '
 
     echo "${user}:${exp_date}" >> "$EXP_FILE"
+    stats_rule_add "$user"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     echo "${user}:${limit_ip}" >> "$DB_IP"
     echo "${user}:${limit_kuota}" >> "$DB_BW"
@@ -199,6 +200,7 @@ trial_user() {
     '
 
     echo "${user}:${exp_date}" >> "$EXP_FILE"
+    stats_rule_add "$user"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     echo "${user}:0" >> "$DB_IP"; echo "${user}:0" >> "$DB_BW"
     systemctl restart xray >/dev/null 2>&1
@@ -283,17 +285,19 @@ delete_user() {
     else
         echo -e "\n${GREEN}Akun '$user' berhasil dimusnahkan permanen!${NC}"
     fi
-    safe_jq_edit_args --arg user "$user" '
+    if safe_jq_edit_args --arg user "$user" '
         .inbounds[1].settings.clients |= map(select(.email != $user)) |
         .inbounds[2].settings.clients |= map(select(.email != $user)) |
         .inbounds[3].settings.clients |= map(select(.email != $user)) |
         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))
-    '
-
-    safe_sed_delete "$user" "$EXP_FILE"
-    safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
-    safe_sed_delete "$user" "$DB_LOCK"; safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
-    systemctl restart xray >/dev/null 2>&1
+    '; then
+        safe_sed_delete "$user" "$EXP_FILE"
+        safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
+        safe_sed_delete "$user" "$DB_LOCK"; safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+        systemctl restart xray >/dev/null 2>&1
+    else
+        echo -e "\n${RED}GAGAL! Config xray tidak bisa diedit, akun belum sepenuhnya terhapus.${NC}"
+    fi
     echo ""; read -p "Tekan Enter..." dummy
 }
 
@@ -304,7 +308,7 @@ cek_user() {
 
     uuid=$(jq -r --arg email "$user" '.inbounds[1].settings.clients[] | select(.email == $email) | .id' "$CONFIG_FILE")
     domain=$(cat "$DOMAIN_FILE")
-    exp_date=$(grep "^${user}:" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
+    exp_date=$(db_lookup "$user" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
     [[ -z "$exp_date" ]] && exp_date="Lifetime"
 
     vless_tls="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&host=${domain}&type=ws&sni=${domain}#${user}"
@@ -386,7 +390,7 @@ renew_user() {
     read -p " Jumlah Hari Tambahan : " tambahan
     if [[ ! "$tambahan" =~ ^[0-9]+$ ]] || [ "$tambahan" -le 0 ]; then echo -e "${RED}Error: Angka tidak valid!${NC}"; read -p "Enter..." dummy; return; fi
 
-    current_exp=$(grep "^${user}:" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
+    current_exp=$(db_lookup "$user" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
     today_sec=$(date +%s)
 
     if [[ -n "$current_exp" && ${#current_exp} -eq 10 ]]; then current_exp="${current_exp} $(date +%H:%M:%S)"; fi
@@ -472,16 +476,23 @@ lock_unlock_user() {
     DB_LOCK="/etc/wibutunnel/locked_users.db"
     now=$(date +%s)
 
-    if grep -q "^${user}:" "$DB_LOCK" 2>/dev/null; then
-        safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))' 
-        safe_sed_delete "$user" "$DB_LOCK"
-        systemctl restart xray >/dev/null 2>&1
-        echo -e "\n${GREEN}Akun '$user' berhasil di-UNLOCK! Kini bisa login kembali.${NC}"
+    if db_has "$user" "$DB_LOCK"; then
+        if safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))  |
+        (.routing.rules[] | select(.user != null and .outboundTag == "user-stats") | .user) |= map(select(. != $u))'; then
+            safe_sed_delete "$user" "$DB_LOCK"
+            systemctl restart xray >/dev/null 2>&1
+            echo -e "\n${GREEN}Akun '$user' berhasil di-UNLOCK! Kini bisa login kembali.${NC}"
+        else
+            echo -e "\n${RED}GAGAL! Config xray tidak bisa diedit, akun masih terkunci.${NC}"
+        fi
     else
-        safe_jq_edit_args --arg user "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= (. + [$user] | unique)' 
-        echo "$user:$now:0:LOCK" >> "$DB_LOCK"
-        systemctl restart xray >/dev/null 2>&1
-        echo -e "\n${RED}Akun '$user' berhasil di-LOCK! Dipindahkan ke Recovery.${NC}"
+        if safe_jq_edit_args --arg user "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= (. + [$user] | unique)'; then
+            echo "$user:$now:0:LOCK" >> "$DB_LOCK"
+            systemctl restart xray >/dev/null 2>&1
+            echo -e "\n${RED}Akun '$user' berhasil di-LOCK! Dipindahkan ke Recovery.${NC}"
+        else
+            echo -e "\n${RED}GAGAL! Config xray tidak bisa diedit, akun tidak terkunci.${NC}"
+        fi
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }

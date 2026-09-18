@@ -1,0 +1,288 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - ssh-tunnel-install (v4.0 Kurumi + SSH Enhanced)
+# Installer stack SSH Tunnel: Dropbear 2019.78 + ws-stunnel + badvpn-udpgw
+# + routing SNI/websocket + NAT. Idempoten — aman dijalankan berulang.
+# Dipanggil oleh setup.sh (saat instalasi) dan menu m-ssh [99] (re-install).
+# ==========================================
+set -uo pipefail
+
+RED='\e[1;31m'; GREEN='\e[1;32m'; CYAN='\e[1;36m'; YELLOW='\e[1;33m'
+WHITE='\e[1;37m'; NC='\e[0m'
+LINE="${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
+err()  { echo -e "${RED}[ERROR]${NC} $*"; }
+info() { echo -e "${CYAN}[..]${NC} $*"; }
+
+# ---------- konfigurasi ----------
+DB_VER="2019.78"
+DB_SRC="/usr/local/src"
+DB_TARBALL="${DB_SRC}/dropbear-${DB_VER}.tar.bz2"
+DB_MIRRORS=(
+    "https://matt.ucc.asn.au/dropbear/releases/dropbear-${DB_VER}.tar.bz2"
+    "https://dropbear.nl/mirror/releases/dropbear-${DB_VER}.tar.bz2"
+    "https://github.com/wibuvpn/wibutunnel/releases/download/assets/dropbear-${DB_VER}.tar.bz2"
+)
+DB_PORTS=(143 109)            # port tunneling publik (raw SSH)
+DB_TLS_PORT=2222              # port internal (jalur SNI/TLS via HAProxy)
+WS_TUNNEL_PORT=10015          # ws-stunnel listen
+UDPGW_PORTS=(7100 7200 7300 7400 7500 7600)
+UDPGW_SRC="${UDPGW_SRC:-/usr/local/src/badvpn-src}"
+REPO_RAW="https://raw.githubusercontent.com/WBVPN/wibutunnel/main"
+
+[[ $EUID -ne 0 ]] && { err "harus dijalankan sebagai root"; exit 1; }
+
+export DEBIAN_FRONTEND=noninteractive
+
+# ==========================================
+# 1. DROPBEAR 2019.78 (compile dari source)
+# ==========================================
+build_dropbear() {
+    # catatan: dropbear -V menulis ke stderr
+    if /usr/sbin/dropbear -V 2>&1 | grep -q "$DB_VER"; then
+        ok "dropbear $DB_VER sudah terpasang"; return 0
+    fi
+
+    info "memasang build dependencies..."
+    apt-get update -qq >/dev/null 2>&1
+    apt-get install -y -qq gcc make build-essential zlib1g-dev libpam0g-dev bzip2 >/dev/null 2>&1
+
+    # unduh source bila tidak ada
+    if [[ ! -f "$DB_TARBALL" ]]; then
+        info "mengunduh source dropbear $DB_VER..."
+        for m in "${DB_MIRRORS[@]}"; do
+            curl -fsSL --max-time 120 -o "$DB_TARBALL" "$m" && break
+        done
+        [[ -s "$DB_TARBALL" ]] || { err "gagal mengunduh source dropbear"; return 1; }
+        # validasi: harus arsip bzip2
+        if ! file "$DB_TARBALL" 2>/dev/null | grep -qi "bzip2\|tar"; then
+            err "source dropbear yang diunduh tidak valid (bukan tar.bz2)"; return 1
+        fi
+    fi
+
+    local build="${DB_SRC}/dropbear-${DB_VER}"
+    info "compile dropbear $DB_VER (ini membutuhkan beberapa menit)..."
+    rm -rf "$build" 2>/dev/null
+    tar -xjf "$DB_TARBALL" -C "$DB_SRC" || { err "gagal ekstrak source"; return 1; }
+    ( cd "$build" && ./configure --disable-zlib --enable-pam >/dev/null 2>&1 \
+        && make -j"$(nproc)" >/dev/null 2>&1 \
+        && make install >/dev/null 2>&1 ) || { err "compile dropbear gagal"; return 1; }
+
+    # timpa binary paket (2020.x) dengan hasil compile; cadangkan dulu
+    [[ -x /usr/sbin/dropbear && ! -f /usr/sbin/dropbear.orig ]] && \
+        cp -a /usr/sbin/dropbear /usr/sbin/dropbear.orig 2>/dev/null
+    install -m 0755 /usr/local/sbin/dropbear /usr/sbin/dropbear 2>/dev/null || \
+        cp -f /usr/local/sbin/dropbear /usr/sbin/dropbear
+    /usr/sbin/dropbear -V 2>/dev/null | grep -q "$DB_VER" && ok "dropbear $DB_VER di-compile & dipasang"
+}
+
+config_dropbear() {
+    install -d -m 0755 /etc/dropbear
+    for t in rsa ecdsa dss ed25519; do
+        [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] || \
+            /usr/sbin/dropbearkey -t "$t" -f "/etc/dropbear/dropbear_${t}_host_key" >/dev/null 2>&1
+    done
+    chmod 0600 /etc/dropbear/*_host_key 2>/dev/null
+
+    local extra="-W 65536 -w -g -K 60 -I 300"
+    local p; for p in "${DB_PORTS[@]:1}"; do extra="$extra -p $p"; done
+    extra="$extra -p 127.0.0.1:${DB_TLS_PORT}"
+
+    cat > /etc/default/dropbear <<CFG
+NO_START=0
+# Port tunneling publik (raw SSH) + port internal untuk jalur SNI/TLS via HAProxy
+DROPBEAR_PORT=${DB_PORTS[0]}
+DROPBEAR_EXTRA_ARGS="$extra"
+DROPBEAR_BANNER=""
+CFG
+
+    cat > /etc/systemd/system/dropbear.service <<UNIT
+[Unit]
+Description=Dropbear ${DB_VER} Enhanced (SSH Tunneling)
+After=network.target
+[Service]
+EnvironmentFile=-/etc/default/dropbear
+ExecStart=/usr/sbin/dropbear -F -E -p \${DROPBEAR_PORT} \$DROPBEAR_EXTRA_ARGS
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+    # pastikan openssh (admin, port 22) tidak diganggu
+    systemctl daemon-reload
+    systemctl enable dropbear >/dev/null 2>&1
+    systemctl restart dropbear && ok "dropbear jalan di ${DB_PORTS[*]} + 127.0.0.1:${DB_TLS_PORT}"
+}
+
+# ==========================================
+# 2. WS-STUNNEL (websocket -> raw TCP -> dropbear)
+# ==========================================
+install_ws_stunnel() {
+    command -v python3 >/dev/null || apt-get install -y -qq python3 >/dev/null 2>&1
+    if [[ ! -x /usr/local/bin/ws-stunnel ]]; then
+        info "mengunduh ws-stunnel..."
+        curl -fsSL --max-time 30 -o /usr/local/bin/ws-stunnel "${REPO_RAW}/bin/ws-stunnel" \
+            && chmod +x /usr/local/bin/ws-stunnel
+    fi
+    [[ -x /usr/local/bin/ws-stunnel ]] || { err "ws-stunnel tidak berhasil dipasang"; return 1; }
+
+    cat > /etc/systemd/system/ws-stunnel.service <<UNIT
+[Unit]
+Description=ws-stunnel (websocket -> raw TCP -> dropbear:109)
+After=network.target
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ws-stunnel -b 127.0.0.1 -p ${WS_TUNNEL_PORT}
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload
+    systemctl enable ws-stunnel >/dev/null 2>&1
+    systemctl restart ws-stunnel && ok "ws-stunnel: 127.0.0.1:${WS_TUNNEL_PORT} -> dropbear:109"
+}
+
+# ==========================================
+# 3. BADVPN-UDPGW (UDP gateway untuk game/DNS/QUIC)
+# ==========================================
+build_udpgw() {
+    if [[ -x /usr/sbin/badvpn-udpgw ]] && /usr/sbin/badvpn-udpgw --version 2>/dev/null | grep -qi "udpgw"; then
+        ok "badvpn-udpgw sudah terpasang"; return 0
+    fi
+
+    if [[ ! -d "${UDPGW_SRC}/build" ]]; then
+        info "mengunduh source badvpn..."
+        command -v git >/dev/null || apt-get install -y -qq git >/dev/null 2>&1
+        git clone --depth 1 https://github.com/ambrop72/badvpn "$UDPGW_SRC" >/dev/null 2>&1 || {
+            err "gagal meng-clone source badvpn (UDPGW dilewati)"; return 1; }
+    fi
+
+    command -v cmake >/dev/null || apt-get install -y -qq cmake >/dev/null 2>&1
+    ( mkdir -p "${UDPGW_SRC}/build" && cd "${UDPGW_SRC}/build" && cmake .. >/dev/null 2>&1 \
+        && make badvpn-udpgw -j"$(nproc)" >/dev/null 2>&1 ) || { err "build badvpn-udpgw gagal"; return 1; }
+    install -m 0755 "${UDPGW_SRC}/build/udpgw/badvpn-udpgw" /usr/sbin/badvpn-udpgw && ok "badvpn-udpgw di-compile & dipasang"
+}
+
+install_udpgw_units() {
+    [[ -x /usr/sbin/badvpn-udpgw ]] || return 1
+    cat > /etc/systemd/system/badvpn-udpgw@.service <<'UNIT'
+[Unit]
+Description=badvpn-udpgw UDP gateway (port %i)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+ExecStart=/usr/sbin/badvpn-udpgw --listen-addr 127.0.0.1:%i --max-clients 1000 --client-socket-sndbuf 0
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload
+    local p failed=0
+    for p in "${UDPGW_PORTS[@]}"; do
+        systemctl enable --now "badvpn-udpgw@${p}.service" >/dev/null 2>&1 \
+            || { failed=1; }
+    done
+    [[ $failed -eq 0 ]] && ok "udpgw aktif di 127.0.0.1:${UDPGW_PORTS[*]}"
+}
+
+# ==========================================
+# 4. ROUTING: ip_forward + NAT + lepas port 80/443 dari layanan lawan
+# ==========================================
+enable_routing() {
+    local IFACE; IFACE="$(ip route get 1.1.1.1 2>/dev/null | awk '/dev/{print $5}' | head -1)"
+    [[ -n "$IFACE" ]] || IFACE=eth0
+
+    cat > /etc/sysctl.d/99-wibutunnel-tunnel.conf <<SYS
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+SYS
+    sysctl --system >/dev/null 2>&1
+
+    # NAT supaya klien tunnel bisa keluar ke internet
+    iptables -t nat -C POSTROUTING -o "$IFACE" -j MASQUERADE 2>/dev/null \
+        || iptables -t nat -A POSTROUTING -o "$IFACE" -j MASQUERADE
+    iptables -C FORWARD -i "$IFACE" -o "$IFACE" -j ACCEPT 2>/dev/null \
+        || iptables -A FORWARD -i "$IFACE" -o "$IFACE" -j ACCEPT
+    # simpan aturan (best-effort: jangan gagalkan keseluruhan hanya karena ini)
+    mkdir -p /etc/iptables 2>/dev/null
+    netfilter-persistent save >/dev/null 2>&1 || iptables-save > /etc/iptables/rules.v4 2>/dev/null
+    ok "ip_forward + NAT aktif (via $IFACE)"
+    return 0
+}
+
+free_ports() {
+    # HAProxy wajib punya 80 & 443. Matikan pemegang lawan bila ada.
+    local changed=0
+    if ss -tlnp 2>/dev/null | grep -q ':80 .*nginx'; then
+        info "nginx memegang port 80 -> dinonaktifkan (HAProxy yang akan merouting websocket 80)"
+        systemctl stop nginx >/dev/null 2>&1; systemctl disable nginx >/dev/null 2>&1; changed=1
+    fi
+    if ss -tlnp 2>/dev/null | grep -q ':80 .*apache2'; then
+        info "apache memegang port 80 -> dipindah ke 8080"
+        grep -q '^Listen 8080' /etc/apache2/ports.conf 2>/dev/null || sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
+        systemctl restart apache2 >/dev/null 2>&1; changed=1
+    fi
+    # arsitektur lawan (sslh / stunnel4) jangan ambil alih 443
+    systemctl stop sslh stunnel4 2>/dev/null
+    systemctl disable sslh stunnel4 2>/dev/null
+    systemctl mask sslh stunnel4 2>/dev/null
+    [[ $changed -eq 1 ]] && sleep 1
+    return 0
+}
+
+# ==========================================
+# 5. Inisialisasi group & DB akun SSH (via common.sh bila ada)
+# ==========================================
+init_ssh_accounting() {
+    if [[ -f /usr/local/bin/common.sh ]]; then
+        # common.sh mengecek lisensi pada source -> pakai subshell yang dibungkam
+        ( source /usr/local/bin/common.sh >/dev/null 2>&1; ssh_init ) >/dev/null 2>&1 \
+            && ok "group & database akun SSH siap" && return 0
+    fi
+    # fallback tanpa common.sh
+    getent group ssh_tunnel >/dev/null 2>&1 || groupadd --system ssh_tunnel >/dev/null 2>&1
+    mkdir -p /etc/xray /etc/wibutunnel
+    touch /etc/xray/ssh_exp.conf /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db \
+          /etc/wibutunnel/locked_users.db /etc/wibutunnel/ssh_pass.db
+    chmod 600 /etc/wibutunnel/*.db 2>/dev/null
+    ok "group & database akun SSH siap (fallback)"
+}
+
+# ==========================================
+# MAIN
+# ==========================================
+echo -e "${LINE}"
+echo -e "        ${WHITE}INSTALL SSH TUNNEL STACK${NC}"
+echo -e "   dropbear 2019.78 + ws-stunnel + badvpn-udpgw"
+echo -e "${LINE}"
+
+rc=0
+build_dropbear   || rc=1
+config_dropbear  || rc=1
+install_ws_stunnel || rc=1
+build_udpgw      || rc=1     # UDP gw opsional (boleh gagal)
+install_udpgw_units
+enable_routing   || rc=1
+free_ports
+init_ssh_accounting
+
+echo -e "${LINE}"
+if [[ $rc -eq 0 ]]; then
+    ok "SSH Tunnel Stack siap! Mode: SNI 443 + WS 80/443 + UDP gw"
+else
+    err "beberapa komponen gagal dipasang — periksa log di atas."
+fi
+echo -e "${LINE}"
+exit $rc

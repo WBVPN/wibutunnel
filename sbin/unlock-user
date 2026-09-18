@@ -9,14 +9,18 @@ source /etc/wibutunnel/bot.conf 2>/dev/null
 
 user=$1
 mode=$2   # AUTO atau MANUAL
+# $3 = NORESTART (dipakai unlocker-wibu agar xray hanya direstart sekali untuk banyak user)
+reboot_mode="${3:-RESTART}"
 
 [[ -z "$user" ]] && exit 1
 
-safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
-
-safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
-
-systemctl restart xray >/dev/null 2>&1
+if safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'; then
+    safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+    [[ "$reboot_mode" == "NORESTART" ]] || systemctl restart xray >/dev/null 2>&1
+else
+    echo "[ERROR] unlock-user: gagal mengedit config xray, user '$user' masih terkunci" >&2
+    exit 1
+fi
 
 # === TELEGRAM NOTIFICATION ===
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
