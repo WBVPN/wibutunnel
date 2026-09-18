@@ -42,7 +42,7 @@ safe_update() {
         algojo-wibu|algojo-kuota|unlocker-wibu) target_dir="/usr/local/sbin" ;;
     esac
 
-    local raw_url="https://raw.githubusercontent.com/WBVPN/WIBUTUNNEL/main/${repo_path}?$(date +%s)"
+    local raw_url="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/${repo_path}?$(date +%s)"
     local tmp="/etc/wibutunnel/tmp/${base_name}"
 
     curl -fsS -L --max-time 30 -o "$tmp" "$raw_url" 2>/dev/null
