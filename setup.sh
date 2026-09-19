@@ -21,8 +21,13 @@ clear
 echo -e "\e[1;36m[+] Memeriksa Lisensi Script...\e[0m"
 
 # [SECURITY] Daftar lisensi ada di repo PRIVATE (WBVPN/wibutunnel-izin).
-# IP & nama customer tidak lagi terbuka di repo publik.
+# Token tidak di-hardcode di script (repo publik). Saat install, token
+# ditulis ke /etc/wibutunnel/izin_token (hanya baca root). Cara ganti:
+#   echo "TOKEN_BARU" > /etc/wibutunnel/izin_token
+mkdir -p /etc/wibutunnel
 IZIN_TOKEN="${IZIN_TOKEN:-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}"
+printf '%s' "$IZIN_TOKEN" > /etc/wibutunnel/izin_token
+chmod 600 /etc/wibutunnel/izin_token
 LINK_IZIN="https://WBVPN:${IZIN_TOKEN}@raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
 GET_DATA=$(curl -sS --max-time 10 "$LINK_IZIN" | grep -w "$MYIP")
 

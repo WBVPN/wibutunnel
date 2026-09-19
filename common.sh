@@ -168,12 +168,14 @@ check_license() {
         exit 1
     fi
 
-    # [SECURITY] Daftar lisensi disimpan di repo PRIVATE (WBVPN/wibutunnel-izin)
-    # supaya IP & nama customer tidak terbuka di publik. Akses pakai token
-    # read-only yang di-embed di sini. Jika token ini bocor, dampaknya hanya
-    # bisa membaca daftar IP, tidak bisa menulis/menghapus.
-    # Ganti IZIN_TOKEN saat memperbarui kredensial.
-    local IZIN_TOKEN="${IZIN_TOKEN:-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}"
+    # [SECURITY] Daftar lisensi disimpan di repo PRIVATE (WBVPN/wibutunnel-izin).
+    # Token akses TIDAK di-hardcode di script (repo publik bisa dibaca semua orang).
+    # Token diambil dari (berurutan):
+    #   1. env var IZIN_TOKEN
+    #   2. file lokal /etc/wibutunnel/izin_token  (dibuat saat install)
+    #   3. fallback: repo publik lama (kosong) -> akan ditolak
+    local IZIN_TOKEN="${IZIN_TOKEN:-}"
+    [[ -z "$IZIN_TOKEN" && -f /etc/wibutunnel/izin_token ]] && IZIN_TOKEN=$(cat /etc/wibutunnel/izin_token 2>/dev/null)
     local LINK_IZIN="https://WBVPN:${IZIN_TOKEN}@raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
     local GET_DATA=$(curl -sS --max-time 10 "$LINK_IZIN" | grep -F -w "$MYIP")
 
