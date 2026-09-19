@@ -269,12 +269,31 @@ build_udpgw() {
             err "source badvpn tidak valid setelah unduhan"; return 1; }
     fi
 
+    # Kita hanya butuh badvpn-udpgw. Konfigurasi default membangun juga
+    # server/client/ncd, yg menarik find_package(OpenSSL/NSPR/NSS REQUIRED)
+    # -> VPS tanpa libssl-dev/nspr/nss dev akan gagal di configure ("Could
+    # NOT find PkgConfig"/"OpenSSL"). Matikan semua, hidupkan udpgw saja.
+    local CFG_FLAGS="-DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1"
+    # Build dir lama bisa ter-cache flag lama (BUILD_SERVER ON). Cek marker:
+    # bila flag berubah, buang cache cmake-nya.
+    local MARK="${UDPGW_SRC}/.wibu_cfg"
+    # HATI-HATI: cache cmake lama (BUILD_SERVER ON) tidak akan ditimpa oleh
+    # option() baru -> find_package(OpenSSL) tetap dipanggil -> gagal. Build
+    # dir harus dibuang bila marker tidak ada/berbeda (termasuk cache warisan
+    # dari installer versi lama).
+    if [[ -d "${UDPGW_SRC}/build" && "$(cat "$MARK" 2>/dev/null)" != "$CFG_FLAGS" ]]; then
+        info "menghapus cache cmake lama (flag konfigurasi berubah)..."
+        rm -rf "${UDPGW_SRC}/build"
+    fi
+
     # output build disimpan ke log -- kalau gagal, penyebabnya bisa dilihat
     # (sebelumnya semua output dibuang ke /dev/null jadi tidak terdebug)
     if ( mkdir -p "${UDPGW_SRC}/build" && cd "${UDPGW_SRC}/build" \
-        && cmake .. >>"$LOG" 2>&1 && make badvpn-udpgw -j"$(nproc)" >>"$LOG" 2>&1 )
+        && cmake .. $CFG_FLAGS >>"$LOG" 2>&1 \
+        && make badvpn-udpgw -j"$(nproc)" >>"$LOG" 2>&1 )
     then
         install -m 0755 "${UDPGW_SRC}/build/udpgw/badvpn-udpgw" /usr/sbin/badvpn-udpgw \
+            && printf '%s' "$CFG_FLAGS" >"$MARK" \
             && ok "badvpn-udpgw di-compile & dipasang"
     else
         err "build badvpn-udpgw gagal (lihat $LOG)"
