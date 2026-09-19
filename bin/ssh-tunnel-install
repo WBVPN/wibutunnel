@@ -73,15 +73,35 @@ build_dropbear() {
         cp -a /usr/sbin/dropbear /usr/sbin/dropbear.orig 2>/dev/null
     install -m 0755 /usr/local/sbin/dropbear /usr/sbin/dropbear 2>/dev/null || \
         cp -f /usr/local/sbin/dropbear /usr/sbin/dropbear
+    # dropbearkey juga diinstall ke /usr/sbin (config_dropbear memakainya;
+    # make install default menaruhnya di /usr/local/sbin)
+    install -m 0755 /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey 2>/dev/null || \
+        cp -f /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey 2>/dev/null || true
     /usr/sbin/dropbear -V 2>/dev/null | grep -q "$DB_VER" && ok "dropbear $DB_VER di-compile & dipasang"
 }
 
 config_dropbear() {
     install -d -m 0755 /etc/dropbear
-    for t in rsa ecdsa dss ed25519; do
-        [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] || \
-            /usr/sbin/dropbearkey -t "$t" -f "/etc/dropbear/dropbear_${t}_host_key" >/dev/null 2>&1
+    # dropbearkey bisa berada di /usr/local/sbin (hasil compile default) atau
+    # /usr/sbin (paket distro). Cari dulu, kalau tidak ada buat lewat dropbear -R.
+    local KEYGEN=""; local k
+    for k in /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey; do
+        [[ -x "$k" ]] && KEYGEN="$k" && break
     done
+    for t in rsa ecdsa dss ed25519; do
+        [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] && continue
+        if [[ -n "$KEYGEN" ]]; then
+            "$KEYGEN" -t "$t" -f "/etc/dropbear/dropbear_${t}_host_key" >/dev/null 2>&1
+        else
+            # fallback: dropbear sendiri bisa generate key (-R)
+            /usr/sbin/dropbear -R -p 127.0.0.1:1 >/dev/null 2>&1
+            break
+        fi
+    done
+    # verifikasi minimal ada 1 host key, kalau tidak ada gagal total
+    if ! ls /etc/dropbear/dropbear_*_host_key >/dev/null 2>&1; then
+        err "gagal membuat host key dropbear"; return 1
+    fi
     chmod 0600 /etc/dropbear/*_host_key 2>/dev/null
 
     local extra="-W 65536 -w -g -K 60 -I 300"
