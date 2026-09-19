@@ -64,7 +64,7 @@ rm -f /usr/local/bin/lock-user /usr/local/bin/unlock-user
 rm -f /usr/local/bin/bot-daemon /usr/local/bin/bot-webhook
 rm -f /usr/local/bin/m-ssh /usr/local/bin/ws-stunnel /usr/local/bin/ssh-tunnel-install
 rm -f /usr/local/bin/wibu-daemon /usr/local/bin/watchdog.sh /usr/local/bin/renew-cert-wibu.sh
-rm -f /usr/local/bin/common.sh
+rm -f /usr/local/bin/common.sh /usr/local/bin/common
 
 # [PATCH] Matikan & hapus swapfile yang dibuat installer
 if swapon --show 2>/dev/null | grep -q "/swapfile"; then
@@ -84,7 +84,7 @@ if [ -f /etc/security/limits.conf.wibu.bak ]; then
 fi
 
 # Bersihkan Cron Jobs bawaan Wibu Tunneling
-crontab -l 2>/dev/null | grep -v -E 'watchdog\.sh|/usr/local/bin/xp|unlocker-wibu|renew-cert-wibu|algojo|drop_caches.*swapon|/sbin/reboot' | crontab -
+crontab -l 2>/dev/null | grep -v -E 'watchdog\.sh|/usr/local/bin/xp|unlocker-wibu|renew-cert-wibu|algojo|drop_caches.*swapon|/sbin/reboot|m-backup' | crontab -
 
 # Hapus service systemd
 rm -f /etc/systemd/system/wibu-daemon.service
@@ -99,6 +99,14 @@ systemctl daemon-reload
 # Hapus logrotate
 rm -f /etc/logrotate.d/xray
 
+# [PATCH] Hapus binary hasil compile + source tree SSH stack (benar-bersih)
+rm -f /usr/sbin/dropbear /usr/sbin/badvpn-udpgw
+rm -rf /usr/local/src/dropbear-2019.78 /usr/local/src/dropbear-2019.78.tar.bz2 /usr/local/src/badvpn-src
+rm -f /var/log/wibutunnel-udpgw-build.log /var/log/wibu-backup.log
+# [PATCH] Reset state failed unit yang tersisa di systemd
+systemctl reset-failed dropbear ws-stunnel 'badvpn-udpgw@*' 2>/dev/null
+systemctl daemon-reload
+
 # Bersihkan .profile & sisipan lain
 sed -i '/^clear$/d; /^menu$/d' /root/.profile 2>/dev/null
 rm -f /root/domain 2>/dev/null
@@ -106,6 +114,9 @@ rm -f /root/domain 2>/dev/null
 # Uninstall paket bawaan (opsional)
 apt-get remove --purge -y haproxy vnstat jq >/dev/null 2>&1
 apt-get autoremove -y >/dev/null 2>&1
+
+# [PATCH] Hapus direktori config terakhir (tmp & sisa file)
+rm -rf /etc/wibutunnel
 
 echo -e "\e[32mUninstalasi Selesai! VPS sudah bersih dari WIBU TUNNELING.\e[0m"
 echo -e "\e[33mCatatan: tuning kernel di /etc/sysctl.conf (BBR, buffer, nonaktifkan IPv6) dan\e[0m"

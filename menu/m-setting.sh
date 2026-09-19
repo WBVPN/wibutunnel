@@ -236,7 +236,6 @@ case $sub_setting in
                 read -p "Masukkan CHAT ID   : " input_chatid
                 # [FIX] validasi token dulu sebelum disimpan
                 if [[ -n "$input_token" && -n "$input_chatid" ]]; then
-                    local tk_test
                     tk_test=$(curl -s --max-time 10 "https://api.telegram.org/bot${input_token}/getMe")
                     if ! echo "$tk_test" | grep -q '"ok":true'; then
                         echo -e "${RED}BOT TOKEN tidak valid! (cek token dari @BotFather)${NC}"
