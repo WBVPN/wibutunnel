@@ -313,6 +313,13 @@ cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain
 
 # XRAY CORE
 curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install
+# Installer XTLS akan MELEWATI pembuatan file service bila binary xray sudah
+# ada tanpa uninstall bersih (uninstall wibutunnel menghapus unit tapi
+# meninggalkan /usr/local/bin/xray). Tanpa service, xray tidak bisa jalan.
+if [[ ! -f /etc/systemd/system/xray.service ]]; then
+    echo -e "\e[33m[!] service xray tidak ada, memaksa reinstall...\e[0m"
+    curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f
+fi
 
 # Backup config lama
 [ -f /usr/local/etc/xray/config.json ] && cp /usr/local/etc/xray/config.json "/usr/local/etc/xray/config.json.bak.$(date +%F_%H%M%S)"

@@ -24,7 +24,11 @@ fi
 umount -f /var/log/xray 2>/dev/null
 
 # Hapus file konfigurasi dan database
-rm -rf /usr/local/etc/xray /etc/haproxy /etc/wibutunnel /etc/xray /var/log/xray
+rm -rf /usr/local/etc/xray /etc/haproxy /etc/wibutunnel /etc/xray /var/log/xray \
+       /usr/local/share/xray
+# binary xray juga dihapus: installer XTLS mendeteksinya dan akan
+# MELEWATI pembuatan service ('No new version') saat reinstall.
+rm -f /usr/local/bin/xray
 
 # [SSH TUNNEL] Hentikan & bersihkan stack SSH (dropbear 2019 + ws-stunnel + udpgw)
 systemctl stop dropbear ws-stunnel 2>/dev/null
