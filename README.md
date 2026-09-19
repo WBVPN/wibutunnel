@@ -141,37 +141,40 @@ Selesai. Bot langsung aktif dan bisa dipakai dari Telegram.
 
 ## 📂 Struktur Repo
 
+> 🔒 **Sejak v4.0 Kurumi+, seluruh script di-compile (shc) menjadi ELF binary.**
+> Source code mentah tidak diterbitkan di GitHub — hanya binary yang ada di
+> folder `bin/`. `common.sh` di-inline ke setiap binary saat build (compiled
+> binary tidak bisa `source` file lain).
+
 ```
-setup.sh                  # Installer utama
+setup.sh                  # Installer utama (plain, perlu bisa dibaca GitHub)
 uninstall.sh              # Uninstaller lengkap
-common.sh                 # Fungsi bersama (user mgt, xray edit, safe helpers)
-izin.txt                  # Lisensi/izin penggunaan
-├── menu/
-│   ├── menu.sh           # Dashboard utama
-│   ├── m-ssh.sh          # Menu SSH Tunnel
-│   ├── m-vless.sh        # Menu VLESS
-│   ├── m-vmess.sh        # Menu VMESS
-│   ├── m-trojan.sh       # Menu TROJAN
-│   ├── m-setting.sh      # Menu setting & monitoring
-│   ├── m-backup.sh       # Menu backup
-│   ├── xp.sh             # Auto-expire engine (cron)
-│   ├── bot-daemon.sh     # Handler Telegram bot
-│   ├── bot-webhook.sh    # Webhook receiver (systemd socket)
-│   ├── menu-lock.sh      # Recovery Center: kunci
-│   ├── menu-unlock.sh    # Recovery Center: buka
-│   ├── menu-recovery.sh  # Daftar akun terkunci
-│   └── cek-trafik.sh     # Cek pemakaian kuota
-├── sbin/
-│   ├── algojo-wibu       # Daemon: limit IP & multi-login
-│   ├── algojo-kuota      # Daemon: limit kuota per-user
-│   ├── lock-user         # Kunci user
-│   ├── unlock-user       # Buka user
-│   └── unlocker-wibu     # Auto-unlock setelah durasi habis
-├── bin/
-│   ├── ssh-tunnel-install# Installer SSH stack (dropbear + ws + udpgw)
-│   └── ws-stunnel        # WebSocket → SSH bridge (Python)
-# izin.txt sekarang di repo PRIVATE (WBVPN/wibutunnel-izin) — lihat bagian Lisensi)
+bin/                      # Semua binary hasil compile shc
+├── menu                  # Dashboard utama
+├── m-ssh                 # Menu SSH Tunnel
+├── m-vless               # Menu VLESS
+├── m-vmess               # Menu VMESS
+├── m-trojan              # Menu TROJAN
+├── m-setting             # Menu setting & monitoring
+├── m-backup              # Menu backup
+├── xp                    # Auto-expire engine (cron)
+├── bot-daemon            # Handler Telegram bot
+├── bot-webhook           # Webhook receiver (systemd socket)
+├── menu-lock             # Recovery Center: kunci
+├── menu-unlock           # Recovery Center: buka
+├── menu-recovery         # Daftar akun terkunci
+├── cek-trafik            # Cek pemakaian kuota
+├── algojo-wibu           # Daemon: limit IP & multi-login
+├── algojo-kuota          # Daemon: limit kuota per-user
+├── lock-user             # Kunci user
+├── unlock-user           # Buka user
+├── unlocker-wibu         # Auto-unlock setelah durasi habis
+├── ssh-tunnel-install    # Installer SSH stack (dropbear + ws + udpgw)
+└── ws-stunnel            # WebSocket → SSH bridge (Python)
 ```
+
+**File `izin.txt` (daftar IP customer) ada di repo PRIVATE terpisah**
+(`WBVPN/wibutunnel-izin`) — bukan di repo publik ini.
 
 ---
 
