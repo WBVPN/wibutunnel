@@ -166,11 +166,18 @@ if ! swapon --show | grep -q "/swapfile"; then
     echo "/swapfile none swap sw 0 0" >> /etc/fstab
 fi
 
-# KERNEL TUNING
-if ! grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf; then
-cat <<EOF >> /etc/sysctl.conf
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
+# KERNEL TUNING (file terpisah, idempotent: update selalu menimpa nilai lama)
+# Kombinasi terbaik dari network-tune tradisional + tuning stabil wibu-lite:
+#   - BBR + fq: congestion control modern, kecepatan optimal pada lossy link
+#   - buffer 16MB per-socket: throughput besar tanpa boros RAM
+#   - tcp_slow_start_after_idle=0: koneksi idle tidak mulai pelan lagi
+#   - tcp_keepalive_time=600: keep-alive 10 menit, koneksi stabil tahan idle
+#   - tcp_notsent_lowat: hemat RAM per koneksi (penting untuk VPS RAM kecil)
+#   - tcp_no_metrics_save: tidak pakai cache route lama (route basi = lemot)
+#   - busy_poll/busy_read: latensi turun untuk socket yang sibuk
+cat <<EOF > /etc/sysctl.d/99-wibutune.conf
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
 net.ipv4.tcp_mem = 65536 131072 262144
 net.ipv4.tcp_rmem = 4096 87380 16777216
 net.ipv4.tcp_wmem = 4096 65536 16777216
@@ -178,14 +185,26 @@ net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
 net.core.somaxconn = 65535
 net.core.netdev_max_backlog = 65535
+net.core.busy_poll = 50
+net.core.busy_read = 50
 net.ipv4.tcp_fastopen = 3
 net.ipv4.tcp_max_syn_backlog = 8192
 net.ipv4.tcp_max_tw_buckets = 2000000
 net.ipv4.tcp_fin_timeout = 10
 net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_keepalive_probes = 3
+net.ipv4.tcp_keepalive_intvl = 30
+net.ipv4.tcp_notsent_lowat = 16384
+net.ipv4.tcp_no_metrics_save = 1
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_sack = 1
 EOF
-sysctl -p >/dev/null 2>&1
-fi
+# Hapus duplikat lama di /etc/sysctl.conf (sudah dipindah ke 99-wibutune.conf)
+# agar tidak ada dua tempat sumber kebenaran.
+sed -i '/^net\.core\.default_qdisc/d; /^net\.ipv4\.tcp_congestion_control/d; /^net\.ipv4\.tcp_mem/d; /^net\.ipv4\.tcp_rmem/d; /^net\.ipv4\.tcp_wmem/d; /^net\.core\.rmem_max/d; /^net\.core\.wmem_max/d; /^net\.core\.somaxconn/d; /^net\.core\.netdev_max_backlog/d; /^net\.ipv4\.tcp_fastopen/d; /^net\.ipv4\.tcp_max_syn_backlog/d; /^net\.ipv4\.tcp_max_tw_buckets/d; /^net\.ipv4\.tcp_fin_timeout/d; /^net\.ipv4\.tcp_tw_reuse/d' /etc/sysctl.conf 2>/dev/null
+sysctl --system >/dev/null 2>&1
 
 # Backup limits.conf yang asli supaya bisa direstore saat uninstall
 [ -f /etc/security/limits.conf ] && cp /etc/security/limits.conf /etc/security/limits.conf.wibu.bak

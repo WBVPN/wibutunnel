@@ -57,6 +57,7 @@ systemctl daemon-reload
 # Hapus file executable menu & daemon
 rm -f /usr/local/sbin/algojo-wibu /usr/local/sbin/algojo-kuota /usr/local/sbin/unlocker-wibu
 rm -f /usr/local/sbin/network-tune.sh
+rm -f /etc/sysctl.d/99-wibutune.conf
 rm -f /usr/local/bin/menu /usr/local/bin/m-vless /usr/local/bin/m-vmess /usr/local/bin/m-trojan
 rm -f /usr/local/bin/m-setting /usr/local/bin/m-backup /usr/local/bin/menu-lock /usr/local/bin/menu-unlock
 rm -f /usr/local/bin/menu-recovery /usr/local/bin/cek-trafik /usr/local/bin/xp
@@ -119,6 +120,6 @@ apt-get autoremove -y >/dev/null 2>&1
 rm -rf /etc/wibutunnel
 
 echo -e "\e[32mUninstalasi Selesai! VPS sudah bersih dari WIBU TUNNELING.\e[0m"
-echo -e "\e[33mCatatan: tuning kernel di /etc/sysctl.conf (BBR, buffer, nonaktifkan IPv6) dan\e[0m"
+echo -e "\e[33mCatatan: tuning kernel (BBR, buffer, nonaktifkan IPv6) dan\e[0m"
 echo -e "\e[33m          parameter GRUB (ipv6.disable=1) sengaja tidak diubah karena\e[0m"
 echo -e "\e[33m          bersifat tuning sistem dan tidak mengganggu operasional VPS.\e[0m"

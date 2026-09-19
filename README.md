@@ -268,7 +268,24 @@ bash <(curl -fsSL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninst
 ## ⚠️ Syarat
 
 - **OS:** Ubuntu 20.04 / 22.04 / Debian 11+ (x86_64 atau aarch64)
-- **RAM:** minimal 512 MB (rekomendasi 1 GB+)
+- **RAM:** minimal 512 MB (rekomendasi 1 GB+; swap dibuat otomatis)
+
+### 🚄 Tuning Performa (bawaan)
+
+Installer mengaktifkan tuning kernel di `/etc/sysctl.d/99-wibutune.conf` yang
+otomatis dimuat ulang saat boot:
+
+- **BBR + `fq` qdisc** — congestion control modern, optimal di jaringan lossy
+- **Buffer 16 MB per-socket** — throughput tinggi tanpa boros RAM
+- **`tcp_slow_start_after_idle=0`** — koneksi idle tidak mulai lambat lagi
+- **`tcp_keepalive_time=600`** — keep-alive 10 menit, koneksi stabil saat idle
+- **`tcp_notsent_lowat=16384`** — hemat RAM per koneksi (penting untuk VPS kecil)
+- **`tcp_no_metrics_save=1`** — tidak memakai cache route basi
+- **`busy_poll`/`busy_read=50`** — latensi turun pada socket yang sibuk
+
+Selain itu ada **QoS low-latency** (`network-tune.service`) yang memberi prioritas
+pada paket kecil (ACK, UDP, ICMP) via `tc` HTB + `fq_codel`, dan **auto-swap**
+yang menyesuaikan ukuran dengan RAM VPS.
 - **Domain:** sudah di-A record ke IP VPS (untuk SSL & SNI)
 - **Port terbuka:** 80, 443, 109, 143, 22
 - **Akses root**
