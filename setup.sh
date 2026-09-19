@@ -583,10 +583,12 @@ cat > /etc/wibutunnel/ssh-banner <<'BANNEREOF'
 <font color="green">Powered by WIBU VPN</font><br>
 </center></body></html>
 BANNEREOF
-# dropbear membaca banner dari argumen -b (systemd EnvironmentFile tidak
-# ekspansi $VAR di dalam DROPBEAR_EXTRA_ARGS -> tulis argumen lengkap).
+# catatan: config /etc/default/dropbear (DROPBEAR_PORT + DROPBEAR_EXTRA_ARGS
+# + DROPBEAR_BANNER) sudah ditulis lengkap & benar oleh ssh-tunnel-install di
+# atas, termasuk port publik 143/109 & port internal 2222. Jangan timpa di
+# sini — penimpaan sebelumnya menghapus port 143 & menimbulkan konflik argumen.
 if [ -f /etc/default/dropbear ]; then
-    sed -i 's|^DROPBEAR_EXTRA_ARGS=.*|DROPBEAR_EXTRA_ARGS="-W 65536 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222 -b /etc/wibutunnel/ssh-banner"|' /etc/default/dropbear
+    # hanya pastikan banner ada (dropbear -b butuh file ini)
     grep -q '^DROPBEAR_BANNER=' /etc/default/dropbear \
         && sed -i 's|^DROPBEAR_BANNER=.*|DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"|' /etc/default/dropbear \
         || echo 'DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"' >> /etc/default/dropbear
