@@ -152,6 +152,15 @@ config_dropbear() {
     local extra="-W 32768 -w -g -K 60 -I 300"
     local p; for p in "${DB_PORTS[@]:1}"; do extra="$extra -p $p"; done
     extra="$extra -p 127.0.0.1:${DB_TLS_PORT}"
+    # Pertahankan banner SSH kalau admin sudah men-set-nya (menu [10] Edit
+    # Banner SSH menambah '-b /etc/wibutunnel/ssh-banner' ke file ini).
+    # Tanpa ini, re-run installer/repair menulis ulang file & banner hilang.
+    local BANNER_FILE="/etc/wibutunnel/ssh-banner"
+    if [[ -f "$BANNER_FILE" ]] && ! grep -q -- "-b ${BANNER_FILE}" <<<"$extra"; then
+        local old_banner=""
+        old_banner="$(grep -o -- "-b ${BANNER_FILE}" /etc/default/dropbear 2>/dev/null | head -1)"
+        [[ -n "$old_banner" ]] && extra="$extra $old_banner"
+    fi
 
     cat > /etc/default/dropbear <<CFG
 NO_START=0
