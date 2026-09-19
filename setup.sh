@@ -405,7 +405,7 @@ defaults
 
 # ===================== TAHAP 1 =====================
 frontend ssl_sni
-    bind *:443 ssl crt /etc/haproxy/certs/wibuvpn.priasawit.web.id.pem alpn h2,http/1.1 tfo
+    bind *:443 ssl crt /etc/haproxy/certs/$domain.pem alpn h2,http/1.1 tfo
     mode tcp
     tcp-request inspect-delay 5s
 
