@@ -175,6 +175,7 @@ fi
 #   - tcp_notsent_lowat: hemat RAM per koneksi (penting untuk VPS RAM kecil)
 #   - tcp_no_metrics_save: tidak pakai cache route lama (route basi = lemot)
 #   - busy_poll/busy_read: latensi turun untuk socket yang sibuk
+#   - tcp_mtu_probing: deteksi MTU otomatis, cegah paket nyangkut (RTO VPN)
 cat <<EOF > /etc/sysctl.d/99-wibutune.conf
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
@@ -198,6 +199,7 @@ net.ipv4.tcp_keepalive_probes = 3
 net.ipv4.tcp_keepalive_intvl = 30
 net.ipv4.tcp_notsent_lowat = 16384
 net.ipv4.tcp_no_metrics_save = 1
+net.ipv4.tcp_mtu_probing = 1
 net.ipv4.tcp_window_scaling = 1
 net.ipv4.tcp_sack = 1
 EOF

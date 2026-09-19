@@ -282,6 +282,7 @@ otomatis dimuat ulang saat boot:
 - **`tcp_notsent_lowat=16384`** — hemat RAM per koneksi (penting untuk VPS kecil)
 - **`tcp_no_metrics_save=1`** — tidak memakai cache route basi
 - **`busy_poll`/`busy_read=50`** — latensi turun pada socket yang sibuk
+- **`tcp_mtu_probing=1`** — deteksi MTU otomatis, mencegah paket nyangkut (RTO pada VPN)
 
 Selain itu ada **QoS low-latency** (`network-tune.service`) yang memberi prioritas
 pada paket kecil (ACK, UDP, ICMP) via `tc` HTB + `fq_codel`, dan **auto-swap**
