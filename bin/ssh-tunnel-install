@@ -224,23 +224,45 @@ build_udpgw() {
     # WAJIB pasang build deps sendiri. Jangan andalkan build_dropbear() --
     # kalau dropbear sudah terpasang, fungsi itu kembali lebih awal dan
     # gcc/make/cmake tidak pernah di-install -> build pasti gagal.
+    local LOG="/var/log/wibutunnel-udpgw-build.log"
+    install -d -m 0755 "$(dirname "$LOG")"
     info "memasang build dependencies badvpn..."
-    apt-get update -qq >/dev/null 2>&1
-    apt-get install -y -qq build-essential cmake git >/dev/null 2>&1
+    apt-get update -qq >"$LOG" 2>&1
+    apt-get install -y -qq build-essential cmake git >>"$LOG" 2>&1
 
-    # clone source bila belum ada
-    if [[ ! -d "${UDPGW_SRC}/CMakeLists.txt" ]]; then
+    # pastikan benar-benar ada; apt bisa saja diam-diam gagal (repo bermasalah,
+    # apt lock, dns). Kalau ada yg hilang, sebutkan satu per satu.
+    local miss=()
+    command -v gcc   >/dev/null 2>&1 || miss+=("gcc/build-essential")
+    command -v make  >/dev/null 2>&1 || miss+=("make")
+    command -v cmake >/dev/null 2>&1 || miss+=("cmake")
+    command -v git   >/dev/null 2>&1 || miss+=("git")
+    if [[ ${#miss[@]} -gt 0 ]]; then
+        err "build dependencies tidak tersedia: ${miss[*]}"
+        err "apt gagal memasangnya. 20 baris terakhir log:"
+        tail -n 20 "$LOG" 2>/dev/null | while IFS= read -r l; do err "  $l"; done
+        err "coba manual: apt-get update && apt-get install -y build-essential cmake git"
+        return 1
+    fi
+
+    # clone source bila belum ada. HATI-HATI: sisa clone/run sebelumnya bisa
+    # meninggalkan folder tanpa CMakeLists.txt -> 'git clone' ke folder tidak
+    # kosong akan gagal ("already exists and is not an empty directory").
+    # Buang dulu sisa yg tidak valid.
+    if [[ -d "$UDPGW_SRC" && ! -f "$UDPGW_SRC/CMakeLists.txt" ]]; then
+        info "membersihkan sisa source badvpn yg rusak..."
+        rm -rf "$UDPGW_SRC"
+    fi
+    if [[ ! -f "$UDPGW_SRC/CMakeLists.txt" ]]; then
         info "mengunduh source badvpn..."
-        git clone --depth 1 https://github.com/ambrop72/badvpn "$UDPGW_SRC" >/dev/null 2>&1 || {
+        git clone --depth 1 https://github.com/ambrop72/badvpn "$UDPGW_SRC" >>"$LOG" 2>&1 || {
             err "gagal meng-clone source badvpn (UDPGW dilewati)"; return 1; }
     fi
 
-    # build log disimpan ke file -- kalau gagal, penyebabnya bisa dilihat
+    # output build disimpan ke log -- kalau gagal, penyebabnya bisa dilihat
     # (sebelumnya semua output dibuang ke /dev/null jadi tidak terdebug)
-    local LOG="/var/log/wibutunnel-udpgw-build.log"
-    install -d -m 0755 "$(dirname "$LOG")"
     if ( mkdir -p "${UDPGW_SRC}/build" && cd "${UDPGW_SRC}/build" \
-        && cmake .. >"$LOG" 2>&1 && make badvpn-udpgw -j"$(nproc)" >>"$LOG" 2>&1 )
+        && cmake .. >>"$LOG" 2>&1 && make badvpn-udpgw -j"$(nproc)" >>"$LOG" 2>&1 )
     then
         install -m 0755 "${UDPGW_SRC}/build/udpgw/badvpn-udpgw" /usr/sbin/badvpn-udpgw \
             && ok "badvpn-udpgw di-compile & dipasang"
