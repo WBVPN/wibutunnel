@@ -182,17 +182,35 @@ build_udpgw() {
         ok "badvpn-udpgw sudah terpasang"; return 0
     fi
 
-    if [[ ! -d "${UDPGW_SRC}/build" ]]; then
+    # WAJIB pasang build deps sendiri. Jangan andalkan build_dropbear() --
+    # kalau dropbear sudah terpasang, fungsi itu kembali lebih awal dan
+    # gcc/make/cmake tidak pernah di-install -> build pasti gagal.
+    info "memasang build dependencies badvpn..."
+    apt-get update -qq >/dev/null 2>&1
+    apt-get install -y -qq build-essential cmake git >/dev/null 2>&1
+
+    # clone source bila belum ada
+    if [[ ! -d "${UDPGW_SRC}/CMakeLists.txt" ]]; then
         info "mengunduh source badvpn..."
-        command -v git >/dev/null || apt-get install -y -qq git >/dev/null 2>&1
         git clone --depth 1 https://github.com/ambrop72/badvpn "$UDPGW_SRC" >/dev/null 2>&1 || {
             err "gagal meng-clone source badvpn (UDPGW dilewati)"; return 1; }
     fi
 
-    command -v cmake >/dev/null || apt-get install -y -qq cmake >/dev/null 2>&1
-    ( mkdir -p "${UDPGW_SRC}/build" && cd "${UDPGW_SRC}/build" && cmake .. >/dev/null 2>&1 \
-        && make badvpn-udpgw -j"$(nproc)" >/dev/null 2>&1 ) || { err "build badvpn-udpgw gagal"; return 1; }
-    install -m 0755 "${UDPGW_SRC}/build/udpgw/badvpn-udpgw" /usr/sbin/badvpn-udpgw && ok "badvpn-udpgw di-compile & dipasang"
+    # build log disimpan ke file -- kalau gagal, penyebabnya bisa dilihat
+    # (sebelumnya semua output dibuang ke /dev/null jadi tidak terdebug)
+    local LOG="/var/log/wibutunnel-udpgw-build.log"
+    install -d -m 0755 "$(dirname "$LOG")"
+    if ( mkdir -p "${UDPGW_SRC}/build" && cd "${UDPGW_SRC}/build" \
+        && cmake .. >"$LOG" 2>&1 && make badvpn-udpgw -j"$(nproc)" >>"$LOG" 2>&1 )
+    then
+        install -m 0755 "${UDPGW_SRC}/build/udpgw/badvpn-udpgw" /usr/sbin/badvpn-udpgw \
+            && ok "badvpn-udpgw di-compile & dipasang"
+    else
+        err "build badvpn-udpgw gagal (lihat $LOG)"
+        err "--- 20 baris terakhir log ---"
+        tail -n 20 "$LOG" 2>/dev/null | while IFS= read -r l; do err "  $l"; done
+        return 1
+    fi
 }
 
 install_udpgw_units() {
