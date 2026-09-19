@@ -112,6 +112,22 @@ db_lookup() {
 # (harus cek output — exit status awk selalu 0 meski tidak ada baris yang cocok)
 db_has() { [[ -n "$(db_lookup "$1" "$2")" ]]; }
 
+# license_expired: cek apakah tanggal kadaluarsa lisensi sudah lewat.
+#   - "lifetime" / kosong / format tak dikenal -> TIDAK expired (fail-safe)
+#   - tanggal YYYY-MM-DD -> expired jika < hari ini
+# Mengembalikan 0 = expired, 1 = masih aktif.
+license_expired() {
+    local exp="$1"
+    [[ -z "$exp" || "$exp" == "lifetime" ]] && return 1
+    # hanya format YYYY-MM-DD yang divalidasi
+    [[ "$exp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 1
+    local today exp_epoch
+    today=$(date +%Y-%m-%d)
+    exp_epoch=$(date -d "$exp" +%s 2>/dev/null) || return 1
+    # expired kalau tanggal expiry < tanggal hari ini
+    [[ "$exp" < "$today" ]]
+}
+
 check_license() {
     local CACHE_FILE="/etc/wibutunnel/tmp/wibu_license.cache"
     local CACHE_TTL=3600
@@ -124,6 +140,18 @@ check_license() {
         if [[ $TIME_DIFF -le $CACHE_TTL ]]; then
             IFS='|' read -r c_status c_name c_exp < "$CACHE_FILE"
             if [[ "$c_status" == "VALID" && -n "$c_name" ]]; then
+                # [SECURITY] Tolak lisensi yang sudah kadaluarsa meski cache-nya
+                # masih "VALID". Tanpa ini, customer masa habis tetap bisa pakai
+                # script selamanya selama cache belum TTL 1 jam.
+                if license_expired "$c_exp"; then
+                    rm -f "$CACHE_FILE"
+                    clear
+                    echo -e "${LINE}\n                 ${RED}LISENSI KADALUARSA!${NC}\n${LINE}"
+                    echo -e " ${CYAN}Client     : ${WHITE}${c_name}${NC}"
+                    echo -e " ${CYAN}Berlaku s/d: ${RED}${c_exp}${NC}\n${LINE}"
+                    echo -e " ${YELLOW}Perpanjang lisensi Anda untuk lanjut menggunakan script.${NC}\n${LINE}"
+                    exit 1
+                fi
                 export CLIENT_NAME="$c_name"
                 export EXP_DATE="$c_exp"
                 return 0
@@ -154,6 +182,17 @@ check_license() {
 
     export CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}')
     export EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}')
+
+    # [SECURITY] Cek kadaluarsa: "lifetime" & format tak dikenal dianggap aktif.
+    if license_expired "$EXP_DATE"; then
+        rm -f "$CACHE_FILE"
+        clear
+        echo -e "${LINE}\n                 ${RED}LISENSI KADALUARSA!${NC}\n${LINE}"
+        echo -e " ${CYAN}Client     : ${WHITE}${CLIENT_NAME}${NC}"
+        echo -e " ${CYAN}Berlaku s/d: ${RED}${EXP_DATE}${NC}\n${LINE}"
+        echo -e " ${YELLOW}Perpanjang lisensi Anda untuk lanjut menggunakan script.${NC}\n${LINE}"
+        exit 1
+    fi
 
     # Simpan ke Cache dengan Format Baru
     echo "VALID|${CLIENT_NAME}|${EXP_DATE}" > "$CACHE_FILE"
