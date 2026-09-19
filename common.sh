@@ -168,8 +168,13 @@ check_license() {
         exit 1
     fi
 
-    # Jika cache tidak ada/expired, tarik dari GitHub
-    local LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
+    # [SECURITY] Daftar lisensi disimpan di repo PRIVATE (WBVPN/wibutunnel-izin)
+    # supaya IP & nama customer tidak terbuka di publik. Akses pakai token
+    # read-only yang di-embed di sini. Jika token ini bocor, dampaknya hanya
+    # bisa membaca daftar IP, tidak bisa menulis/menghapus.
+    # Ganti IZIN_TOKEN saat memperbarui kredensial.
+    local IZIN_TOKEN="${IZIN_TOKEN:-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}"
+    local LINK_IZIN="https://WBVPN:${IZIN_TOKEN}@raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
     local GET_DATA=$(curl -sS --max-time 10 "$LINK_IZIN" | grep -F -w "$MYIP")
 
     if [[ -z "$GET_DATA" ]]; then

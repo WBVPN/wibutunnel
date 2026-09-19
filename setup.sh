@@ -20,8 +20,11 @@ MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com)
 clear
 echo -e "\e[1;36m[+] Memeriksa Lisensi Script...\e[0m"
 
-LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
-GET_DATA=$(curl -sS --max-time 10 $LINK_IZIN | grep -w "$MYIP")
+# [SECURITY] Daftar lisensi ada di repo PRIVATE (WBVPN/wibutunnel-izin).
+# IP & nama customer tidak lagi terbuka di repo publik.
+IZIN_TOKEN="${IZIN_TOKEN:-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}"
+LINK_IZIN="https://WBVPN:${IZIN_TOKEN}@raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
+GET_DATA=$(curl -sS --max-time 10 "$LINK_IZIN" | grep -w "$MYIP")
 
 CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
 EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')

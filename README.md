@@ -170,7 +170,7 @@ izin.txt                  # Lisensi/izin penggunaan
 ├── bin/
 │   ├── ssh-tunnel-install# Installer SSH stack (dropbear + ws + udpgw)
 │   └── ws-stunnel        # WebSocket → SSH bridge (Python)
-izin.txt                  # Lisensi/izin penggunaan (cek IP VPS)
+# izin.txt sekarang di repo PRIVATE (WBVPN/wibutunnel-izin) — lihat bagian Lisensi)
 ```
 
 ---
