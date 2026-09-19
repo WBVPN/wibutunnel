@@ -738,6 +738,10 @@ Description=Telegram Webhook Service
 ExecStart=/usr/local/bin/bot-webhook
 StandardInput=socket
 StandardOutput=socket
+# WAJIB: stderr ke journal, BUKAN socket. Default 'inherit' membuat baris
+# log [SECURITY] ... ikut masuk ke response HTTP -> response tidak valid
+# -> HAProxy menjawab 502 saat menolak request secret salah (harusnya 403).
+StandardError=journal
 User=root
 EOF
 
