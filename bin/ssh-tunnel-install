@@ -82,33 +82,72 @@ build_dropbear() {
 
 config_dropbear() {
     install -d -m 0755 /etc/dropbear
-    # dropbearkey bisa berada di /usr/local/sbin (hasil compile default) atau
-    # /usr/sbin (paket distro). Cari dulu, kalau tidak ada buat lewat dropbear -R.
-    local KEYGEN=""; local k
-    for k in /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey; do
+
+    # host key WAJIB untuk dropbear jalan. Dropbear hanya bisa membaca format
+    # key-nya SENDIRI (biner) -- BUKAN PEM/OpenSSH. Kunci OpenSSH biasa atau
+    # bahkan "ssh-keygen -m PEM" akan membuat dropbear exit:
+    # "Early exit: String too long" saat loading host key. Rantai pembuatan:
+    #   1. dropbearkey            (format asli dropbear, paling utama)
+    #   2. ssh-keygen -m PEM      (PEM tradisional rsa/ecdsa) lalu
+    #      dropbearconvert        (ubah ke format dropbear) -- butuh keduanya,
+    #      ed25519 tidak punya representasi PEM jadi dilewati
+    local KEYGEN="" CONVERT=""
+    KEYGEN="$(command -v dropbearkey 2>/dev/null)"
+    # 'make install' dropbear menaruh tool di /usr/local/bin, bukan /usr/local/sbin
+    local k
+    [[ -n "$KEYGEN" ]] || for k in /usr/local/bin/dropbearkey \
+            /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey; do
         [[ -x "$k" ]] && KEYGEN="$k" && break
     done
-    # 'dropbear -R' generate semua host key yg hilang dalam satu kali
-    # panggil — paling andal & tidak bergantung pada path dropbearkey.
-    local need=0
-    for t in rsa ecdsa dss ed25519; do
-        [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] || need=1
+    CONVERT="$(command -v dropbearconvert 2>/dev/null)"
+    [[ -n "$CONVERT" ]] || for k in /usr/local/bin/dropbearconvert \
+            /usr/local/sbin/dropbearconvert /usr/sbin/dropbearconvert; do
+        [[ -x "$k" ]] && CONVERT="$k" && break
     done
-    if [[ $need -eq 1 ]]; then
-        /usr/sbin/dropbear -R -E -p 127.0.0.1:1 >/dev/null 2>&1
-    fi
-    # cadangan: dropbear -R gagal (binary lama/tidak support -R) -> dropbearkey
-    if ! ls /etc/dropbear/dropbear_*_host_key >/dev/null 2>&1 && [[ -n "$KEYGEN" ]]; then
-        for t in rsa ecdsa dss ed25519; do
-            [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] && continue
-            "$KEYGEN" -t "$t" -f "/etc/dropbear/dropbear_${t}_host_key" >/dev/null 2>&1
+
+    local t made=0
+    if [[ -n "$KEYGEN" ]]; then
+        # rsa, dss, ecdsa = 3 tipe yg diload dropbear secara default
+        # (MAX_HOSTKEYS=3). ed25519 tidak diload default -> tidak dibuat.
+        for t in rsa dss ecdsa; do
+            [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] && { made=1; continue; }
+            "$KEYGEN" -t "$t" -f "/etc/dropbear/dropbear_${t}_host_key" >/dev/null 2>&1 \
+                && made=1
         done
+    elif [[ -n "$CONVERT" ]] && command -v ssh-keygen >/dev/null 2>&1; then
+        # tidak ada dropbearkey: buat PEM tradisional lalu konversi.
+        # hanya rsa & ecdsa (ed25519/dss tidak ada bentuk PEM tradisional).
+        local tmp; tmp="$(mktemp -d)"
+        for t in rsa dss ecdsa; do
+            [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] && { made=1; continue; }
+            ssh-keygen -q -m PEM -t "$t" -N "" -f "$tmp/${t}" >/dev/null 2>&1 || continue
+            "$CONVERT" openssh dropbear "$tmp/${t}" "/etc/dropbear/dropbear_${t}_host_key" \
+                >/dev/null 2>&1 && made=1
+        done
+        rm -rf "$tmp"
     fi
-    # verifikasi minimal ada 1 host key, kalau tidak ada gagal total
-    if ! ls /etc/dropbear/dropbear_*_host_key >/dev/null 2>&1; then
-        err "gagal membuat host key dropbear"; return 1
+
+    if [[ $made -eq 0 ]]; then
+        err "gagal membuat host key dropbear (butuh dropbearkey, atau"
+        err "ssh-keygen + dropbearconvert)"; return 1
     fi
-    chmod 0600 /etc/dropbear/*_host_key 2>/dev/null
+    chmod 0600 /etc/dropbear/dropbear_*_host_key 2>/dev/null
+
+    # VALIDASI: start dropbear di port sampah (tanpa -r = load key default,
+    # persis seperti systemd). 'timeout' membunuh setelah 2 detik -> exit 124
+    # berarti dropbear masih hidup = host key bagus. Exit lain = key rusak /
+    # format salah, dan dropbear akan menulis pesan samar ("String too long",
+    # "Too many hostkeys") -- tanpa cek ini errornya nyaris mustahil ditebak.
+    local vport=22999
+    local vout; vout="$(timeout 2 /usr/sbin/dropbear -F -E -p 127.0.0.1:${vport} 2>&1)"
+    local vrc=$?
+    if [[ $vrc -ne 124 ]]; then
+        err "host key dropbear tidak bisa dibaca dropbear (rc=$vrc):"
+        printf '%s\n' "$vout" | grep -m3 "Early exit" | while IFS= read -r l; do err "  $l"; done
+        err "  perbaikan: rm -f /etc/dropbear/dropbear_*_host_key lalu jalankan"
+        err "  ulang installer (host key akan dibuat ulang dengan format benar)"
+        return 1
+    fi
 
     local extra="-W 32768 -w -g -K 60 -I 300"
     local p; for p in "${DB_PORTS[@]:1}"; do extra="$extra -p $p"; done
