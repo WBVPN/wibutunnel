@@ -668,8 +668,13 @@ download_menu() {
         curl -sS -L -o "/etc/wibutunnel/tmp/$2" "$url"
     fi
 
-    # Validasi: tidak boleh kosong & baris pertama harus shebang (bukan halaman 404/429)
-    if [ -s "/etc/wibutunnel/tmp/$2" ] && head -n 1 "/etc/wibutunnel/tmp/$2" | grep -q '^#!'; then
+    # Validasi: tidak boleh kosong & harus file valid:
+    #   - script bash (shebang #!)  ATAU  ELF binary (magic 7f454c46, hasil shc)
+    local magic4=""
+    if [ -s "/etc/wibutunnel/tmp/$2" ]; then
+        magic4=$(head -c 4 "/etc/wibutunnel/tmp/$2" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    fi
+    if [ -s "/etc/wibutunnel/tmp/$2" ] && { head -n 1 "/etc/wibutunnel/tmp/$2" | grep -q '^#!' || [ "$magic4" = "7f454c46" ]; }; then
         mv "/etc/wibutunnel/tmp/$2" "$dest"
         chmod +x "$dest"
     else
@@ -677,21 +682,21 @@ download_menu() {
     fi
 }
 
-download_menu "menu/menu.sh" "menu"
-download_menu "menu/m-vless.sh" "m-vless"
-download_menu "menu/m-vmess.sh" "m-vmess"
-download_menu "menu/m-trojan.sh" "m-trojan"
-download_menu "menu/m-ssh.sh" "m-ssh"
-download_menu "menu/m-setting.sh" "m-setting"
-download_menu "menu/xp.sh" "xp"
-download_menu "menu/m-backup.sh" "m-backup"
-download_menu "menu/menu-lock.sh" "menu-lock"
-download_menu "menu/menu-unlock.sh" "menu-unlock"
-download_menu "menu/menu-recovery.sh" "menu-recovery"
-download_menu "menu/cek-trafik.sh" "cek-trafik"
-download_menu "common.sh" "common.sh"
-download_menu "menu/bot-daemon.sh" "bot-daemon"
-download_menu "menu/bot-webhook.sh" "bot-webhook"
+download_menu "bin/menu" "menu"
+download_menu "bin/m-vless" "m-vless"
+download_menu "bin/m-vmess" "m-vmess"
+download_menu "bin/m-trojan" "m-trojan"
+download_menu "bin/m-ssh" "m-ssh"
+download_menu "bin/m-setting" "m-setting"
+download_menu "bin/xp" "xp"
+download_menu "bin/m-backup" "m-backup"
+download_menu "bin/menu-lock" "menu-lock"
+download_menu "bin/menu-unlock" "menu-unlock"
+download_menu "bin/menu-recovery" "menu-recovery"
+download_menu "bin/cek-trafik" "cek-trafik"
+# common.sh sudah di-inline ke setiap binary (shc) — tidak lagi diunduh terpisah
+download_menu "bin/bot-daemon" "bot-daemon"
+download_menu "bin/bot-webhook" "bot-webhook"
 
 
 # =========================================================
@@ -703,11 +708,11 @@ chmod 600 /etc/wibutunnel/*.db
 
 # Scripts lock-user, unlock-user, algojo, unlocker diunduh dari repo (versi patched)
 # Download sbin scripts (source of truth — patched versions)
-download_menu "sbin/algojo-wibu" "algojo-wibu-dl"
-download_menu "sbin/algojo-kuota" "algojo-kuota-dl"
-download_menu "sbin/lock-user" "lock-user-dl"
-download_menu "sbin/unlock-user" "unlock-user-dl"
-download_menu "sbin/unlocker-wibu" "unlocker-wibu-dl"
+download_menu "bin/algojo-wibu" "algojo-wibu-dl"
+download_menu "bin/algojo-kuota" "algojo-kuota-dl"
+download_menu "bin/lock-user" "lock-user-dl"
+download_menu "bin/unlock-user" "unlock-user-dl"
+download_menu "bin/unlocker-wibu" "unlocker-wibu-dl"
 
 # Install sbin scripts
 for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu; do
