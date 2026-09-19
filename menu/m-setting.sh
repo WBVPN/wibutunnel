@@ -369,7 +369,7 @@ EOF
         read -p "Tekan Enter untuk membuka editor..." dummy
         ${EDITOR:-nano} "$BANNER_FILE"
         if ! grep -q -- '-b /etc/wibutunnel/ssh-banner' /etc/default/dropbear; then
-            sed -i 's|^DROPBEAR_EXTRA_ARGS=.*|DROPBEAR_EXTRA_ARGS="-W 65536 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222 -b /etc/wibutunnel/ssh-banner"|' /etc/default/dropbear
+            sed -i 's|^DROPBEAR_EXTRA_ARGS=.*|DROPBEAR_EXTRA_ARGS="-W 32768 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222 -b /etc/wibutunnel/ssh-banner"|' /etc/default/dropbear
         fi
         systemctl restart dropbear
         echo -e "${GREEN}Banner SSH diperbarui & dropbear direstart!${NC}"

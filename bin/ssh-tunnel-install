@@ -110,7 +110,7 @@ config_dropbear() {
     fi
     chmod 0600 /etc/dropbear/*_host_key 2>/dev/null
 
-    local extra="-W 65536 -w -g -K 60 -I 300"
+    local extra="-W 32768 -w -g -K 60 -I 300"
     local p; for p in "${DB_PORTS[@]:1}"; do extra="$extra -p $p"; done
     extra="$extra -p 127.0.0.1:${DB_TLS_PORT}"
 
