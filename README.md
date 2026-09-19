@@ -215,6 +215,24 @@ watchdog · renew SSL · auto-reboot harian.
 Akun yang melanggar dipindahkan ke rule `blocked` di routing Xray — koneksi
 aktif diputus langsung (`pkill`), dan notifikasi dikirim ke Telegram.
 
+### 🔬 Deteksi IP-Sharing Live (v4.0)
+
+Karena Xray core resmi hanya melog event `accepted` (tidak ada `closed`),
+deteksi IP-sharing berbasis log murni menebak dan rawan false-ban. WIBU
+TUNNELING memakai pendekatan dua lapis:
+
+1. **Socket live** — `ss` membaca koneksi `ESTABLISHED` di port 443/80 untuk
+   mendapat IP client yang **benar-benar online saat ini**.
+2. **Log mapping** — `access.log` (PROXY protocol v2 → IP asli client) memetakan
+   IP tersebut ke user VPN yang bersangkutan.
+
+Irisan keduanya = daftar user ↔ IP yang aktif saat ini, bukan tebakan window.
+
+**Grace period 120 detik** — saat client pindah WiFi/sinyal, IP lama dan IP
+baru sempat overlap. Multi-IP hanya dianggap *sharing* jika bertahan lebih dari
+120 detik; handover singkat tidak memicu lock palsu. Bila `ss` tidak tersedia,
+otomatis fallback ke metode log 3 menit.
+
 ---
 
 ## 📦 Update & Backup
