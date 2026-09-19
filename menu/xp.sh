@@ -45,7 +45,7 @@ process_expired() {
         [[ -z "$line" ]] && continue
         user=$(echo "$line" | cut -d: -f1)
         exp_date=$(echo "$line" | cut -d: -f2-)
-        
+
         [[ -z "$exp_date" || "$exp_date" == "Lifetime" || "$user" == *"dummy"* ]] && { NEW_EXP_CONTENT+="${line}\n"; continue; }
 
         if [[ ${#exp_date} -eq 10 ]]; then exp_date="${exp_date} 00:00:00"; fi
@@ -55,7 +55,7 @@ process_expired() {
         # Check if user exists in RAM instead of reading file
         if [[ " $ACTIVE_USERS " == *" $user "* ]]; then
             if [ "$today_sec" -ge "$exp_sec" ]; then
-                
+
                 # Mencegah spam jika user sudah dalam status EXPIRED di recovery
                 if [[ -n "$(awk -F: -v u="$user" '$1==u && $4=="EXPIRED"' /etc/wibutunnel/locked_users.db 2>/dev/null)" ]]; then
                     NEW_EXP_CONTENT+="${line}\n"
@@ -69,16 +69,16 @@ process_expired() {
                     safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
                     safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
                     safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
-                    
+
                     FOOTER="Deleted Permanently"
                 else
                     NORMAL_TO_RECOVERY+=("$user")
                     NEW_EXP_CONTENT+="${line}\n"
-                    
+
                     now=$(date +%s)
                     safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
                     echo "$user:$now:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
-                    
+
                     FOOTER="Move to Recovery"
                 fi
 
@@ -121,21 +121,21 @@ process_expired "$TROJAN_EXP" "TROJAN" "$ACTIVE_TROJAN"
 
 if [[ ${#TRIAL_TO_DELETE[@]} -gt 0 || ${#NORMAL_TO_RECOVERY[@]} -gt 0 ]]; then
     JQ_FILTER="."
-    
+
     # 1. Delete trial users from all inbounds
     for u in "${TRIAL_TO_DELETE[@]}"; do
         for i in {1..8}; do
             JQ_FILTER+=" | .inbounds[$i].settings.clients |= (if type == \"array\" then map(select(.email != \"$u\")) else . end)"
         done
     done
-    
+
     # 2. Add normal expired users to blocked routing
     if [[ ${#NORMAL_TO_RECOVERY[@]} -gt 0 ]]; then
         USERS_JSON=$(printf '"%s",' "${NORMAL_TO_RECOVERY[@]}")
         USERS_JSON="[${USERS_JSON%,}]"
         JQ_FILTER+=" | (.routing.rules[] | select(.user != null and .outboundTag == \"blocked\") | .user) |= (. + ${USERS_JSON} | unique)"
     fi
-    
+
     if safe_jq_edit "$JQ_FILTER"; then
         systemctl restart xray >/dev/null 2>&1
     else

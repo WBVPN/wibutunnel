@@ -31,7 +31,7 @@ systemctl restart xray >/dev/null 2>&1
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
     WAKTU=$(date '+%d %b %Y %H:%M WIB')
-    
+
     if [[ "$reason" == "IP_LIMIT" ]]; then
         ALASAN="Melebihi Limit IP"
     elif [[ "$reason" == "QUOTA" ]]; then
@@ -39,7 +39,7 @@ if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
     else
         ALASAN="Manual Lock"
     fi
-    
+
     if [[ "$duration" == "0" ]]; then
         DURASI_TXT="Permanen (sampai di-unlock manual)"
     else

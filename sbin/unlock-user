@@ -26,7 +26,7 @@ fi
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
     WAKTU=$(date '+%d %b %Y %H:%M WIB')
-    
+
     if [[ "$mode" == "AUTO" ]]; then
         CARA="Otomatis (Durasi Lock Habis)"
     else

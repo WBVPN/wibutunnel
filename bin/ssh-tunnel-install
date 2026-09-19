@@ -22,7 +22,6 @@ DB_TARBALL="${DB_SRC}/dropbear-${DB_VER}.tar.bz2"
 DB_MIRRORS=(
     "https://matt.ucc.asn.au/dropbear/releases/dropbear-${DB_VER}.tar.bz2"
     "https://dropbear.nl/mirror/releases/dropbear-${DB_VER}.tar.bz2"
-    "https://github.com/wibuvpn/wibutunnel/releases/download/assets/dropbear-${DB_VER}.tar.bz2"
 )
 DB_PORTS=(143 109)            # port tunneling publik (raw SSH)
 DB_TLS_PORT=2222              # port internal (jalur SNI/TLS via HAProxy)

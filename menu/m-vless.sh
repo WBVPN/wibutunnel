@@ -30,7 +30,7 @@ select_user() {
     local DISPLAY_TYPE=$2
     local SHOW_LOCKED=$3
     mapfile -t raw_user_array < <(jq -r '.inbounds[1].settings.clients[].email' "$CONFIG_FILE" | grep -v "dummy" | sort)
-    
+
     declare -a user_array
     for u in "${raw_user_array[@]}"; do
         if [[ "$SHOW_LOCKED" != "YES" ]] && db_has "$u" "$DB_LOCK"; then continue; fi
@@ -294,6 +294,7 @@ delete_user() {
         safe_sed_delete "$user" "$EXP_FILE"
         safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
         safe_sed_delete "$user" "$DB_LOCK"; safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+        stats_rule_del "$user"   # [FIX] hapus juga dari rule user-stats
         systemctl restart xray >/dev/null 2>&1
     else
         echo -e "\n${RED}GAGAL! Config xray tidak bisa diedit, akun belum sepenuhnya terhapus.${NC}"

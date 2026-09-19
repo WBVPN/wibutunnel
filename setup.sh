@@ -619,14 +619,14 @@ download_menu() {
     fi
 
     curl -sS -L -o "/etc/wibutunnel/tmp/$2" "$url"
-    
+
     # Validasi apakah file yang diunduh adalah bash script (bukan HTML 429 Error)
     if grep -q "429: Too Many Requests" "/etc/wibutunnel/tmp/$2"; then
         echo -e "\e[31m[!] Terkena Rate Limit GitHub saat mengunduh $2. Mencoba mirror lain...\e[0m"
         url="https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@main/$1"
         curl -sS -L -o "/etc/wibutunnel/tmp/$2" "$url"
     fi
-    
+
     # Validasi: tidak boleh kosong & baris pertama harus shebang (bukan halaman 404/429)
     if [ -s "/etc/wibutunnel/tmp/$2" ] && head -n 1 "/etc/wibutunnel/tmp/$2" | grep -q '^#!'; then
         mv "/etc/wibutunnel/tmp/$2" "$dest"

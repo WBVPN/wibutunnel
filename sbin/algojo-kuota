@@ -88,18 +88,18 @@ while read -r line; do
     user=$(echo "$line" | cut -d: -f1)
     limit_gb=$(echo "$line" | cut -d: -f2)
     [[ "$limit_gb" == "0" || -z "$limit_gb" ]] && continue
-    
+
     total_bytes=$(db_lookup "$user" "$DB_USAGE" | cut -d: -f2)
     [[ -z "$total_bytes" ]] && total_bytes=0
     usage_gb=$(echo "scale=2; $total_bytes / 1073741824" | bc)
-    
+
     if (( $(echo "$usage_gb >= $limit_gb" | bc -l) )); then
         if ! db_has "$user" "$DB_LOCK"; then
             proto="UNKNOWN"
             if db_has "$user" /etc/xray/vless_exp.conf; then proto="VLESS"
             elif db_has "$user" /etc/xray/vmess_exp.conf; then proto="VMESS"
             elif db_has "$user" /etc/xray/trojan_exp.conf; then proto="TROJAN"; fi
-            
+
             now=$(date +%s)
             echo "${user}:${now}:0:QUOTA" >> "$DB_LOCK"
 
@@ -110,7 +110,7 @@ while read -r line; do
             else
                 USERS_TO_LOCK+=("$user")
             fi
-            
+
             (
                 DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                 WAKTU=$(date '+%d %b %Y %H:%M WIB')

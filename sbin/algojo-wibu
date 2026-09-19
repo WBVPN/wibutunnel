@@ -30,13 +30,13 @@ while read -r email ip_list; do
             db_has "$email" /etc/xray/vless_exp.conf && proto="VLESS"
             db_has "$email" /etc/xray/vmess_exp.conf && proto="VMESS"
             db_has "$email" /etc/xray/trojan_exp.conf && proto="TROJAN"
-            
+
             now=$(date +%s)
             unlock_time=$((now + (LOCK_DURATION * 60)))
             echo "${email}:${now}:${unlock_time}:IP_LIMIT" >> "$DB_LOCK"
-            
+
             USERS_TO_LOCK+=("$email")
-            
+
             (
                 DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                 WAKTU=$(date '+%d %b %Y %H:%M WIB')

@@ -133,25 +133,25 @@ case $sub_setting in
             systemctl enable --now vnstat >/dev/null 2>&1
         fi
         MAIN_IFACE=$(ip -4 route show default | awk '{print $5}' | head -n1)
-        
+
         # Raw Data (Realtime from kernel)
         RX_B=$(cat /sys/class/net/$MAIN_IFACE/statistics/rx_bytes 2>/dev/null || echo 0)
         TX_B=$(cat /sys/class/net/$MAIN_IFACE/statistics/tx_bytes 2>/dev/null || echo 0)
-        
+
         # Format to human readable
         rx_mb=$(awk -v b="$RX_B" 'BEGIN { printf "%.2f MB", b / 1048576 }')
         rx_gb=$(awk -v b="$RX_B" 'BEGIN { printf "%.2f GB", b / 1073741824 }')
         tx_mb=$(awk -v b="$TX_B" 'BEGIN { printf "%.2f MB", b / 1048576 }')
         tx_gb=$(awk -v b="$TX_B" 'BEGIN { printf "%.2f GB", b / 1073741824 }')
-        
+
         if (( RX_B > 1073741824 )); then rx_print=$rx_gb; else rx_print=$rx_mb; fi
         if (( TX_B > 1073741824 )); then tx_print=$tx_gb; else tx_print=$tx_mb; fi
-        
+
         echo -e " ${GREEN}REALTIME BANDWIDTH (Sejak VPS ON)${NC}"
         echo -e "  - Download (RX) : ${WHITE}$rx_print${NC}"
         echo -e "  - Upload (TX)   : ${WHITE}$tx_print${NC}"
         echo -e "$LINE"
-        
+
         # Vnstat output
         VNSTAT_OUT=$(vnstat -d -i "$MAIN_IFACE" 2>&1)
         if echo "$VNSTAT_OUT" | grep -q "Not enough data"; then
@@ -196,16 +196,16 @@ case $sub_setting in
         safe_update "menu/menu-recovery.sh"
         safe_update "menu/cek-trafik.sh"
         safe_update "menu/bot-daemon.sh"
-        
+
         safe_update "sbin/algojo-kuota"
         safe_update "sbin/algojo-wibu"
         safe_update "sbin/lock-user"
         safe_update "sbin/unlock-user"
         safe_update "sbin/unlocker-wibu"
         safe_update "bin/ssh-tunnel-install"
-        
+
         safe_update "common.sh"
-        
+
         dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
         systemctl restart wibu-daemon >/dev/null 2>&1
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"

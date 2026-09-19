@@ -143,7 +143,7 @@ check_license() {
     # Jika cache tidak ada/expired, tarik dari GitHub
     local LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
     local GET_DATA=$(curl -sS --max-time 10 "$LINK_IZIN" | grep -F -w "$MYIP")
-    
+
     if [[ -z "$GET_DATA" ]]; then
         clear
         echo -e "${LINE}\n                 ${RED}AKSES DITOLAK!${NC}\n${LINE}"
@@ -154,7 +154,7 @@ check_license() {
 
     export CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}')
     export EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}')
-    
+
     # Simpan ke Cache dengan Format Baru
     echo "VALID|${CLIENT_NAME}|${EXP_DATE}" > "$CACHE_FILE"
     return 0
@@ -189,7 +189,6 @@ ssh_valid_user() { [[ "$1" =~ ^[a-z_][a-z0-9_-]{2,31}$ ]]; }
 
 ssh_user_exists() { id "$1" >/dev/null 2>&1; }
 
-ssh_is_locked() { [[ "$(passwd -S "$1" 2>/dev/null | awk '{print $2}')" == "L" ]]; }
 
 # daftar akun ssh (dari group tunnel), excludes dummy/system
 ssh_list_users() {

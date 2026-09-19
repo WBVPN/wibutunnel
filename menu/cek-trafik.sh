@@ -93,22 +93,22 @@ if [ ${#ALL_USERS[@]} -eq 0 ]; then
     echo -e "${LINE}"
 else
     mapfile -t sorted_users < <(printf "%s\n" "${!ALL_USERS[@]}" | sort)
-    
+
     for user in "${sorted_users[@]}"; do
         proto_user=${USER_PROTOS[$user]}
-        
+
         # [MATA ELANG] Lewati jika protokol tidak sesuai dengan filter menu
         if [[ -n "$PROTOCOL_FILTER" && "$proto_user" != "$PROTOCOL_FILTER" ]]; then
             continue
         fi
 
         [[ -z "$proto_user" ]] && proto_user="${YELLOW}UNKNOWN${NC}"
-        
+
         limit_ip=$(db_lookup "$user" "$DB_IP" | cut -d: -f2)
         limit_bw=$(db_lookup "$user" "$DB_BW" | cut -d: -f2)
         [[ -z "$limit_ip" || "$limit_ip" == "0" ]] && str_limit_ip="Bebas" || str_limit_ip="${limit_ip} IP"
         [[ -z "$limit_bw" || "$limit_bw" == "0" ]] && str_limit_bw="Unli" || str_limit_bw="${limit_bw} GB"
-        
+
         if [[ "$proto_user" == "SSH" ]]; then
             ip_list=${SSH_USER_IPS[$user]}
         else
@@ -116,9 +116,9 @@ else
         fi
         active_ip_count=$(echo "$ip_list" | wc -w)
         [[ -z "$ip_list" ]] && active_ip_count=0
-        
+
         is_locked=$(db_lookup "$user" "$DB_LOCK")
-        
+
         if [[ -n "$is_locked" ]]; then
             status="${RED}TERKUNCI / LOCKED ⛔${NC}"
         elif [[ "$limit_ip" != "0" && -n "$limit_ip" && $active_ip_count -gt $limit_ip ]]; then
@@ -140,7 +140,7 @@ else
         echo -e " ${WHITE}Status      :${NC} ${status}"
         echo -e " ${WHITE}Pemakaian   :${NC} ${YELLOW}${usage_quota}${NC} (Limit: ${str_limit_bw})"
         echo -e " ${WHITE}IP Aktif    :${NC} ${active_ip_count} IP (Limit: ${str_limit_ip})"
-        
+
         if [[ "$active_ip_count" -gt 0 ]]; then
             echo -e " ${WHITE}Alamat IP   :${NC}"
             for ip in $ip_list; do echo -e "   ${CYAN}• $ip${NC}"; done

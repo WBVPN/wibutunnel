@@ -74,7 +74,7 @@ edit_msg() {
     local msg_id="$2"
     local text=$(echo -e "$3")
     local keyboard="$4"
-    
+
     local resp
     resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
         --data-urlencode "chat_id=${target_id}" \
@@ -95,7 +95,7 @@ format_online_users() {
     local target_proto="$2"
     local MSG="<b>ONLINE USERS (LIVE)</b>\n━━━━━━━━━━━━━━━━━━━━\n"
     local count_users=0
-    
+
     while IFS="|" read -r usr count iplist; do
         local proto=""
         if db_has "$usr" /etc/xray/vless_exp.conf; then proto="VLESS"
@@ -103,11 +103,11 @@ format_online_users() {
         elif db_has "$usr" /etc/xray/trojan_exp.conf; then proto="TROJAN"
         elif ssh_user_exists "$usr" 2>/dev/null; then proto="SSH"
         else continue; fi
-        
+
         if [[ -n "$target_proto" && "$target_proto" != "ALL" && "$proto" != "$target_proto" ]]; then
             continue
         fi
-        
+
         IFS=',' read -ra ip_arr <<< "$iplist"
         local ip_limit=3
         local formatted_ips=""
@@ -119,11 +119,11 @@ format_online_users() {
             local sisa=$((${#ip_arr[@]} - ip_limit))
             formatted_ips+="    <i>... (+ ${sisa} IP lainnya)</i>\n"
         fi
-        
+
         MSG+="<b>${usr}</b> [<code>${proto}</code>]\n ├ <b>Status:</b> ${count} Login Aktif\n └ <b>IP Address:</b>\n${formatted_ips}"
         ((count_users++))
     done <<< "$raw_data"
-    
+
     if [[ "$count_users" -eq 0 ]]; then
         if [[ "$target_proto" == "ALL" ]]; then
             MSG+="<i>Saat ini tidak ada user yang aktif.</i>\n"
@@ -178,7 +178,7 @@ create_account() {
     local hari=$3
     local limit_ip=${4:-0}
     local limit_bw=${5:-0}
-    
+
     # Validation
     if [[ ! "$limit_ip" =~ ^[0-9]+$ ]]; then limit_ip=0; fi
     if [[ ! "$limit_bw" =~ ^[0-9]+$ ]]; then limit_bw=0; fi
@@ -215,7 +215,7 @@ create_account() {
         fi
         return
     fi
-    
+
     if [[ -n "${user//[a-zA-Z0-9_-]/}" ]]; then
         send_msg "❌ <b>Nama User Salah!</b>\nHanya boleh huruf, angka, dan strip (-)."
         return
@@ -227,10 +227,10 @@ create_account() {
 
     local uuid=$(uuidgen)
     local domain=$(cat /etc/xray/domain 2>/dev/null)
-    
+
     local exp_date=""
     local tampil_exp=""
-    
+
     local clean_hari="${hari%[hmd]}"
     if [[ -z "${clean_hari//[0-9]/}" && -n "$clean_hari" ]]; then
         if [[ "$hari" == *m ]]; then
@@ -250,7 +250,7 @@ create_account() {
     local link1=""
     local link2=""
     local link3=""
-    
+
     if [[ "$proto" == "VLESS" ]]; then
         safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
             .inbounds[1].settings.clients += [{"id": $uuid, "email": $user}] |
@@ -305,11 +305,11 @@ create_account() {
     pesan+="${THICKLINE}\n"
     pesan+="<b>CONFIG DETAILS</b>\n"
     pesan+="<b>Port TLS   :</b> <code>443</code>\n"
-    
+
     if [[ "$proto" != "TROJAN" ]]; then
         pesan+="<b>Port NTLS  :</b> <code>80</code>\n"
     fi
-    
+
     if [[ "$proto" == "VMESS" ]]; then
         pesan+="<b>UUID       :</b> <code>${uuid}</code>\n"
         pesan+="<b>AlterId    :</b> <code>0</code>\n"
@@ -368,7 +368,7 @@ delete_account() {
         send_msg "❌ <b>Gagal!</b>\nAkun <code>${user}</code> tidak ditemukan di database."
         return
     fi
-    
+
     safe_jq_edit_args --arg u "$user" '
         .inbounds[1].settings.clients |= map(select(.email != $u)) |
         .inbounds[2].settings.clients |= map(select(.email != $u)) |
@@ -391,7 +391,7 @@ delete_account() {
     safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
     systemctl restart xray >/dev/null 2>&1
-    
+
     kb=""
     [[ -n "$proto" ]] && kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
     send_msg "<b>Berhasil!</b>\nAkun <code>${user}</code> telah dimusnahkan secara permanen." "$kb"
@@ -457,7 +457,7 @@ renew_account() {
 
     local exp_date=""
     local tampil_exp=""
-    
+
     local clean_hari="${hari%[hmd]}"
     if [[ -z "${clean_hari//[0-9]/}" && -n "$clean_hari" ]]; then
         if [[ "$hari" == *m ]]; then
@@ -474,10 +474,10 @@ renew_account() {
         send_msg "❌ <b>Format Waktu Salah!</b>\nGunakan angka untuk hari, atau akhiran 'h' untuk jam, 'm' untuk menit (contoh: 30, 1h, 60m)."
         return
     fi
-    
+
     safe_sed_delete "$user" "$exp_file"
     echo "${user}:${exp_date}" >> "$exp_file"
-    
+
     kb=""
     [[ -n "$proto" ]] && kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
     send_msg "<b>Berhasil Perpanjang Akun!</b>\n\n<b>User :</b> <code>${user}</code>\n<b>Ditambah :</b> ${hari}\n<b>Expired Baru :</b> <code>${tampil_exp}</code>" "$kb"
@@ -489,12 +489,12 @@ change_limit() {
     local limit_bw=$3
     local proto=$4
     if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
-    
+
     if [[ ! "$limit_ip" =~ ^[0-9]+$ || ! "$limit_bw" =~ ^[0-9]+$ ]]; then
         send_msg "❌ <b>Format Limit Salah!</b>\nIP dan GB harus berupa angka."
         return
     fi
-    
+
     # ===================== SSH TUNNEL =====================
     if [[ "$proto" == "SSH" ]]; then
         if ! ssh_user_exists "$user"; then
@@ -528,14 +528,14 @@ change_limit() {
     # Update IP
     safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
     echo "${user}:${limit_ip}" >> /etc/wibutunnel/limit_ip.db
-    
+
     # Update BW
     safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
     echo "${user}:${limit_bw}" >> /etc/wibutunnel/limit_bw.db
-    
+
     local ip_str="Bebas"; [[ "$limit_ip" -ne 0 ]] && ip_str="${limit_ip} IP"
     local bw_str="Unlimited"; [[ "$limit_bw" -ne 0 ]] && bw_str="${limit_bw} GB"
-    
+
     kb=""
     [[ -n "$proto" ]] && kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
     send_msg "<b>Limit Berhasil Diubah!</b>\n\n<b>User :</b> <code>${user}</code>\n<b>Limit IP :</b> ${ip_str}\n<b>Limit Kuota :</b> ${bw_str}" "$kb"
@@ -544,7 +544,7 @@ change_limit() {
 list_account() {
     local target_proto="$1"
     local msg="━━━━━━━━━━━━━━━━━━━━\n <b>LIST AKUN ${target_proto}</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-    
+
     get_limits() {
         local u=$1
         local ip=$(db_lookup "$u" /etc/wibutunnel/limit_ip.db | cut -d: -f2)
@@ -594,7 +594,7 @@ list_account() {
         done < <(ssh_list_users 2>/dev/null)
         [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
     fi
-    
+
     msg+="\n━━━━━━━━━━━━━━━━━━━━"
     kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
     send_msg "$msg" "$kb"
@@ -602,19 +602,19 @@ list_account() {
 
 backup_vps() {
     local target_id="${SENDER_ID:-$CHAT_ID}"
-    
+
     local load_resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
         -F "chat_id=${target_id}" \
         -F "disable_web_page_preview=true" \
         -F "parse_mode=html" \
         -F "text=⏳ <b>Sedang merakit file backup...</b>")
     local load_msg_id=$(echo "$load_resp" | jq -r '.result.message_id // empty')
-    
+
     local domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
     local ip_vps="${MYIP:-$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null || echo "Unknown")}"
     local backup_file="/tmp/${domain}-${ip_vps}.zip"
     rm -f "$backup_file"
-    
+
     cd /
     zip -q -P "$CHAT_ID" -r "$backup_file" \
         usr/local/etc/xray/config.json \
@@ -626,7 +626,7 @@ backup_vps() {
         etc/wibutunnel/locked_users.db \
         etc/wibutunnel/user_usage.db \
         etc/xray/domain 2>/dev/null
-    
+
     if [[ -f "$backup_file" ]]; then
         local tgl=$(date "+%Y-%m-%d %H:%M:%S")
         local caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n<i>Mengunggah dan membuat File ID...</i>")
@@ -635,10 +635,10 @@ backup_vps() {
             -F "document=@${backup_file}" \
             -F "caption=${caption}" \
             -F "parse_mode=html")
-            
+
         local file_id=$(echo "$response" | jq -r '.result.document.file_id // empty')
         local msg_id=$(echo "$response" | jq -r '.result.message_id // empty')
-        
+
         if [[ -n "$file_id" && -n "$msg_id" && "$msg_id" != "null" ]]; then
             local new_caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${file_id}</code>\n\n🔐 <b>Password:</b> CHAT ID Anda")
             curl -s --max-time 15 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
@@ -647,9 +647,9 @@ backup_vps() {
                 -F "parse_mode=html" \
                 -F "caption=${new_caption}" >/dev/null 2>&1
         fi
-        
+
         rm -f "$backup_file"
-        
+
         if [[ -n "$load_msg_id" && "$load_msg_id" != "null" ]]; then
             curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage" \
                 -F "chat_id=${target_id}" \
@@ -669,11 +669,11 @@ detail_account() {
     local user=$1
     local target_proto=$2
     if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
-    
+
     local proto=""
     local uuid=""
     local exp_date=""
-    
+
     if db_has "$user" /etc/xray/vless_exp.conf; then
         proto="VLESS"
         uuid=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[] | select(.email == $u) | .id' "$CONFIG_FILE" | head -n 1)
@@ -708,7 +708,7 @@ detail_account() {
     local domain=$(cat /etc/xray/domain 2>/dev/null)
     local limit_ip=$(db_lookup "$user" /etc/wibutunnel/limit_ip.db | cut -d: -f2)
     local limit_bw=$(db_lookup "$user" /etc/wibutunnel/limit_bw.db | cut -d: -f2)
-    
+
     [[ -z "$limit_ip" || "$limit_ip" -eq 0 ]] && limit_ip="Bebas" || limit_ip="${limit_ip} IP"
     [[ -z "$limit_bw" || "$limit_bw" -eq 0 ]] && limit_bw="Unlimited" || limit_bw="${limit_bw} GB"
 
@@ -744,11 +744,11 @@ detail_account() {
     pesan+="${THICKLINE}\n"
     pesan+="<b>CONFIG DETAILS</b>\n"
     pesan+="<b>Port TLS   :</b> <code>443</code>\n"
-    
+
     if [[ "$proto" != "TROJAN" ]]; then
         pesan+="<b>Port NTLS  :</b> <code>80</code>\n"
     fi
-    
+
     if [[ "$proto" == "VMESS" ]]; then
         pesan+="<b>UUID       :</b> <code>${uuid}</code>\n"
         pesan+="<b>AlterId    :</b> <code>0</code>\n"
@@ -820,7 +820,7 @@ check_login() {
         send_msg "❌ <b>Belum ada data log aktif (kosong).</b>"
         return
     fi
-    
+
     THRESH=$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')
     LOGIN_DATA=$(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]", " : "") ip; counts[email]++ } } } } END { for (e in ips) print e "|" counts[e] "|" ips[e] }' <(tac "$LOG_FILE" 2>/dev/null) 2>/dev/null)
 
@@ -839,13 +839,13 @@ show_main_menu() {
     local target="$1"
     local msg_id="$2"
     local text="━━━━━━━━━━━━━━━━━━━━\n 🤖 <b>WIBUTUNNEL PANEL BOT</b>\n━━━━━━━━━━━━━━━━━━━━\n\nSelamat datang di Panel Kendali VPS. Silakan pilih menu di bawah ini:"
-    
+
     kb='{"inline_keyboard":['
     kb+='[{"text":"🔹 VLESS","callback_data":"menu_vless"},{"text":"🔸 VMESS","callback_data":"menu_vmess"}],'
     kb+='[{"text":"♦️ TROJAN","callback_data":"menu_trojan"},{"text":"🧱 SSH","callback_data":"menu_ssh"}],'
     kb+='[{"text":"⚙️ SYSTEM","callback_data":"menu_system"}]'
     kb+=']}'
-    
+
     if [[ -n "$msg_id" ]]; then
         edit_msg "$target" "$msg_id" "$text" "$kb"
     else
@@ -857,7 +857,7 @@ show_proto_menu() {
     local target="$1"
     local msg_id="$2"
     local proto="$3"
-    
+
     if [[ "$proto" == "SYSTEM" ]]; then
         local text="⚙️ <b>MENU SYSTEM</b>\nSilakan pilih opsi:"
         kb='{"inline_keyboard":['
@@ -870,7 +870,7 @@ show_proto_menu() {
         edit_msg "$target" "$msg_id" "$text" "$kb"
         return
     fi
-    
+
     local text="🛡 <b>MENU ${proto}</b>\nSilakan pilih opsi manajemen akun:"
     kb='{"inline_keyboard":['
     kb+='[{"text":"➕ Create","callback_data":"act_create_'"$proto"'"},{"text":"⏱ Trial","callback_data":"act_trial_'"$proto"'"}],'
@@ -879,7 +879,7 @@ show_proto_menu() {
     kb+='[{"text":"🎛 Limit & BW","callback_data":"act_limit_'"$proto"'"},{"text":"🔎 Detail Link","callback_data":"act_detail_'"$proto"'"}],'
     kb+='[{"text":"🔙 Back","callback_data":"main_menu"}]'
     kb+=']}'
-    
+
     edit_msg "$target" "$msg_id" "$text" "$kb"
 }
 
@@ -888,7 +888,7 @@ ask_input() {
     local action="$2"
     local proto="$3"
     local text=""
-    
+
     case "$action" in
         create) text="✨ <b>CREATE ${proto}</b>\n\nKirim data dengan format:\n<code>[username] [hari] [limit_ip] [limit_gb]</code>\n\nContoh: <code>budi 30 2 10</code>\n<i>(Kirim 0 untuk IP/GB unlimited)</i>" ;;
         trial) text="⏱ <b>TRIAL ${proto}</b>\n\nBerapa jam atau berapa menit?\n\nKirim angka dengan akhiran <b>h</b> (jam) atau <b>m</b> (menit).\nContoh: <code>1h</code> atau <code>30m</code>\n\n<i>*Quota otomatis 1 GB & IP Unlimited.</i>" ;;
@@ -897,7 +897,7 @@ ask_input() {
         limit) text="🎛 <b>UBAH LIMIT ${proto}</b>\n\nKirim data dengan format:\n<code>[username] [limit_ip_baru] [limit_gb_baru]</code>\n\nContoh: <code>budi 2 5</code>\n<i>(Kirim 0 untuk unlimited)</i>" ;;
         detail) text="🔎 <b>DETAIL AKUN ${proto}</b>\n\nKirim <b>Username</b>:\nContoh: <code>budi</code>" ;;
     esac
-    
+
     kb='{"inline_keyboard":[[{"text":"❌ Batal","callback_data":"menu_'"${proto,,}"'"}]]}'
     send_msg "$text" "$kb" "$target"
 }
@@ -916,9 +916,9 @@ if [[ -n "$CB_ID" ]]; then
     SENDER_ID=$(echo "$PAYLOAD" | jq -r ".callback_query.message.chat.id")
     MSG_ID=$(echo "$PAYLOAD" | jq -r ".callback_query.message.message_id")
     DATA=$(echo "$PAYLOAD" | jq -r ".callback_query.data // empty")
-    
+
     curl -s "https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery?callback_query_id=${CB_ID}" >/dev/null &
-    
+
     if is_admin "$SENDER_ID"; then
         if [[ "$DATA" == "main_menu" ]]; then
             show_main_menu "$SENDER_ID" "$MSG_ID"
@@ -928,16 +928,16 @@ if [[ -n "$CB_ID" ]]; then
         elif [[ "$DATA" == act_* ]]; then
             action=$(echo "$DATA" | cut -d'_' -f2)
             proto=$(echo "$DATA" | cut -d'_' -f3)
-            
+
             rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
-            
+
             case "$action" in
                 trial)
                     create_account "$proto" "trial-$(tr -dc 'a-z0-9' </dev/urandom | head -c 4)" "1h" "0" "1"
                     ;;
                 list) list_account "$proto" ;;
                 login) check_login "$proto" ;;
-                trafik) 
+                trafik)
                     if [[ -s "/etc/wibutunnel/user_usage.db" ]]; then
                         TRF_MSG="📊 <b>TOP 10 PEMAKAIAN QUOTA</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                         idx=1
@@ -985,12 +985,12 @@ else
     if [[ -n "$SENDER_ID" ]]; then
         TEXT=$(echo "$PAYLOAD" | jq -r ".message.text // empty")
         TEXT="${TEXT//$'\r'/}"
-        
+
         if is_admin "$SENDER_ID"; then
             if [[ -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}" && ! "$TEXT" =~ ^/ ]]; then
                 read -r action proto < "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
                 rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
-                
+
                 case "$action" in
                     create)
                         read -r user hari ip gb <<< "$TEXT"

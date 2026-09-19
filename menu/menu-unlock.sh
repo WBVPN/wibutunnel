@@ -98,14 +98,14 @@ for line in "${locked_list[@]}"; do
     u="${line%%:*}"
     reason="${line##*:}"
     [[ -z "$u" ]] && continue
-    
+
     proto="${USER_PROTOS[$u]}"
-    
+
     # Per-protocol filter: skip users not in this protocol
     if [[ -n "$FILTER_PROTO" ]] && [[ "$proto" != "$FILTER_PROTO" ]]; then
         continue
     fi
-    
+
     if [[ -z "$proto" ]]; then
         safe_sed_delete "$u" "$DB_LOCK"
         safe_sed_delete "$u" /etc/wibutunnel/user_usage.db
@@ -115,14 +115,14 @@ for line in "${locked_list[@]}"; do
     fi
 
     USER_NAMES[$idx]=$u
-    
+
     [[ "$reason" == "EXPIRED" ]]    && txt_rsn="${YELLOW}EXPIRED     ${NC}"
     [[ "$reason" == "QUOTA" ]]      && txt_rsn="${RED}QUOTA       ${NC}"
     [[ "$reason" == "IP_LIMIT" ]]   && txt_rsn="${RED}IP LIMIT    ${NC}"
     [[ "$reason" == "MANUAL_DEL" ]] && txt_rsn="${CYAN}DELETED     ${NC}"
-    
+
     status="${RED}RECOVERY${NC}"
-    
+
     printf " %-3s %-14s %-8s %b %b\n" "$idx)" "$u" "$proto" "$txt_rsn" "$status"
     ((idx++))
 done

@@ -65,7 +65,7 @@ if [[ "$1" == "auto" ]]; then
 
     FILE_ID=$(echo "$RESPONSE" | jq -r '.result.document.file_id // empty')
     MSG_ID=$(echo "$RESPONSE" | jq -r '.result.message_id // empty')
-    
+
     if [[ -n "$FILE_ID" && -n "$MSG_ID" ]]; then
         NEW_CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${FILE_ID}</code>\n\n🔐 <b>Password:</b> CHAT ID Anda")
         curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
@@ -136,7 +136,7 @@ do_backup() {
         echo -e "${GREEN}[+] Backup berhasil dikirim ke Telegram!${NC}"
         FILE_ID=$(echo "$RESPONSE" | jq -r '.result.document.file_id // empty')
         MSG_ID=$(echo "$RESPONSE" | jq -r '.result.message_id // empty')
-        
+
         if [[ -n "$FILE_ID" && -n "$MSG_ID" ]]; then
             NEW_CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${FILE_ID}</code>\n\n🔐 <b>Password:</b> CHAT ID Anda")
             curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
