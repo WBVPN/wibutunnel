@@ -104,6 +104,27 @@ menu
 
 ---
 
+## 🤖 Deploy dengan AI (Codex / agent)
+
+Perintah singkat untuk agent AI agar bisa memasang ulang proyek ini dari nol:
+
+```text
+1. clone repo: git clone https://github.com/WBVPN/wibutunnel /opt/wibutunnel
+2. jalankan installer utama sebagai root: bash /opt/wibutunnel/setup.sh
+3. installer bersifat idempoten — aman dijalankan ulang untuk memperbaiki
+   komponen yg gagal (dropbear, ws-stunnel, badvpn-udpgw, haproxy, xray).
+4. per komponen bisa di-reinstall sendiri via /usr/local/bin/ssh-tunnel-install
+   (stack SSH) atau menu [5] Setting Server.
+5. cek kesehatan: systemctl is-active haproxy xray dropbear
+   badvpn-udpgw@7100 ; log build udpgw di /var/log/wibutunnel-udpgw-build.log
+6. masuk menu interaktif: menu
+```
+
+Catatan untuk AI: host key dropbear HARUS format dropbear asli (dropbearkey /
+dropbearconvert) — bukan OpenSSH/PEM. Installer sudah memvalidasi ini otomatis.
+
+---
+
 ## 🤖 Setup Telegram Bot
 
 Lakukan setelah instalasi selesai:
