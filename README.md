@@ -149,11 +149,7 @@ izin.txt                  # Lisensi/izin penggunaan
 ├── bin/
 │   ├── ssh-tunnel-install# Installer SSH stack (dropbear + ws + udpgw)
 │   └── ws-stunnel        # WebSocket → SSH bridge (Python)
-├── config/
-│   ├── config.json       # Template config Xray
-│   └── haproxy.cfg       # Template config HAProxy
-└── etcwibutunnel/
-    └── lock.conf         # Konfigurasi durasi lock otomatis
+izin.txt                  # Lisensi/izin penggunaan (cek IP VPS)
 ```
 
 ---

@@ -1,4 +1,18 @@
-### WIBU-ADMIN 2030-12-12 IP_VPS_BOS
+# ==========================================
+# WIBU TUNNELING - Daftar Izin / Lisensi
+# ==========================================
+# Format: ### NAMA_KLIEN TANGGAL_KADALUWARSA IP_VPS
+#
+# Contoh:
+# ### contoh-klien 2026-12-31 192.0.2.10
+# ### pelanggan-2   lifetime   198.51.100.25
+#
+# Catatan:
+# - Gunakan "lifetime" (tanpa tanda kutip) untuk lisensi tanpa kadaluarsa.
+# - Tanggal pakai format YYYY-MM-DD.
+# - Hanya IP yang terdaftar di file ini yg bisa menjalankan script.
+# - File ini dibaca oleh setup.sh & common.sh (check_license).
+# - JANGAN simpan IP customer di repo publik; kelola daftar asli
+#   di repositori PRIVATE terpisah lalu timpa link LINK_IZIN.
 
-### adminwibu 2026-09-12 103.253.245.9
-### testsc 2026-09-13 103.150.61.189
+### adminwibu lifetime 103.253.245.9
