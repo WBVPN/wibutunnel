@@ -25,7 +25,10 @@ echo -e "\e[1;36m[+] Memeriksa Lisensi Script...\e[0m"
 # ditulis ke /etc/wibutunnel/izin_token (hanya baca root). Cara ganti:
 #   echo "TOKEN_BARU" > /etc/wibutunnel/izin_token
 mkdir -p /etc/wibutunnel
-IZIN_TOKEN="${IZIN_TOKEN:-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}"
+# [ROTASI TOKEN] token lama (ghp_..., full-scope) sudah di-revoke karena
+# ter-ekspose di git history. Diganti fine-grained PAT read-only yang HANYA
+# bisa baca repo wibutunnel-izin (tidak bisa tulis kemana pun).
+IZIN_TOKEN="${IZIN_TOKEN:-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}"
 printf '%s' "$IZIN_TOKEN" > /etc/wibutunnel/izin_token
 chmod 600 /etc/wibutunnel/izin_token
 LINK_IZIN="https://WBVPN:${IZIN_TOKEN}@raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
