@@ -358,3 +358,51 @@ stats_rule_del() {
         )
     ' 2>/dev/null
 }
+
+# ==========================================
+# DETEKSI SESSION LIVE (via ss) + GRACE PERIOD IP HANDOVER
+# ==========================================
+# Xray official hanya melog "accepted" (tidak ada "closed"), jadi deteksi
+# IP-sharing tidak bisa andalkan log saja. Kita baca koneksi ESTABLISHED
+# langsung dari socket table (ss) untuk dapat IP client yang BENAR-BENAR
+# online saat ini, lalu filter berdasarkan user pemilik koneksi.
+#
+# GRACE PERIOD: saat client pindah WiFi/handover, IP lama & IP baru bisa
+# overlap sebentar. Kita kasih waktu 120 detik sebelum anggap sharing,
+# supaya user jujur tidak kena lock palsu.
+
+WIBU_GRACE_PERIOD=120
+
+# xray_live_user_ips: cetak daftar "user ip" untuk koneksi xray yang masih
+# ESTABLISHED saat ini. Cara: ambil koneksi ESTABLISHED milik proses xray
+# (sport = port inbound xray 10086-10093), dapat peer IP-nya, lalu cocokkan
+# IP tsb dengan user yang pernah tercatat di access.log.
+xray_live_user_ips() {
+    command -v ss >/dev/null 2>&1 || return 0
+    # Ambil peer IP dari koneksi established ke port inbound xray.
+    # Karena xray listen di 127.0.0.1, peer-nya adalah IP HAProxy (loopback)
+    # untuk ws/grpc — TAPI untuk koneksi langsung (trojan tcp biasa), peer
+    # adalah IP client asli. Kita ambil semua, nanti difilter di bawah.
+    ss -tnH state established 2>/dev/null \
+        | awk '$4 ~ /:(10086|10087|10088|10089|10090|10091|10092|10093)$/ {
+            split($4, a, ":"); ip=a[1]; split($3, b, ":");
+            # simpan: ip client (peer) -> port lokal xray
+            print ip, b[2]
+        }' | sort -u
+}
+
+# xray_log_user_ips: cetak "user ip" dari access.log 3 menit terakhir
+# (fallback bila ss tidak tersedia / tidak ada koneksi terdeteksi).
+xray_log_user_ips() {
+    local THRESH=$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')
+    awk -v thresh="$THRESH" '{
+        if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit
+        if(/accepted/){
+            for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }
+            email=$NF; gsub(/[ \t\r\n]+$/, "", email)
+            if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") {
+                print email, ip
+            }
+        }
+    }' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null | sort -u
+}

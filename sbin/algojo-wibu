@@ -1,8 +1,17 @@
 #!/bin/bash
 # ==========================================
 # WIBU TUNNELING - algojo-wibu (v4.0 Kurumi)
-# [PATCH] flock via safe_jq_edit, unique tmp path
+# [MAJOR] Deteksi IP-sharing LIVE via socket table (ss) + grace period 120s
 # ==========================================
+# Xray official hanya melog event "accepted" (tidak ada "closed"), sehingga
+# deteksi IP-sharing berbasis log menebak saja. Upgrade ini membaca koneksi
+# ESTABLISHED langsung dari socket table:
+#   1. ss -> IP client yang sedang online di HAProxy :443/:80 (IP asli)
+#   2. access.log -> pasangan user<->IP (PROXY protocol mengirim IP asli)
+#   3. Irisan keduanya = user<->IP yang online SAAT INI, bukan tebakan.
+# 4. GRACE PERIOD 120s: IP handover (pindah WiFi/sinyal) membuat IP lama &
+#    IP baru overlap sebentar. Lock hanya jika multi-IP bertahan > 120 detik,
+#    sehingga user jujur tidak kena lock palsu.
 source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
 source /etc/wibutunnel/bot.conf 2>/dev/null
 DB_IP="/etc/wibutunnel/limit_ip.db"
@@ -13,49 +22,124 @@ LOCK_DURATION=15
 if [ -f "$LOCK_CONF" ]; then source "$LOCK_CONF"; fi
 [[ ! -f "$DB_IP" ]] && exit 0
 
-# [MATA ELANG V2] Deteksi real IP via Log 3 Menit
-THRESH=$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')
-LOGIN_DATA=$(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[ \t\r\n]+$/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; } } } } END { for (e in ips) print e, ips[e] }' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null)
+NOW=$(date +%s)
+GRACE="${WIBU_GRACE_PERIOD:-120}"
+IP_STATE="/etc/wibutunnel/tmp/ip_seen.db"
+mkdir -p /etc/wibutunnel/tmp; touch "$IP_STATE"
+
+# ==========================================
+# Ambil pasangan user <-> IP yang online SAAT INI
+# ==========================================
+LOG_WINDOW=$(date -d '10 minutes ago' +'%Y/%m/%d %H:%M:%S')
+LOG_PAIRS=$(awk -v thresh="$LOG_WINDOW" '{
+    if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit
+    if(/accepted/){
+        for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }
+        email=$NF; gsub(/[ \t\r\n]+$/, "", email)
+        if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") print email, ip
+    }
+}' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null | sort -u)
+
+LIVE_IPS=""
+USE_LIVE=0
+if command -v ss >/dev/null 2>&1; then
+    LIVE_IPS=$(ss -tnH state established '( sport = :443 or sport = :80 )' 2>/dev/null \
+        | awk '{print $4}' | sed 's/:[0-9]*$//' | grep -v '^127\.' | sort -u)
+    [[ -n "$LIVE_IPS" ]] && USE_LIVE=1
+fi
+
+if [[ "$USE_LIVE" == "1" && -n "$LOG_PAIRS" ]]; then
+    # Irisan: user<->IP yang IP-nya benar-benar online sekarang
+    ONLINE_PAIRS=$(printf '%s\n' "$LOG_PAIRS" | awk -v live="$LIVE_IPS" '
+        BEGIN { n=split(live, L, "\n"); for(i=1;i<=n;i++) if(L[i]!="") seen[L[i]]=1 }
+        ($2 in seen) { print }')
+else
+    # Fallback: pakai window log 3 menit (deteksi lama)
+    ONLINE_PAIRS=$(awk -v thresh="$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')" '{
+        if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit
+        if(/accepted/){
+            for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }
+            email=$NF; gsub(/[ \t\r\n]+$/, "", email)
+            if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") print email, ip
+        }
+    }' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null | sort -u)
+fi
+
+# ==========================================
+# State: catat kapan pertama kali IP ini terlihat online (untuk grace period)
+# Format: user:ip:first_seen_epoch
+# Pair yang tidak online sekarang di-prune (sudah disconnect).
+# ==========================================
+STATE_TMP=$(mktemp /etc/wibutunnel/tmp/ip_state.XXXXXX)
+if [[ -n "$ONLINE_PAIRS" ]]; then
+    printf '%s\n' "$ONLINE_PAIRS" | while read -r u ip; do
+        [[ -z "$u" || -z "$ip" ]] && continue
+        ts=$(awk -F: -v u="$u" -v i="$ip" '$1==u && $2==i{print $3; exit}' "$IP_STATE")
+        [[ -z "$ts" ]] && ts="$NOW"
+        printf '%s:%s:%s\n' "$u" "$ip" "$ts" >> "$STATE_TMP"
+    done
+fi
+mv "$STATE_TMP" "$IP_STATE" 2>/dev/null
+
+# ==========================================
+# Hitung jumlah IP per user & tentukan pelanggar (dengan grace period)
+# ==========================================
+declare -A IP_COUNT IP_NEWEST
+if [[ -n "$ONLINE_PAIRS" ]]; then
+    while read -r u ip; do
+        [[ -z "$u" || -z "$ip" ]] && continue
+        IP_COUNT["$u"]=$(( ${IP_COUNT["$u"]:-0} + 1 ))
+        ts=$(awk -F: -v u="$u" -v i="$ip" '$1==u && $2==i{print $3; exit}' "$IP_STATE")
+        [[ -z "$ts" ]] && ts="$NOW"
+        if [[ -z "${IP_NEWEST[$u]}" || "$ts" -gt "${IP_NEWEST[$u]}" ]]; then
+            IP_NEWEST["$u"]="$ts"
+        fi
+    done <<< "$ONLINE_PAIRS"
+fi
 
 USERS_TO_LOCK=()
-while read -r email ip_list; do
-    if [[ -z "$email" || -z "$ip_list" ]]; then continue; fi
+for email in "${!IP_COUNT[@]}"; do
     max_ip=$(db_lookup "$email" "$DB_IP" | cut -d: -f2)
     [[ "$max_ip" == "0" || -z "$max_ip" ]] && continue
+    (( ${IP_COUNT["$email"]} > max_ip )) || continue
 
-    ip_count=$(echo "$ip_list" | wc -w)
-    if [[ $ip_count -gt $max_ip ]]; then
-        if ! db_has "$email" "$DB_LOCK"; then
-            proto="UNKNOWN"
-            db_has "$email" /etc/xray/vless_exp.conf && proto="VLESS"
-            db_has "$email" /etc/xray/vmess_exp.conf && proto="VMESS"
-            db_has "$email" /etc/xray/trojan_exp.conf && proto="TROJAN"
+    # GRACE PERIOD: multi-IP baru dianggap sharing kalau sudah bertahan
+    # lebih dari $GRACE detik. Handover singkat tidak dihitung.
+    if [[ "$USE_LIVE" == "1" ]]; then
+        overlap=$(( NOW - ${IP_NEWEST["$email"]} ))
+        (( overlap >= GRACE )) || continue
+    fi
 
-            now=$(date +%s)
-            unlock_time=$((now + (LOCK_DURATION * 60)))
-            echo "${email}:${now}:${unlock_time}:IP_LIMIT" >> "$DB_LOCK"
+    if ! db_has "$email" "$DB_LOCK"; then
+        proto="UNKNOWN"
+        db_has "$email" /etc/xray/vless_exp.conf && proto="VLESS"
+        db_has "$email" /etc/xray/vmess_exp.conf && proto="VMESS"
+        db_has "$email" /etc/xray/trojan_exp.conf && proto="TROJAN"
 
-            USERS_TO_LOCK+=("$email")
+        now=$(date +%s)
+        unlock_time=$((now + (LOCK_DURATION * 60)))
+        echo "${email}:${now}:${unlock_time}:IP_LIMIT" >> "$DB_LOCK"
 
-            (
-                DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-                WAKTU=$(date '+%d %b %Y %H:%M WIB')
-                THICKLINE=$(printf '\u2501%.0s' {1..24})
-                PESAN="🔒 <b>USER DIKUNCI OTOMATIS</b>
+        USERS_TO_LOCK+=("$email")
+
+        (
+            DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+            WAKTU=$(date '+%d %b %Y %H:%M WIB')
+            THICKLINE=$(printf '\u2501%.0s' {1..24})
+            PESAN="\U0001F512 <b>USER DIKUNCI OTOMATIS</b>
 ${THICKLINE}
 <code>User        : ${email}</code>
-<code>Alasan      : Melebihi Limit IP</code>
+<code>Alasan      : Melebihi Limit IP (${IP_COUNT["$email"]} > ${max_ip})</code>
 <code>Durasi      : ${LOCK_DURATION} menit</code>
 ${THICKLINE}
 <code>Host        : ${DOMAIN}</code>
 <code>Waktu       : ${WAKTU}</code>
 ${THICKLINE}
 <i>Account akan otomatis dibuka setelah durasi habis.</i>"
-                curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
-            ) &
-        fi
+            curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
+        ) &
     fi
-done <<< "$LOGIN_DATA"
+done
 
 # ==========================================
 # SSH TUNNEL: limit IP (multi-login) untuk akun dropbear
@@ -81,7 +165,7 @@ while read -r ssh_user; do
         DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
         WAKTU=$(date '+%d %b %Y %H:%M WIB')
         THICKLINE=$(printf '\u2501%.0s' {1..24})
-        PESAN="🔒 <b>SSH USER DIKUNCI OTOMATIS</b>
+        PESAN="\U0001F512 <b>SSH USER DIKUNCI OTOMATIS</b>
 ${THICKLINE}
 <code>User        : ${ssh_user}</code>
 <code>Alasan      : Melebihi Limit IP/Sesi (${sess_count} > ${max_ip})</code>
@@ -91,7 +175,7 @@ ${THICKLINE}
 <code>Waktu       : ${WAKTU}</code>
 ${THICKLINE}
 <i>Account akan otomatis dibuka setelah durasi habis.</i>"
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
+        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
     ) &
 done < <(ssh_list_users)
 
