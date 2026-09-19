@@ -88,16 +88,22 @@ config_dropbear() {
     for k in /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey; do
         [[ -x "$k" ]] && KEYGEN="$k" && break
     done
+    # 'dropbear -R' generate semua host key yg hilang dalam satu kali
+    # panggil — paling andal & tidak bergantung pada path dropbearkey.
+    local need=0
     for t in rsa ecdsa dss ed25519; do
-        [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] && continue
-        if [[ -n "$KEYGEN" ]]; then
-            "$KEYGEN" -t "$t" -f "/etc/dropbear/dropbear_${t}_host_key" >/dev/null 2>&1
-        else
-            # fallback: dropbear sendiri bisa generate key (-R)
-            /usr/sbin/dropbear -R -p 127.0.0.1:1 >/dev/null 2>&1
-            break
-        fi
+        [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] || need=1
     done
+    if [[ $need -eq 1 ]]; then
+        /usr/sbin/dropbear -R -E -p 127.0.0.1:1 >/dev/null 2>&1
+    fi
+    # cadangan: dropbear -R gagal (binary lama/tidak support -R) -> dropbearkey
+    if ! ls /etc/dropbear/dropbear_*_host_key >/dev/null 2>&1 && [[ -n "$KEYGEN" ]]; then
+        for t in rsa ecdsa dss ed25519; do
+            [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] && continue
+            "$KEYGEN" -t "$t" -f "/etc/dropbear/dropbear_${t}_host_key" >/dev/null 2>&1
+        done
+    fi
     # verifikasi minimal ada 1 host key, kalau tidak ada gagal total
     if ! ls /etc/dropbear/dropbear_*_host_key >/dev/null 2>&1; then
         err "gagal membuat host key dropbear"; return 1
