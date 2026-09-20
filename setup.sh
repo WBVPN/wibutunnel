@@ -680,9 +680,24 @@ systemctl stop sslh stunnel4 2>/dev/null
 systemctl disable sslh stunnel4 2>/dev/null
 systemctl mask sslh stunnel4 2>/dev/null
 
-# [FIX] Deteksi versi certbot untuk kompatibilitas flag
-if certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
-    # Certbot 2.x+ tidak support --register-unsafely-without-email
+# [REUSE CERT] Let's Encrypt rate limit: 5 cert per domain per 168 jam.
+# Reinstall/test berulang akan kena rate limit ("too many certificates").
+# Kalau cert yang ada MASIH VALID (kedaluwarsa > 7 hari lagi), pakai langsung
+# - jangan minta baru. Hanya minta cert kalau belum ada atau hampir expired.
+_cert_valid() {
+    local d="$1" pem="/etc/letsencrypt/live/$d/fullchain.pem" ends ep now
+    [[ -f "$pem" ]] || return 1
+    ends=$(openssl x509 -in "$pem" -noout -enddate 2>/dev/null | cut -d= -f2) || return 1
+    ep=$(date -d "$ends" +%s 2>/dev/null) || return 1
+    now=$(date +%s)
+    # kedaluwarsa > 7 hari lagi = masih layak dipakai
+    [[ $(( (ep - now) / 86400 )) -gt 7 ]]
+}
+
+if _cert_valid "$domain"; then
+    echo -e "\e[1;32m[+] Sertifikat $domain masih valid - pakai yang ada (hindari rate limit Let's Encrypt)\e[0m"
+elif certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
+    # [FIX] Certbot 2.x+ tidak support --register-unsafely-without-email
     certbot certonly --standalone --non-interactive --agree-tos -m "admin@${domain}" -d "$domain"
 else
     certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos -d "$domain"
@@ -690,6 +705,9 @@ fi
 
 if [ ! -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
     echo -e "${RED}SSL GAGAL! Pastikan domain $domain mengarah ke IP ini.${NC}"
+    echo -e "${YELLOW}    Kalo domain sudah benar, kemungkinan terkena RATE LIMIT Let's Encrypt"
+    echo -e "    (5 cert per domain per 7 hari). Tunggu 24-48 jam lalu jalankan ulang,"
+    echo -e "    atau pakai cert lama di /etc/letsencrypt/live/$domain/ (masih valid).${NC}"
     exit 1
 fi
 cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain"/privkey.pem > /etc/haproxy/certs/"$domain".pem
