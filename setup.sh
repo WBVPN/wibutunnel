@@ -102,66 +102,156 @@ if command -v update-grub >/dev/null 2>&1 && [[ -f /etc/default/grub ]]; then
 fi
 echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
 
-# [APT SELF-HEAL] Debian lama (bullseye/buster, dll) yang sudah EOL: repo
-# security.debian.org/debian-security dikosongkan -> apt-get install apapun
-# 404 (certbot, haproxy, jq, curl ...), instalasi rusak total walau domain
-# sudah benar. Fungsi ini deteksi & arahkan ke archive.debian.org + bersihkan
-# list basi. 3 lapis cek: (1) fetch Release gagal, (2) download paket gagal,
-# (3) fallback semua mirror debian ke deb.debian.org.
+# [APT SELF-HEAL] apt adalah critical path installer: kalau apt mogok, semua
+# gagal (certbot, haproxy, build badvpn/dropbear, jq, ...). Penyebab umum di
+# VPS Debian/Ubuntu tua: (a) rilis sudah EOL, mirror lama dikosongkan /
+# dipindah ke archive, (b) mirror provider (mis. mr.heru.id) tidak lengkap
+# (tidak punya suite backports/security), (c) index apt basi referensi .deb
+# yang sudah dihapus -> 404. Strategi: cek kesehatan via download uji; kalau
+# gagal, cari mirror yang BENAR-BENAR menyajikan suite ini (curl -f per
+# kandidat) lalu tulis ulang sources.list. Tidak sentuh sistem yang sehat.
 apt_selfheal() {
     export DEBIAN_FRONTEND=noninteractive
-    local rel="" f TMP
-    [[ -f /etc/os-release ]] && rel=$(. /etc/os-release; echo "$VERSION_CODENAME")
+    local rel="" ID="" TMP="" main="" sec="" ups="" f
+    [[ -f /etc/os-release ]] && { . /etc/os-release; }
+    rel="$VERSION_CODENAME"
     TMP=$(mktemp -d)
 
-    _rewrite_archive() {
-        echo -e "\e[1;36m[+] Repo Debian EOL 404, arahkan ke archive.debian.org...\e[0m"
-        cp -f /etc/apt/sources.list /etc/apt/sources.list.wibu.bak 2>/dev/null
-        sed -i 's|https\?://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' /etc/apt/sources.list
-        for f in /etc/apt/sources.list.d/*.list; do
-            [[ -f "$f" ]] && sed -i 's|https\?://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' "$f"
-        done
-        echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99wibu-archive
-        rm -rf /var/lib/apt/lists/* 2>/dev/null
-        apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+    _winfo() { echo -e "\e[1;36m[+] $*\e[0m"; }
+
+    # HTTP client apa saja yang tersedia (curl bisa belum terpasang jika
+    # installer dipanggil dari jalur repair, bukan via curl).
+    _http_get() {
+        local url="$1"
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsS --max-time 8 -o /dev/null "$url" 2>/dev/null
+        elif command -v wget >/dev/null 2>&1; then
+            wget -q --timeout=8 --spider "$url" 2>/dev/null
+        else
+            return 1   # tidak ada http client -> verifikasi dilewati
+        fi
+    }
+    _have_http() { command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; }
+
+    # cari mirror yang menyajikan suite ini - diverifikasi via HTTP 200, bukan
+    # asumsi. urut: mirror cepat/umum dulu, archive sebagai fallback.
+    _suite_url() {
+        local kind="$1" m
+        _have_http || return 9   # penanda: tidak bisa verifikasi
+        if [[ "$ID" == "ubuntu" ]]; then
+            if [[ "$kind" == security ]]; then
+                for m in http://security.ubuntu.com/ubuntu http://archive.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+                done
+            else
+                for m in http://archive.ubuntu.com/ubuntu http://security.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+                done
+            fi
+            return 1
+        fi
+        # debian
+        if [[ "$kind" == security ]]; then
+            # PENTING: suite security EOL (bullseye-security dll) ada di
+            # deb.debian.org/security, BUKAN archive.debian.org (404 di sana).
+            for m in http://deb.debian.org/debian-security http://security.debian.org/debian-security http://archive.debian.org/debian-security; do
+                _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+            done
+        else
+            for m in http://deb.debian.org/debian http://archive.debian.org/debian; do
+                _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+            done
+        fi
+        return 1
     }
 
-    rm -rf /var/lib/apt/lists/* 2>/dev/null
-    dpkg --configure -a >/dev/null 2>&1
-    apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+    _heal_update() {
+        rm -rf /var/lib/apt/lists/* 2>/dev/null
+        dpkg --configure -a >/dev/null 2>&1
+    }
 
-    # lapis 1: repo security EOL tidak serve Release lagi (curl -f: 404 = gagal)
-    if [[ -n "$rel" ]] && grep -rq "security.debian.org/debian-security" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
-        if ! curl -fsS --max-time 8 -o /dev/null "http://security.debian.org/debian-security/dists/${rel}-security/Release" 2>/dev/null \
-        && ! curl -fsS --max-time 8 -o /dev/null "https://security.debian.org/debian-security/dists/${rel}-security/Release" 2>/dev/null; then
-            _rewrite_archive
-        fi
-    fi
+    # SEHAT = (1) apt-get update bersisih exit 0 [tidak ada baris repo yang
+    # error], DAN (2) download paket nyata berhasil. Cek (1) penting karena
+    # index suite security EOL bisa men-list versi yang .deb-nya sudah dihapus
+    # (404) - update "berhasil" sebagian tapi install paket apa pun gagal.
+    _healthy() {
+        apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1 || return 1
+        ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 )
+    }
 
-    # lapis 2: uji download paket nyata (index basi yang refer .deb hilang -> 404)
-    if ! (cd "$TMP" && apt-get download haproxy >/dev/null 2>&1); then
-        if grep -rq "security.debian.org/debian-security" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
-            _rewrite_archive
-        fi
-    fi
+    _write_sources() {
+        # $1=mirror main, $2=mirror security (boleh kosong)
+        cp -f /etc/apt/sources.list /etc/apt/sources.list.wibu.bak 2>/dev/null
+        {
+            echo "# [WIBU] ditulis ulang oleh installer - mirror lama rusak/EOL."
+            echo "# backup konfigurasi lama: /etc/apt/sources.list.wibu.bak"
+            if [[ "$ID" == "ubuntu" ]]; then
+                echo "deb $1 ${rel} main universe"
+                echo "deb $1 ${rel}-updates main universe"
+                [[ -n "$2" ]] && echo "deb $2 ${rel}-security main universe"
+            else
+                echo "deb $1 ${rel} main"
+                echo "deb $1 ${rel}-updates main"
+                [[ -n "$2" ]] && echo "deb $2 ${rel}-security main"
+            fi
+        } > /etc/apt/sources.list
+        echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99wibu-archive
+    }
 
-    # lapis 3 (Debian only): mirror utama juga rusak -> fallback deb.debian.org
-    if ! (cd "$TMP" && apt-get download haproxy >/dev/null 2>&1); then
-        if [[ "$ID" == "debian" ]]; then
-            echo -e "\e[1;36m[+] Mirror utama bermasalah, fallback ke deb.debian.org...\e[0m"
-            sed -i 's|https\?://[^[:space:]]*/debian |http://deb.debian.org/debian |g' /etc/apt/sources.list
-            for f in /etc/apt/sources.list.d/*.list; do
-                [[ -f "$f" ]] && sed -i 's|https\?://[^[:space:]]*/debian|http://deb.debian.org/debian|g' "$f"
+    _rewrite_full() {
+        [[ -n "$rel" ]] || return 1
+        main=$(_suite_url main)
+        local rc=$?
+        if [[ $rc -eq 9 ]]; then
+            # tidak ada http client untuk verifikasi: brute-force kandidat
+            # mirror satu per satu sampai apt-get update + download berhasil.
+            # format: "mirror_main|mirror_security" - security KOSONG artinya
+            # baris security dilewati (main saja). Urut: yang paling lengkap
+            # & cepat dulu, fallback ke archive, terakhir main-only.
+            local pairs=( "http://deb.debian.org/debian|http://deb.debian.org/debian-security"
+                          "http://deb.debian.org/debian|"
+                          "http://deb.debian.org/debian|http://security.debian.org/debian-security"
+                          "http://archive.debian.org/debian|http://deb.debian.org/debian-security"
+                          "http://archive.debian.org/debian|" )
+            [[ "$ID" == "ubuntu" ]] && pairs=( "http://archive.ubuntu.com/ubuntu|http://security.ubuntu.com/ubuntu"
+                                                "http://archive.ubuntu.com/ubuntu|" )
+            for pair in "${pairs[@]}"; do
+                _winfo "apt rusak & tidak ada http client, mencoba: ${pair%%|*} ..."
+                _write_sources "${pair%%|*}" "${pair##*|}"
+                _heal_update
+                _healthy && return 0
             done
-            # security suite hanya ada di archive.debian.org, pastikan tetap
-            # di sana (bukan deb.debian.org) setelah rewrite mirror utama.
-            sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list
-            for f in /etc/apt/sources.list.d/*.list; do
-                [[ -f "$f" ]] && sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' "$f"
-            done
-            rm -rf /var/lib/apt/lists/* 2>/dev/null
-            apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+            return 1
         fi
+        [[ -n "$main" ]] || { _winfo "tidak ada mirror yang menyajikan $rel - apt tidak bisa diperbaiki otomatis"; return 1; }
+        sec=$(_suite_url security)
+        _http_get "${main}/dists/${rel}-updates/Release" || ups=""
+        _winfo "apt rusak, menulis ulang sources.list ke mirror terverifikasi ($main)..."
+        _write_sources "$main" "$sec"
+        _healthy && return 0
+        # Release security ada, tapi pool-nya 404 (index EOL basi). Coba tanpa
+        # baris security - main saja cukup untuk semua paket installer.
+        [[ -n "$sec" ]] && {
+            _winfo "suite security bermasalah, menggunakan main saja..."
+            _write_sources "$main" ""
+            _healthy && return 0
+        }
+        return 1
+    }
+
+    _heal_update
+    if _healthy; then rm -rf "$TMP" 2>/dev/null; return 0; fi
+
+    # apt sakit -> tulis ulang ke mirror terverifikasi
+    _rewrite_full
+
+    # masih sakit? repo pihak ketiga di sources.list.d mungkin penyebabnya
+    if ! _healthy; then
+        _winfo "apt masih bermasalah, nonaktifkan repo pihak ketiga sementara..."
+        for f in /etc/apt/sources.list.d/*.list; do
+            [[ -f "$f" ]] && mv -f "$f" "${f}.disabled-wibu" 2>/dev/null
+        done
+        _heal_update
     fi
 
     rm -rf "$TMP" 2>/dev/null
