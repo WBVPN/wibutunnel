@@ -112,7 +112,7 @@ echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
 # kandidat) lalu tulis ulang sources.list. Tidak sentuh sistem yang sehat.
 apt_selfheal() {
     export DEBIAN_FRONTEND=noninteractive
-    local rel="" ID="" TMP="" main="" sec="" ups="" f
+    local rel="" ID="" TMP="" main="" sec="" f
     [[ -f /etc/os-release ]] && { . /etc/os-release; }
     rel="$VERSION_CODENAME"
     TMP=$(mktemp -d)
@@ -165,40 +165,55 @@ apt_selfheal() {
         return 1
     }
 
+    # [PERFORMA] hanya kosongkan lists (dipanggil saat mirror berganti).
+    # Repair dpkg butuh lists TERISI agar resolve berhasil, jadi repair
+    # sebelum update sia-sia + salah urut. _healthy() selalu dipanggil
+    # setelah ini dan melakukan repair (urutan benar) bila simulate gagal.
     _heal_update() {
         rm -rf /var/lib/apt/lists/* 2>/dev/null
-        _repair_dpkg
     }
 
-    # Perbaiki state dpkg (held broken packages): paket setengah terpasang,
-    # dependensi patah, atau versi lebih baru dari kandidat (sisa install dari
-    # security suite EOL yang pool-nya sudah dihapus). HARUS dijalankan SETELAH
-    # apt-get update mengisi lists - kalau tidak, apt-get -f install tidak bisa
-    # resolve apa-apa dan paket patah tetap menggantung.
-    # [HELD BROKEN PACKAGES] Skenenario khas Debian EOL: paket-paket dulu
-    # di-upgrade dari security suite (mis. haproxy 2.2.9-2+deb11u7). Setelah
-    # EOL, .deb versi itu dihapus dari pool -> versi terpasang LEBIH BARU dari
-    # kandidat mana pun -> apt menolak install apa pun ("held broken packages").
-    # SOLUSI: kembalikan setiap paket over-version ke versi kandidat main pool
-    # yang masih ada .deb-nya. Harus sebut versi EKSPLISIT + --allow-downgrades.
-    # [OVER-VERSION DETECTION] apt-cache policy menampilkan versi TERPASANG
-    # sebagai "Candidate" kalau itu versi tertinggi yang diketahui apt - jadi
-    # perbandingan inst > cand tidak pernah true. Pakai apt-cache madison: dia
-    # hanya melaporkan versi dari POOL (apa yang benar-benar bisa di-download).
-    # [NOTE] dpkg-query -f='${Version}' bisa output kosong di beberapa locale
-    # (multibyte). Format tab-separated "dpkg-query -W <pkg>" selalu stabil.
+    # [HELD BROKEN PACKAGES] Skenario khas Debian EOL: paket dulu di-upgrade
+    # dari security suite (mis. haproxy 2.2.9-2+deb11u7). Setelah EOL, .deb
+    # versi itu dihapus dari pool -> versi TERPASANG lebih baru dari kandidat
+    # mana pun -> apt menolak install apa pun ("held broken packages").
+    # SOLUSI: kembalikan paket over-version ke versi pool yang masih ada,
+    # sebut versi EKSPLISIT + --allow-downgrades.
+    #
+    # [PERFORMA] JANGAN memindai semua paket terpasang (apt-cache madison per
+    # paket = ratusan pemanggilan = sangat lambat, installer kelihatan stuck).
+    # Cukup ekstrak paket yang apt sendiri laporkan bermasalah dari simulasi.
     _downgrade_overversion() {
-        local pkg inst mad
-        dpkg-query -W 2>/dev/null | while read -r pkg inst rest; do
-            [[ -n "$pkg" && -n "$inst" ]] || continue
-            # madison baris pertama = versi pool tertinggi yang tersedia
+        local sim pkgs pkg inst mad
+        # simulasi install paket kunci; tangkap laporan dependensi patah
+        sim=$(apt-get install -s -y build-essential haproxy jq curl bzip2 2>/dev/null)
+        grep -qiE "unmet dependencies|held broken" <<< "$sim" || return 0
+
+        _winfo "menemukan paket over-version (sisa security EOL), downgrade..."
+        # baris format: " jq : Depends: libjq1 (= 1.6-2.1) but 1.6-2.1+99 ..."
+        # -> ambil paket utama DAN paket dependensinya
+        pkgs=$(grep -oE '^[[:space:]]*[a-z0-9][a-z0-9+.+-]*[[:space:]]*:' <<< "$sim" | tr -d ' :' | sort -u)
+        pkgs="$pkgs $(grep -oE 'Depends: [a-z0-9][a-z0-9+.+-]*' <<< "$sim" | awk '{print $2}' | sort -u)"
+
+        for pkg in $pkgs; do
+            [[ -n "$pkg" ]] || continue
+            inst=$(dpkg-query -W "$pkg" 2>/dev/null | awk '{print $2}')
+            [[ -n "$inst" ]] || continue
             mad=$(apt-cache madison "$pkg" 2>/dev/null | head -n 1 | awk -F'|' '{print $2}' | tr -d ' ')
             [[ -n "$mad" ]] || continue
             dpkg --compare-versions "$inst" gt "$mad" 2>/dev/null || continue
+            _winfo "  downgrade $pkg: $inst -> $mad"
             apt-get install -y --allow-downgrades "$pkg=$mad" >/dev/null 2>&1
         done
+        return 0
     }
 
+    # Perbaiki state dpkg: paket setengah terpasang, dependensi patah, atau
+    # paket over-version (lihat _downgrade_overversion). HARUS dijalankan
+    # SETELAH apt-get update mengisi lists - kalau tidak, apt-get -f install
+    # tidak bisa resolve apa-apa dan paket patah tetap menggantung. Karena itu
+    # function ini hanya dipanggil dari _healthy() (setelah update) dan TIDAK
+    # dari _heal_update() (lists masih kosong -> repair sia-sia & salah urut).
     _repair_dpkg() {
         dpkg --configure -a >/dev/null 2>&1
         apt-get -f install -y --allow-downgrades >/dev/null 2>&1 || apt-get -f install -y >/dev/null 2>&1
@@ -215,12 +230,23 @@ apt_selfheal() {
     # sudah dihapus - update & download terlihat sehat tapi install apapun
     # pasti gagal dengan "held broken packages".
     _healthy() {
-        apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1 || return 1
-        # [URUTAN PENTING] repair DULU sebelum simulate: downgrade paket
-        # over-version butuh lists yang sudah terisi (madion baca dari lists).
+        # [CEK MURAH DULU] update + simulate. Repair (mahal: apt -f install,
+        # downgrade) hanya jika simulate memang gagal - menghindari pekerjaan
+        # sia-saya di setiap kandidat mirror saat brute-force.
+        # update boleh gagal parsial (suite EOL basi / *-updates 404) selama
+        # index MAIN terisi - simulate install adalah penanda sehat sejati.
+        # Mirror sama sekali tidak reachable -> lists kosong -> simulate gagal.
+        apt-get update -y --fix-missing >/dev/null 2>&1
+        apt-get update -y >/dev/null 2>&1
+        if apt-get install -s -y build-essential haproxy jq curl bzip2 >/dev/null 2>&1; then
+            ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 )
+            return $?
+        fi
+        # simulate gagal -> coba repair (downgrade over-version butuh lists
+        # yang sudah terisi oleh update di atas).
         _repair_dpkg
-        ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 ) || return 1
-        apt-get install -s -y build-essential haproxy jq curl bzip2 >/dev/null 2>&1
+        apt-get install -s -y build-essential haproxy jq curl bzip2 >/dev/null 2>&1 || return 1
+        ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 )
     }
 
     # cari mirror yang menyajikan suite ini - diverifikasi via HTTP 200, bukan
@@ -258,16 +284,23 @@ apt_selfheal() {
     _write_sources() {
         # $1=mirror main, $2=mirror security (boleh kosong)
         cp -f /etc/apt/sources.list /etc/apt/sources.list.wibu.bak 2>/dev/null
+        # [EOL] suite *-updates sering dihapus di rilis EOL (mis. buster).
+        # Index 404 -> apt-get update gagal total -> mirror sehat kelihatan
+        # rusak. Kalau index tidak terbaca (atau tidak ada http client di
+        # mode brute-force), LEWATI baris itu: aman, paket installer
+        # (haproxy/jq/curl/build-essential) semuanya ada di suite main.
+        local ups=""
+        _have_http && _http_get "$1/dists/${rel}-updates/Release" && ups="yes"
         {
             echo "# [WIBU] ditulis ulang oleh installer - mirror lama rusak/EOL."
             echo "# backup konfigurasi lama: /etc/apt/sources.list.wibu.bak"
             if [[ "$ID" == "ubuntu" ]]; then
                 echo "deb $1 ${rel} main universe"
-                echo "deb $1 ${rel}-updates main universe"
+                [[ -n "$ups" ]] && echo "deb $1 ${rel}-updates main universe"
                 [[ -n "$2" ]] && echo "deb $2 ${rel}-security main universe"
             else
                 echo "deb $1 ${rel} main"
-                echo "deb $1 ${rel}-updates main"
+                [[ -n "$ups" ]] && echo "deb $1 ${rel}-updates main"
                 [[ -n "$2" ]] && echo "deb $2 ${rel}-security main"
             fi
         } > /etc/apt/sources.list
@@ -291,17 +324,27 @@ apt_selfheal() {
                           "http://archive.debian.org/debian|" )
             [[ "$ID" == "ubuntu" ]] && pairs=( "http://archive.ubuntu.com/ubuntu|http://security.ubuntu.com/ubuntu"
                                                 "http://archive.ubuntu.com/ubuntu|" )
+            local n=0 prev_main=""
+            _winfo "tidak ada curl/wget untuk verifikasi mirror - mencoba ${#pairs[@]} kandidat..."
             for pair in "${pairs[@]}"; do
-                _winfo "apt rusak & tidak ada http client, mencoba: ${pair%%|*} ..."
+                n=$((n + 1))
+                if [[ "${pair%%|*}" != "$prev_main" ]]; then
+                    # mirror berganti -> index lama tidak valid, bersihkan.
+                    _winfo "[$n/${#pairs[@]}] mencoba mirror: ${pair%%|*}"
+                    _heal_update
+                    prev_main="${pair%%|*}"
+                else
+                    # mirror SAMA -> lists dipakai ulang, apt-get update jadi
+                    # "Hit" (cepat), tidak download ulang puluhan MB index.
+                    _winfo "[$n/${#pairs[@]}] mirror sama, coba suite security lain..."
+                fi
                 _write_sources "${pair%%|*}" "${pair##*|}"
-                _heal_update
                 _healthy && return 0
             done
             return 1
         fi
         [[ -n "$main" ]] || { _winfo "tidak ada mirror yang menyajikan $rel - apt tidak bisa diperbaiki otomatis"; return 1; }
         sec=$(_suite_url security)
-        _http_get "${main}/dists/${rel}-updates/Release" || ups=""
         _winfo "apt rusak, menulis ulang sources.list ke mirror terverifikasi ($main)..."
         _write_sources "$main" "$sec"
         _healthy && return 0
