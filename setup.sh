@@ -167,16 +167,92 @@ apt_selfheal() {
 
     _heal_update() {
         rm -rf /var/lib/apt/lists/* 2>/dev/null
-        dpkg --configure -a >/dev/null 2>&1
+        _repair_dpkg
     }
 
-    # SEHAT = (1) apt-get update bersisih exit 0 [tidak ada baris repo yang
-    # error], DAN (2) download paket nyata berhasil. Cek (1) penting karena
-    # index suite security EOL bisa men-list versi yang .deb-nya sudah dihapus
-    # (404) - update "berhasil" sebagian tapi install paket apa pun gagal.
+    # Perbaiki state dpkg (held broken packages): paket setengah terpasang,
+    # dependensi patah, atau versi lebih baru dari kandidat (sisa install dari
+    # security suite EOL yang pool-nya sudah dihapus). HARUS dijalankan SETELAH
+    # apt-get update mengisi lists - kalau tidak, apt-get -f install tidak bisa
+    # resolve apa-apa dan paket patah tetap menggantung.
+    # [HELD BROKEN PACKAGES] Skenenario khas Debian EOL: paket-paket dulu
+    # di-upgrade dari security suite (mis. haproxy 2.2.9-2+deb11u7). Setelah
+    # EOL, .deb versi itu dihapus dari pool -> versi terpasang LEBIH BARU dari
+    # kandidat mana pun -> apt menolak install apa pun ("held broken packages").
+    # SOLUSI: kembalikan setiap paket over-version ke versi kandidat main pool
+    # yang masih ada .deb-nya. Harus sebut versi EKSPLISIT + --allow-downgrades.
+    # [OVER-VERSION DETECTION] apt-cache policy menampilkan versi TERPASANG
+    # sebagai "Candidate" kalau itu versi tertinggi yang diketahui apt - jadi
+    # perbandingan inst > cand tidak pernah true. Pakai apt-cache madison: dia
+    # hanya melaporkan versi dari POOL (apa yang benar-benar bisa di-download).
+    # [NOTE] dpkg-query -f='${Version}' bisa output kosong di beberapa locale
+    # (multibyte). Format tab-separated "dpkg-query -W <pkg>" selalu stabil.
+    _downgrade_overversion() {
+        local pkg inst mad
+        dpkg-query -W 2>/dev/null | while read -r pkg inst rest; do
+            [[ -n "$pkg" && -n "$inst" ]] || continue
+            # madison baris pertama = versi pool tertinggi yang tersedia
+            mad=$(apt-cache madison "$pkg" 2>/dev/null | head -n 1 | awk -F'|' '{print $2}' | tr -d ' ')
+            [[ -n "$mad" ]] || continue
+            dpkg --compare-versions "$inst" gt "$mad" 2>/dev/null || continue
+            apt-get install -y --allow-downgrades "$pkg=$mad" >/dev/null 2>&1
+        done
+    }
+
+    _repair_dpkg() {
+        dpkg --configure -a >/dev/null 2>&1
+        apt-get -f install -y --allow-downgrades >/dev/null 2>&1 || apt-get -f install -y >/dev/null 2>&1
+        _downgrade_overversion
+        apt-get -f install -y --allow-downgrades >/dev/null 2>&1 || apt-get -f install -y >/dev/null 2>&1
+        apt-get autoremove -y >/dev/null 2>&1
+        return 0
+    }
+
+    # SEHAT = (1) update bersih exit 0, (2) download paket nyata berhasil,
+    # (3) state dpkg bersih (tidak ada held broken packages), DAN (4) simulasi
+    # install paket kunci bisa di-resolve. Cek (3)+(4) penting: dpkg bisa
+    # punya paket patah sisa install gagal / versi security EOL yang .deb-nya
+    # sudah dihapus - update & download terlihat sehat tapi install apapun
+    # pasti gagal dengan "held broken packages".
     _healthy() {
         apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1 || return 1
-        ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 )
+        # [URUTAN PENTING] repair DULU sebelum simulate: downgrade paket
+        # over-version butuh lists yang sudah terisi (madion baca dari lists).
+        _repair_dpkg
+        ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 ) || return 1
+        apt-get install -s -y build-essential haproxy jq curl bzip2 >/dev/null 2>&1
+    }
+
+    # cari mirror yang menyajikan suite ini - diverifikasi via HTTP 200, bukan
+    # asumsi. urut: mirror cepat/umum dulu, archive sebagai fallback.
+    _suite_url() {
+        local kind="$1" m
+        _have_http || return 9   # penanda: tidak bisa verifikasi
+        if [[ "$ID" == "ubuntu" ]]; then
+            if [[ "$kind" == security ]]; then
+                for m in http://security.ubuntu.com/ubuntu http://archive.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+                done
+            else
+                for m in http://archive.ubuntu.com/ubuntu http://security.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+                done
+            fi
+            return 1
+        fi
+        # debian
+        if [[ "$kind" == security ]]; then
+            # PENTING: suite security EOL (bullseye-security dll) ada di
+            # deb.debian.org/security, BUKAN archive.debian.org (404 di sana).
+            for m in http://deb.debian.org/debian-security http://security.debian.org/debian-security http://archive.debian.org/debian-security; do
+                _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+            done
+        else
+            for m in http://deb.debian.org/debian http://archive.debian.org/debian; do
+                _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+            done
+        fi
+        return 1
     }
 
     _write_sources() {
@@ -252,6 +328,11 @@ apt_selfheal() {
             [[ -f "$f" ]] && mv -f "$f" "${f}.disabled-wibu" 2>/dev/null
         done
         _heal_update
+        # [BUGFIX] _heal_update di atas mengosongkan lists - harus diisi ulang
+        # (apt-get update) sebelum function selesai, kalau tidak apt ditinggal
+        # dalam state "Unable to locate package" meski sources.list sudah benar.
+        apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+        _repair_dpkg
     fi
 
     rm -rf "$TMP" 2>/dev/null
