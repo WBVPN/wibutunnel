@@ -15,6 +15,66 @@ ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*"; }
 info() { echo -e "${CYAN}[..]${NC} $*"; }
 
+# [APT SELF-HEAL] Debian EOL (bullseye/buster): repo security.debian.org
+# dikosongkan -> apt-get install apapun 404, build dropbear/badvpn gagal.
+# Deteksi & arahkan ke archive.debian.org + bersihkan list basi.
+# 3 lapis cek: (1) fetch Release gagal, (2) download paket gagal,
+# (3) fallback semua mirror debian ke deb.debian.org.
+apt_selfheal() {
+    export DEBIAN_FRONTEND=noninteractive
+    local rel="" f TMP
+    [[ -f /etc/os-release ]] && rel=$(. /etc/os-release; echo "$VERSION_CODENAME")
+    TMP=$(mktemp -d)
+
+    _rewrite_archive() {
+        info "repo security Debian EOL 404, arahkan ke archive.debian.org..."
+        cp -f /etc/apt/sources.list /etc/apt/sources.list.wibu.bak 2>/dev/null
+        sed -i 's|https\?://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' /etc/apt/sources.list
+        for f in /etc/apt/sources.list.d/*.list; do
+            [[ -f "$f" ]] && sed -i 's|https\?://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' "$f"
+        done
+        echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99wibu-archive
+        rm -rf /var/lib/apt/lists/* 2>/dev/null
+        apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+    }
+
+    rm -rf /var/lib/apt/lists/* 2>/dev/null
+    dpkg --configure -a >/dev/null 2>&1
+    apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+
+    if [[ -n "$rel" ]] && grep -rq "security.debian.org/debian-security" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
+        if ! curl -fsS --max-time 8 -o /dev/null "http://security.debian.org/debian-security/dists/${rel}-security/Release" 2>/dev/null \
+        && ! curl -fsS --max-time 8 -o /dev/null "https://security.debian.org/debian-security/dists/${rel}-security/Release" 2>/dev/null; then
+            _rewrite_archive
+        fi
+    fi
+
+    if ! (cd "$TMP" && apt-get download haproxy >/dev/null 2>&1); then
+        if grep -rq "security.debian.org/debian-security" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
+            _rewrite_archive
+        fi
+    fi
+
+    if ! (cd "$TMP" && apt-get download haproxy >/dev/null 2>&1); then
+        if [[ "$ID" == "debian" ]]; then
+            info "mirror utama bermasalah, fallback ke deb.debian.org..."
+            sed -i 's|https\?://[^[:space:]]*/debian |http://deb.debian.org/debian |g' /etc/apt/sources.list
+            for f in /etc/apt/sources.list.d/*.list; do
+                [[ -f "$f" ]] && sed -i 's|https\?://[^[:space:]]*/debian|http://deb.debian.org/debian|g' "$f"
+            done
+            sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list
+            for f in /etc/apt/sources.list.d/*.list; do
+                [[ -f "$f" ]] && sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' "$f"
+            done
+            rm -rf /var/lib/apt/lists/* 2>/dev/null
+            apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+        fi
+    fi
+
+    rm -rf "$TMP" 2>/dev/null
+}
+apt_selfheal
+
 # ---------- konfigurasi ----------
 DB_VER="2019.78"
 DB_SRC="/usr/local/src"

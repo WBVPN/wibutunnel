@@ -102,57 +102,118 @@ if command -v update-grub >/dev/null 2>&1 && [[ -f /etc/default/grub ]]; then
 fi
 echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
 
+# [APT SELF-HEAL] Debian lama (bullseye/buster, dll) yang sudah EOL: repo
+# security.debian.org/debian-security dikosongkan -> apt-get install apapun
+# 404 (certbot, haproxy, jq, curl ...), instalasi rusak total walau domain
+# sudah benar. Fungsi ini deteksi & arahkan ke archive.debian.org + bersihkan
+# list basi. 3 lapis cek: (1) fetch Release gagal, (2) download paket gagal,
+# (3) fallback semua mirror debian ke deb.debian.org.
+apt_selfheal() {
+    export DEBIAN_FRONTEND=noninteractive
+    local rel="" f TMP
+    [[ -f /etc/os-release ]] && rel=$(. /etc/os-release; echo "$VERSION_CODENAME")
+    TMP=$(mktemp -d)
+
+    _rewrite_archive() {
+        echo -e "\e[1;36m[+] Repo Debian EOL 404, arahkan ke archive.debian.org...\e[0m"
+        cp -f /etc/apt/sources.list /etc/apt/sources.list.wibu.bak 2>/dev/null
+        sed -i 's|https\?://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' /etc/apt/sources.list
+        for f in /etc/apt/sources.list.d/*.list; do
+            [[ -f "$f" ]] && sed -i 's|https\?://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' "$f"
+        done
+        echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99wibu-archive
+        rm -rf /var/lib/apt/lists/* 2>/dev/null
+        apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+    }
+
+    rm -rf /var/lib/apt/lists/* 2>/dev/null
+    dpkg --configure -a >/dev/null 2>&1
+    apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+
+    # lapis 1: repo security EOL tidak serve Release lagi (curl -f: 404 = gagal)
+    if [[ -n "$rel" ]] && grep -rq "security.debian.org/debian-security" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
+        if ! curl -fsS --max-time 8 -o /dev/null "http://security.debian.org/debian-security/dists/${rel}-security/Release" 2>/dev/null \
+        && ! curl -fsS --max-time 8 -o /dev/null "https://security.debian.org/debian-security/dists/${rel}-security/Release" 2>/dev/null; then
+            _rewrite_archive
+        fi
+    fi
+
+    # lapis 2: uji download paket nyata (index basi yang refer .deb hilang -> 404)
+    if ! (cd "$TMP" && apt-get download haproxy >/dev/null 2>&1); then
+        if grep -rq "security.debian.org/debian-security" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
+            _rewrite_archive
+        fi
+    fi
+
+    # lapis 3 (Debian only): mirror utama juga rusak -> fallback deb.debian.org
+    if ! (cd "$TMP" && apt-get download haproxy >/dev/null 2>&1); then
+        if [[ "$ID" == "debian" ]]; then
+            echo -e "\e[1;36m[+] Mirror utama bermasalah, fallback ke deb.debian.org...\e[0m"
+            sed -i 's|https\?://[^[:space:]]*/debian |http://deb.debian.org/debian |g' /etc/apt/sources.list
+            for f in /etc/apt/sources.list.d/*.list; do
+                [[ -f "$f" ]] && sed -i 's|https\?://[^[:space:]]*/debian|http://deb.debian.org/debian|g' "$f"
+            done
+            # security suite hanya ada di archive.debian.org, pastikan tetap
+            # di sana (bukan deb.debian.org) setelah rewrite mirror utama.
+            sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list
+            for f in /etc/apt/sources.list.d/*.list; do
+                [[ -f "$f" ]] && sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' "$f"
+            done
+            rm -rf /var/lib/apt/lists/* 2>/dev/null
+            apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+        fi
+    fi
+
+    rm -rf "$TMP" 2>/dev/null
+}
+apt_selfheal
+
 # DOMAIN INPUT
 # [FALLBACK] resolve domain walaupun dig gagal terpasang.
 # urutan: dig -> getent -> nslookup -> host -> curl DoH cloudflare
+# IPv4 saja - IPv6 (AAAA) diabaikan karena VPS sudah disable IPv6.
+# Tanpa ini, record AAAA seperti 2606:4700:... lolos filter '^[0-9]'
+# lalu bikin crash aritmatika di pengecekan IP.
+is_ipv4() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
+
 resolve_domain() {
     local d="$1" out=""
     if command -v dig >/dev/null 2>&1; then
-        out=$(dig +short "$d" 2>/dev/null | grep -E '^[0-9]' | head -n 1)
+        out=$(dig +short A "$d" 2>/dev/null | while read -r a; do is_ipv4 "$a" && echo "$a" && break; done)
     fi
-    [[ -z "$out" ]] && out=$(getent hosts "$d" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]' | head -n 1)
-    [[ -z "$out" ]] && command -v nslookup >/dev/null 2>&1 && out=$(nslookup "$d" 2>/dev/null | awk '/^Address: /{print $2}' | grep -E '^[0-9]' | head -n 1)
-    [[ -z "$out" ]] && command -v host >/dev/null 2>&1 && out=$(host "$d" 2>/dev/null | awk '/has address/{print $4}' | head -n 1)
-    [[ -z "$out" ]] && out=$(curl -s --max-time 5 "https://1.1.1.1/dns-query?name=${d}&type=A" -H "accept: application/dns-json" 2>/dev/null | grep -oE '"data":"[0-9.]+"' | head -n 1 | cut -d'"' -f4)
+    if [[ -z "$out" ]] && command -v getent >/dev/null 2>&1; then
+        out=$(getent ahostsv4 "$d" 2>/dev/null | awk '{print $1}' | while read -r a; do is_ipv4 "$a" && echo "$a" && break; done)
+    fi
+    if [[ -z "$out" ]] && command -v nslookup >/dev/null 2>&1; then
+        out=$(nslookup -type=A "$d" 2>/dev/null | awk '/^Address: /{print $2}' | while read -r a; do is_ipv4 "$a" && echo "$a" && break; done)
+    fi
+    if [[ -z "$out" ]] && command -v host >/dev/null 2>&1; then
+        out=$(host -t A "$d" 2>/dev/null | awk '/has address/{print $4}' | while read -r a; do is_ipv4 "$a" && echo "$a" && break; done)
+    fi
+    if [[ -z "$out" ]]; then
+        out=$(curl -s --max-time 5 "https://1.1.1.1/dns-query?name=${d}&type=A" -H "accept: application/dns-json" 2>/dev/null | grep -oE '"data":"([0-9]{1,3}\.){3}[0-9]{1,3}"' | head -n 1 | cut -d'"' -f4)
+    fi
     echo "$out"
 }
 
-# [STRICT MODE] Domain HARUS valid & menunjuk ke VPS ini (atau ke Cloudflare
-# proxy yang aktif). Domain asal-asalan / belum di-point / menunjuk ke IP lain
-# langsung DITOLAK - tidak ada lagi prompt "lanjutkan mode cloudflare" yang
-# membiarkan user masuk domain salah dan instalasi jadi berantak.
-# is_cf_proxy: cek apakah IP masuk rentang Cloudflare (orange cloud)
-is_cf_proxy() {
-    local ip="$1" o1 o2 o3 o4 n
-    IFS=. read -r o1 o2 o3 o4 <<< "$ip"
-    n=$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))
-    # 104.16.0.0/13 .. 104.24.0.0/14, 172.64.0.0/13, 188.114.96.0/20,
-    # 190.80.0.0/20, 197.234.240.0/22, 198.41.128.0/17
-    [[ ( $n -ge $((104<<24|16<<16)) && $n -le $((104<<24|31<<16|255<<8|255)) ) ]] && return 0
-    [[ ( $n -ge $((172<<24|64<<16)) && $n -le $((172<<24|95<<16|255<<8|255)) ) ]] && return 0
-    [[ ( $n -ge $((188<<24|114<<16|96<<8)) && $n -le $((188<<24|114<<16|111<<8|255)) ) ]] && return 0
-    [[ ( $n -ge $((190<<24|80<<16)) && $n -le $((190<<24|95<<16|255<<8|255)) ) ]] && return 0
-    [[ ( $n -ge $((197<<24|234<<16|240<<8)) && $n -le $((197<<24|234<<16|243<<8|255)) ) ]] && return 0
-    [[ ( $n -ge $((198<<24|41<<16|128<<8)) && $n -le $((198<<24|41<<16|255<<8|255)) ) ]] && return 0
-    return 1
-}
+# [STRICT MODE] Domain HARUS resolve ke IP VPS ini. Domain asal-asalan,
+# belum di-point, menunjuk ke IP lain, atau dibalik proxy Cloudflare (orange
+# cloud) langsung DITOLAK - certbot HTTP-01 tidak bisa verifikasi domain yang
+# diproxy, jadi wajib pointing DNS-only (grey cloud) langsung ke IP VPS.
 
 while true; do
-    read -p "Masukkan Domain Anda: " domain
+    read -p "Masukkan Domain Anda: " domain || exit 1
     if [[ -z "$domain" ]]; then
         echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"
         continue
     fi
 
-    # [FIX] Pastikan dig ada. apt-get install -y dnsutils >/dev/null 2>&1
-    # sering gagal diam-diam (dpkg interrupted / apt lock / mirror bermasalah),
-    # lalu dig tetap tidak ada -> validasi domain selalu gagal & user stuck.
+    # dig opsional - resolve_domain punya 5 fallback (getent/nslookup/host/DoH).
+    # apt_selfheal() di atas sudah betulkan mirror, tapi kalau tetap gagal
+    # pasang dnsutils, validasi tetap jalan via curl DoH 1.1.1.1.
     if ! command -v dig >/dev/null 2>&1; then
         echo -e "\e[1;36m[+] Memasang dnsutils...\e[0m"
-        apt-get update -y >/dev/null 2>&1
-        apt-get install -y dnsutils 2>&1 | tail -3
-        dpkg --configure -a >/dev/null 2>&1
-        apt-get install -y dnsutils 2>&1 | tail -2
+        apt-get install -y --fix-missing dnsutils 2>&1 | tail -2
     fi
 
     IP_DOMAIN=$(resolve_domain "$domain")
@@ -168,16 +229,11 @@ while true; do
         break
     fi
 
-    # [CEK] Domain bisa juga di-proxy Cloudflare (orange cloud) -> IP resolve
-    # adalah IP Cloudflare, bukan IP VPS. Ini tetap valid & didukung.
-    if is_cf_proxy "$IP_DOMAIN"; then
-        echo -e "\e[1;32m[+] Pointing Sukses! (Cloudflare proxy aktif: $IP_DOMAIN)\e[0m"
-        break
-    fi
-
-    # apapun selain dua di atas -> TOLAK. Jaga user dari salah pointing.
+    # [STRICT] apapun selain IP VPS -> TOLAK. Termasuk domain yang diproxy
+    # Cloudflare (orange cloud): certbot HTTP-01 tidak bisa verifikasi domain
+    # dibalik proxy, jadi wajib DNS-only (grey cloud) ke IP VPS ini.
     echo -e "\e[1;31m[!] Domain DITOLAK: '$domain' menunjuk ke $IP_DOMAIN,"
-    echo -e "\e[1;31m    bukan ke IP VPS ini ($MYIP) dan bukan proxy Cloudflare.\e[0m"
+    echo -e "\e[1;31m    bukan ke IP VPS ini ($MYIP) dan tidak menunjuk dengan benar.\e[0m"
     echo -e "\e[1;33m    Perbaiki DNS / pointing domain dulu, lalu coba lagi.\e[0m"
 done
 
