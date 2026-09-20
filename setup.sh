@@ -196,6 +196,32 @@ resolve_domain() {
     echo "$out"
 }
 
+# deteksi Cloudflare proxy hanya untuk memberi pesan penolakan yang spesifik
+# (domain seperti ini TETAP ditolak - certbot HTTP-01 tidak bisa verifikasi).
+is_cf_proxy() {
+    local ip="$1" o1 o2 o3 o4 n
+    is_ipv4 "$ip" || return 1
+    IFS=. read -r o1 o2 o3 o4 <<< "$ip"
+    n=$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))
+    [[ ( $n -ge $((104<<24|16<<16)) && $n -le $((104<<24|31<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((172<<24|64<<16)) && $n -le $((172<<24|95<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((188<<24|114<<16|96<<8)) && $n -le $((188<<24|114<<16|111<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((190<<24|80<<16)) && $n -le $((190<<24|95<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((197<<24|234<<16|240<<8)) && $n -le $((197<<24|234<<16|243<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((198<<24|41<<16|128<<8)) && $n -le $((198<<24|41<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((162<<24|159<<16)) && $n -le $((162<<24|159<<16|255<<8|255)) ) ]] && return 0
+    # range resmi Cloudflare (https://www.cloudflare.com/ips/)
+    [[ ( $n -ge $((131<<24|0<<16|72<<8)) && $n -le $((131<<24|0<<16|75<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((173<<24|245<<16|48<<8)) && $n -le $((173<<24|245<<16|63<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((103<<24|21<<16|244<<8)) && $n -le $((103<<24|21<<16|247<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((103<<24|22<<16|200<<8)) && $n -le $((103<<24|22<<16|203<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((103<<24|31<<16|4<<8)) && $n -le $((103<<24|31<<16|7<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((141<<24|101<<16|64<<8)) && $n -le $((141<<24|101<<16|127<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((108<<24|162<<16|192<<8)) && $n -le $((108<<24|162<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((162<<24|158<<16)) && $n -le $((162<<24|159<<16|255<<8|255)) ) ]] && return 0
+    return 1
+}
+
 # [STRICT MODE] Domain HARUS resolve ke IP VPS ini. Domain asal-asalan,
 # belum di-point, menunjuk ke IP lain, atau dibalik proxy Cloudflare (orange
 # cloud) langsung DITOLAK - certbot HTTP-01 tidak bisa verifikasi domain yang
@@ -233,8 +259,14 @@ while true; do
     # Cloudflare (orange cloud): certbot HTTP-01 tidak bisa verifikasi domain
     # dibalik proxy, jadi wajib DNS-only (grey cloud) ke IP VPS ini.
     echo -e "\e[1;31m[!] Domain DITOLAK: '$domain' menunjuk ke $IP_DOMAIN,"
-    echo -e "\e[1;31m    bukan ke IP VPS ini ($MYIP) dan tidak menunjuk dengan benar.\e[0m"
-    echo -e "\e[1;33m    Perbaiki DNS / pointing domain dulu, lalu coba lagi.\e[0m"
+    echo -e "\e[1;31m    bukan ke IP VPS ini ($MYIP).\e[0m"
+    if is_cf_proxy "$IP_DOMAIN"; then
+        echo -e "\e[1;33m    Domain ini diproxy Cloudflare (orange cloud). Matikan proxy di\e[0m"
+        echo -e "\e[1;33m    dashboard Cloudflare (ubah ke DNS only / grey cloud) dan pastikan\e[0m"
+        echo -e "\e[1;33m    A record-nya menunjuk ke $MYIP, lalu coba lagi.\e[0m"
+    else
+        echo -e "\e[1;33m    Pointing A record domain ke $MYIP dulu, lalu coba lagi.\e[0m"
+    fi
 done
 
 echo ""
