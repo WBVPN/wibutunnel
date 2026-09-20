@@ -94,10 +94,16 @@ EOF
 fi
 sysctl -p >/dev/null 2>&1
 
-if command -v update-grub >/dev/null 2>&1 && [[ -f /etc/default/grub ]]; then
+# [PERFORMA] update-grub = grub-mkconfig: scan device + os-prober (cari OS
+# lain di partisi lain) = langkah paling lambat di bagian ini (5-30 detik di
+# VPS yg I/O-nya lambat / punya banyak block device).
+# - LEWATI bila /boot/grub/grub.cfg tidak ada: berarti grub tidak dipakai
+#   (VPS di-boot hypervisor / cloud image) - update-grub sia-sia & lambat.
+# - GRUB_DISABLE_OS_PROBER=1: VPS tidak dual-boot, os-prober hanya buang waktu.
+if command -v update-grub >/dev/null 2>&1 && [[ -f /etc/default/grub ]]         && [[ -f /boot/grub/grub.cfg ]]; then
     if ! grep -q "ipv6.disable=1" /etc/default/grub; then
         sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="ipv6.disable=1 /' /etc/default/grub
-        update-grub >/dev/null 2>&1
+        GRUB_DISABLE_OS_PROBER=1 update-grub >/dev/null 2>&1
     fi
 fi
 echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
@@ -704,13 +710,25 @@ else
 fi
 
 if [ ! -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
-    echo -e "${RED}SSL GAGAL! Pastikan domain $domain mengarah ke IP ini.${NC}"
-    echo -e "${YELLOW}    Kalo domain sudah benar, kemungkinan terkena RATE LIMIT Let's Encrypt"
-    echo -e "    (5 cert per domain per 7 hari). Tunggu 24-48 jam lalu jalankan ulang,"
-    echo -e "    atau pakai cert lama di /etc/letsencrypt/live/$domain/ (masih valid).${NC}"
-    exit 1
+    # [FALLBACK] certbot gagal (rate limit / domain). JANGAN hentikan installer -
+    # pakai self-signed cert sementara supaya HAProxy bisa start & tunnel jalan.
+    # Cron renew-cert-wibu.sh (tiap 4 jam) akan menggantinya dengan Let's Encrypt
+    # otomatis begitu rate limit lewat - tanpa campur tangan admin.
+    echo -e "${YELLOW}[!] certbot gagal (kemungkinan RATE LIMIT Let's Encrypt: 5 cert per"
+    echo -e "    domain per 7 hari, atau domain belum pointing). Memakai self-signed"
+    echo -e "    cert sementara - tunnel tetap jalan, akan auto-renew ke Let's Encrypt.${NC}"
+    openssl req -x509 -newkey rsa:2048 -nodes -days 90 \
+        -subj "/CN=$domain" \
+        -keyout /etc/haproxy/certs/"$domain".key \
+        -out /etc/haproxy/certs/"$domain".crt >/dev/null 2>&1 \
+        && cat /etc/haproxy/certs/"$domain".crt /etc/haproxy/certs/"$domain".key \
+            > /etc/haproxy/certs/"$domain".pem
+    if [ ! -s /etc/haproxy/certs/"$domain".pem ]; then
+        echo -e "${RED}SSL GAGAL TOTAL! Pastikan domain $domain mengarah ke IP ini.${NC}"
+        exit 1
+    fi
 fi
-cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain"/privkey.pem > /etc/haproxy/certs/"$domain".pem
+[ -s /etc/haproxy/certs/"$domain".pem ] || cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain"/privkey.pem > /etc/haproxy/certs/"$domain".pem
 
 # XRAY CORE
 curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install
@@ -1208,18 +1226,36 @@ crontab -l 2>/dev/null | grep -v -E "xp|reboot|watchdog|algojo|unlocker|drop_cac
 (crontab -l 2>/dev/null; echo "0 0 * * * sync; echo 3 > /proc/sys/vm/drop_caches && swapoff -a && swapon -a") | crontab -
 (crontab -l 2>/dev/null; echo "* * * * * /usr/local/sbin/unlocker-wibu") | crontab -
 
-# SSL Auto Renewal
+# SSL Auto Renewal + Recovery
+# [RECOVERY] certbot renew HANYA memperbarui cert yg sudah ada. Kalau cert
+# belum pernah dibuat (installer fallback ke self-signed karena rate limit),
+# renew tidak melakukan apa-apa -> cert asli TIDAK PERNAH diambil. Karena itu
+# script ini juga meminta cert BARU kalau belum ada, sampai dapat. Jalankan
+# tiap 6 jam (rate limit reset -> langsung keambil, tanpa campur tangan admin).
 cat > /usr/local/bin/renew-cert-wibu.sh << 'RCEOF'
 #!/bin/bash
 domain=$(cat /etc/xray/domain 2>/dev/null)
 [[ -z "$domain" ]] && exit 1
-systemctl stop haproxy
-certbot renew --quiet --no-self-upgrade --standalone
-cat /etc/letsencrypt/live/$domain/fullchain.pem /etc/letsencrypt/live/$domain/privkey.pem > /etc/haproxy/certs/$domain.pem
-systemctl start haproxy
+pem="/etc/letsencrypt/live/$domain/fullchain.pem"
+systemctl stop haproxy 2>/dev/null
+if [[ ! -f "$pem" ]]; then
+    # belum ada cert (installer pakai self-signed) -> minta baru
+    if certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
+        certbot certonly --standalone --non-interactive --agree-tos -m "admin@${domain}" -d "$domain"
+    else
+        certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos -d "$domain"
+    fi
+else
+    certbot renew --quiet --no-self-upgrade --standalone
+fi
+# hanya timpa .pem kalau cert Let's Encrypt benar-benar ada & valid
+if [[ -f "$pem" ]]; then
+    cat "$pem" "/etc/letsencrypt/live/$domain/privkey.pem" > "/etc/haproxy/certs/$domain.pem"
+fi
+systemctl start haproxy 2>/dev/null
 RCEOF
 chmod +x /usr/local/bin/renew-cert-wibu.sh
-(crontab -l 2>/dev/null; echo "0 4 * * * /usr/local/bin/renew-cert-wibu.sh") | crontab -
+(crontab -l 2>/dev/null; echo "0 */6 * * * /usr/local/bin/renew-cert-wibu.sh") | crontab -
 
 # Service Override
 mkdir -p /etc/systemd/system/haproxy.service.d /etc/systemd/system/xray.service.d
