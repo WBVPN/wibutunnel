@@ -110,15 +110,36 @@ while true; do
         continue
     fi
 
+    # [FIX] Pastikan dig ada. apt-get install -y dnsutils >/dev/null 2>&1
+    # sering gagal diam-diam (dpkg interrupted / apt lock / mirror bermasalah),
+    # lalu dig tetap tidak ada -> validasi domain selalu gagal & user stuck.
     if ! command -v dig >/dev/null 2>&1; then
+        echo -e "\e[1;36m[+] Memasang dnsutils...\e[0m"
         apt-get update -y >/dev/null 2>&1
-        apt-get install -y dnsutils >/dev/null 2>&1
+        apt-get install -y dnsutils 2>&1 | tail -3
+        dpkg --configure -a >/dev/null 2>&1
+        apt-get install -y dnsutils 2>&1 | tail -2
     fi
 
-    IP_DOMAIN=$(dig +short "$domain" | head -n 1)
+    # [FALLBACK] resolve domain walaupun dig gagal terpasang.
+    # urutan: dig -> getent -> nslookup -> host -> curl DoH cloudflare
+    resolve_domain() {
+        local d="$1" out=""
+        if command -v dig >/dev/null 2>&1; then
+            out=$(dig +short "$d" 2>/dev/null | grep -E '^[0-9]' | head -n 1)
+        fi
+        [[ -z "$out" ]] && out=$(getent hosts "$d" 2>/dev/null | awk '{print $1}' | head -n 1)
+        [[ -z "$out" ]] && command -v nslookup >/dev/null 2>&1 && out=$(nslookup "$d" 2>/dev/null | awk '/^Address: /{print $2}' | head -n 1)
+        [[ -z "$out" ]] && command -v host >/dev/null 2>&1 && out=$(host "$d" 2>/dev/null | awk '/has address/{print $4}' | head -n 1)
+        [[ -z "$out" ]] && out=$(curl -s --max-time 5 "https://1.1.1.1/dns-query?name=${d}&type=A" -H "accept: application/dns-json" 2>/dev/null | grep -oE '"data":"[0-9.]+"' | head -n 1 | cut -d'"' -f4)
+        echo "$out"
+    }
+
+    IP_DOMAIN=$(resolve_domain "$domain")
 
     if [[ -z "$IP_DOMAIN" ]]; then
-        echo -e "\e[1;31m[!] Domain tidak valid!\e[0m"
+        echo -e "\e[1;31m[!] Domain tidak valid atau DNS belum resolve!\e[0m"
+        echo -e "\e[1;33m    Pastikan subdomain sudah di-point ke IP VPS ini.\e[0m"
         continue
     fi
 
