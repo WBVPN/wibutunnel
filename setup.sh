@@ -103,6 +103,40 @@ fi
 echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
 
 # DOMAIN INPUT
+# [FALLBACK] resolve domain walaupun dig gagal terpasang.
+# urutan: dig -> getent -> nslookup -> host -> curl DoH cloudflare
+resolve_domain() {
+    local d="$1" out=""
+    if command -v dig >/dev/null 2>&1; then
+        out=$(dig +short "$d" 2>/dev/null | grep -E '^[0-9]' | head -n 1)
+    fi
+    [[ -z "$out" ]] && out=$(getent hosts "$d" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]' | head -n 1)
+    [[ -z "$out" ]] && command -v nslookup >/dev/null 2>&1 && out=$(nslookup "$d" 2>/dev/null | awk '/^Address: /{print $2}' | grep -E '^[0-9]' | head -n 1)
+    [[ -z "$out" ]] && command -v host >/dev/null 2>&1 && out=$(host "$d" 2>/dev/null | awk '/has address/{print $4}' | head -n 1)
+    [[ -z "$out" ]] && out=$(curl -s --max-time 5 "https://1.1.1.1/dns-query?name=${d}&type=A" -H "accept: application/dns-json" 2>/dev/null | grep -oE '"data":"[0-9.]+"' | head -n 1 | cut -d'"' -f4)
+    echo "$out"
+}
+
+# [STRICT MODE] Domain HARUS valid & menunjuk ke VPS ini (atau ke Cloudflare
+# proxy yang aktif). Domain asal-asalan / belum di-point / menunjuk ke IP lain
+# langsung DITOLAK - tidak ada lagi prompt "lanjutkan mode cloudflare" yang
+# membiarkan user masuk domain salah dan instalasi jadi berantak.
+# is_cf_proxy: cek apakah IP masuk rentang Cloudflare (orange cloud)
+is_cf_proxy() {
+    local ip="$1" o1 o2 o3 o4 n
+    IFS=. read -r o1 o2 o3 o4 <<< "$ip"
+    n=$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))
+    # 104.16.0.0/13 .. 104.24.0.0/14, 172.64.0.0/13, 188.114.96.0/20,
+    # 190.80.0.0/20, 197.234.240.0/22, 198.41.128.0/17
+    [[ ( $n -ge $((104<<24|16<<16)) && $n -le $((104<<24|31<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((172<<24|64<<16)) && $n -le $((172<<24|95<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((188<<24|114<<16|96<<8)) && $n -le $((188<<24|114<<16|111<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((190<<24|80<<16)) && $n -le $((190<<24|95<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((197<<24|234<<16|240<<8)) && $n -le $((197<<24|234<<16|243<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((198<<24|41<<16|128<<8)) && $n -le $((198<<24|41<<16|255<<8|255)) ) ]] && return 0
+    return 1
+}
+
 while true; do
     read -p "Masukkan Domain Anda: " domain
     if [[ -z "$domain" ]]; then
@@ -121,20 +155,6 @@ while true; do
         apt-get install -y dnsutils 2>&1 | tail -2
     fi
 
-    # [FALLBACK] resolve domain walaupun dig gagal terpasang.
-    # urutan: dig -> getent -> nslookup -> host -> curl DoH cloudflare
-    resolve_domain() {
-        local d="$1" out=""
-        if command -v dig >/dev/null 2>&1; then
-            out=$(dig +short "$d" 2>/dev/null | grep -E '^[0-9]' | head -n 1)
-        fi
-        [[ -z "$out" ]] && out=$(getent hosts "$d" 2>/dev/null | awk '{print $1}' | head -n 1)
-        [[ -z "$out" ]] && command -v nslookup >/dev/null 2>&1 && out=$(nslookup "$d" 2>/dev/null | awk '/^Address: /{print $2}' | head -n 1)
-        [[ -z "$out" ]] && command -v host >/dev/null 2>&1 && out=$(host "$d" 2>/dev/null | awk '/has address/{print $4}' | head -n 1)
-        [[ -z "$out" ]] && out=$(curl -s --max-time 5 "https://1.1.1.1/dns-query?name=${d}&type=A" -H "accept: application/dns-json" 2>/dev/null | grep -oE '"data":"[0-9.]+"' | head -n 1 | cut -d'"' -f4)
-        echo "$out"
-    }
-
     IP_DOMAIN=$(resolve_domain "$domain")
 
     if [[ -z "$IP_DOMAIN" ]]; then
@@ -146,11 +166,19 @@ while true; do
     if [[ "$IP_DOMAIN" == "$MYIP" ]]; then
         echo -e "\e[1;32m[+] Pointing Sukses!\e[0m"
         break
-    else
-        echo -e "\e[1;33m[!] IP Domain berbeda dengan IP VPS.\e[0m"
-        read -p "Lanjutkan dengan mode Cloudflare? (y/n): " lanjut
-        [[ "$lanjut" == "y" || "$lanjut" == "Y" ]] && break || continue
     fi
+
+    # [CEK] Domain bisa juga di-proxy Cloudflare (orange cloud) -> IP resolve
+    # adalah IP Cloudflare, bukan IP VPS. Ini tetap valid & didukung.
+    if is_cf_proxy "$IP_DOMAIN"; then
+        echo -e "\e[1;32m[+] Pointing Sukses! (Cloudflare proxy aktif: $IP_DOMAIN)\e[0m"
+        break
+    fi
+
+    # apapun selain dua di atas -> TOLAK. Jaga user dari salah pointing.
+    echo -e "\e[1;31m[!] Domain DITOLAK: '$domain' menunjuk ke $IP_DOMAIN,"
+    echo -e "\e[1;31m    bukan ke IP VPS ini ($MYIP) dan bukan proxy Cloudflare.\e[0m"
+    echo -e "\e[1;33m    Perbaiki DNS / pointing domain dulu, lalu coba lagi.\e[0m"
 done
 
 echo ""
