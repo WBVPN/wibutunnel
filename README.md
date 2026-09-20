@@ -78,7 +78,7 @@ Manajemen akun langsung dari HP — tanpa SSH ke VPS:
 
 ## 🚀 Instalasi
 
-**Satu perintah** di VPS baru (fresh Ubuntu 20.04/22.04):
+**Satu perintah** di VPS baru (fresh Ubuntu 18.04–24.04 / Debian 10–13):
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh)
@@ -101,6 +101,13 @@ menu
 > 💡 Installer otomatis memasang: Xray-core, HAProxy, Dropbear 2019.78,
 > badvpn-udpgw, ws-stunnel (WebSocket bridge), jq, certbot, vnStat, dan
 > semua menu/service pendukung.
+
+> 🔧 **Debian 10/11 (EOL)?** Installer otomatis memperbaiki apt bila
+> bermasalah: mendeteksi mirror rusak/EOL, menulis ulang `sources.list` ke
+> mirror terverifikasi (`deb.debian.org`), dan menurunkan versi paket
+> "held broken" (sisa security suite yang pool-nya sudah dihapus). Proses
+> ini **hanya jalan kalau apt benar-benar sakit** — di Ubuntu & Debian yang
+> masih aktif tidak ada yang diubah, instalasi langsung cepat.
 
 ---
 
