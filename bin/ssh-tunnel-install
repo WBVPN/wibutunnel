@@ -361,7 +361,12 @@ build_dropbear() {
     # make install default menaruhnya di /usr/local/sbin)
     install -m 0755 /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey 2>/dev/null || \
         cp -f /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey 2>/dev/null || true
-    /usr/sbin/dropbear -V 2>/dev/null | grep -q "$DB_VER" && ok "dropbear $DB_VER di-compile & dipasang"
+    # [FIX] dropbear -V menulis ke stderr (lihat komentar di atas) - jangan
+    # dibuang dengan 2>/dev/null, kalau tidak grep selalu dapat string kosong,
+    # ok() tidak pernah dipanggil, dan function return non-zero -> installer
+    # salah melaporkan "gagal dipasang" walau dropbear sebenarnya OK.
+    /usr/sbin/dropbear -V 2>&1 | grep -q "$DB_VER" && ok "dropbear $DB_VER di-compile & dipasang"
+    return 0
 }
 
 config_dropbear() {
