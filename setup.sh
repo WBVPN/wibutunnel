@@ -765,8 +765,8 @@ cat <<'XEOF' > /usr/local/etc/xray/config.json
     {"tag": "trojan-ws-tls","port": 10092,"listen": "127.0.0.1","protocol": "trojan","settings": {"clients": []},"streamSettings": {"network": "ws","sockopt": {"acceptProxyProtocol": true},"wsSettings": {"path": "/trojan"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}},
     {"tag": "trojan-grpc","port": 10093,"listen": "127.0.0.1","protocol": "trojan","settings": {"clients": []},"streamSettings": {"network": "grpc","sockopt": {"acceptProxyProtocol": true},"grpcSettings": {"serviceName": "trojan"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}}
   ],
-  "outbounds": [{"protocol": "freedom","settings": {},"tag": "direct"},{"protocol": "blackhole","settings": {},"tag": "blocked"}],
-  "routing": {"domainStrategy": "AsIs","rules": [{"type": "field","inboundTag": ["api"],"outboundTag": "api"},{"type": "field","outboundTag": "blocked","user": ["DUMMY-LOCK"]},{"type": "field","ip": ["geoip:private"],"outboundTag": "blocked"},{"type": "field","protocol": ["bittorrent"],"outboundTag": "blocked"}]}
+  "outbounds": [{"protocol": "freedom","settings": {},"tag": "direct"},{"protocol": "blackhole","settings": {},"tag": "blocked"},{"protocol": "freedom","settings": {"accountStats": true},"tag": "user-stats"}],
+  "routing": {"domainStrategy": "AsIs","rules": [{"type": "field","inboundTag": ["api"],"outboundTag": "api"},{"type": "field","outboundTag": "blocked","user": ["DUMMY-LOCK"]},{"type": "field","outboundTag": "user-stats","user": []},{"type": "field","ip": ["geoip:private"],"outboundTag": "blocked"},{"type": "field","protocol": ["bittorrent"],"outboundTag": "blocked"}]}
 }
 XEOF
 
@@ -1264,14 +1264,22 @@ cat <<EOF > /etc/systemd/system/haproxy.service.d/override.conf
 Restart=on-failure
 RestartSec=5s
 EOF
-# [FIX] /var/log/xray di-mount tmpfs (RAM disk) dengan uid=65534 -> sudah
-#       dimiliki nobody. chown pada root filesystem yang di-mount selalu
-#       EPERM, jadi ExecStartPre bawaan unit xray yang melakukan chown
-#       HARUS direset agar xray bisa start.
-cat <<EOF > /etc/systemd/system/xray.service.d/override.conf
+# [FIX XRAY PERMISSION] xray jalan sebagai user 'nobody', tapi /var/log/xray
+# di beberapa VPS adalah tmpfs mount uid=65534 (=nobody) dan installer/driver
+# lain bisa membuat access.log/error.log milik ROOT -> xray gagal start dengan
+# "open /var/log/xray/access.log: permission denied" (exit 23). Solusi: pastikan
+# folder & file log milik nobody sebelum start.
+# [CATATAN] chown pada tmpfs mount bisa EPERM di container; ExecStartPre bawaan
+# unit xray yg chown punya masalah yg sama -> direset di sini, ganti dgn versi
+# aman (mkdir + chown best-effort, tidak gagal kalau EPERM).
+mkdir -p /var/log/xray
+chown -R nobody:nogroup /var/log/xray 2>/dev/null || chown -R nobody /var/log/xray 2>/dev/null || true
+chmod 755 /var/log/xray 2>/dev/null || true
+cat <<'EOF' > /etc/systemd/system/xray.service.d/override.conf
 [Service]
 ExecStartPre=
 ExecStartPre=/bin/mkdir -p /var/log/xray
+ExecStartPre=/bin/chown -R nobody:nogroup /var/log/xray
 Restart=on-failure
 RestartSec=5s
 EOF
