@@ -3,7 +3,7 @@
 # 🧱 WIBU TUNNELING
 ### Panel VPN All-in-One untuk VPS Linux
 
-**v4.0 KURUMI** · Ubuntu 20.04/22.04 · Debian 11+
+**v4.0 KURUMI** · Ubuntu 18.04–24.04 · Debian 10–13
 
 SSH Tunnel · VLESS · VMESS · TROJAN · UDP Gaming · Telegram Bot
 
@@ -270,7 +270,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninst
 
 ## ⚠️ Syarat
 
-- **OS:** Ubuntu 20.04 / 22.04 / Debian 11+ (x86_64 atau aarch64)
+- **OS:** Ubuntu 18.04–24.04 / Debian 10–13 (x86_64 atau aarch64)
+  Semua binary di-compile **static** (zero GLIBC dependency) — jalan di
+  VPS tua sekali pun tanpa error `GLIBC_x.xx not found`.
 - **RAM:** minimal 512 MB (rekomendasi 1 GB+; swap dibuat otomatis)
 
 ### 🚄 Tuning Performa (bawaan)
