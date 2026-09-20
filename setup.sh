@@ -585,16 +585,27 @@ HFEOF
 # =========================================================
 echo -e "\e[1;36m[+] Memasang SSH Tunnel Stack (Dropbear 2019.78 + ws-stunnel + udpgw)...\e[0m"
 
+# [FIX] Deteksi script/bash ATAU ELF binary tanpa menelan null byte.
+# "head -n 1 <elf>" memuntahkan null byte -> bash warning + grep selalu gagal,
+# jadi file shc ditolak. Gunakan od (binary-safe).
+wibu_file_valid() {
+    local f="$1"
+    [[ -s "$f" ]] || return 1
+    local m
+    m=$(head -c 4 "$f" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    [[ "$m" == 23212f* || "$m" == 7f454c46 ]]
+}
+
 # ws-stunnel & installer SSH diunduh dari repo (source of truth)
 download_ssh_tool() {
     local path="$1" name="$2"
     local src="${WIBU_LOCAL_REPO:-}/${path}"
-    if [[ -n "$WIBU_LOCAL_REPO" && -f "$src" ]] && head -n 1 "$src" | grep -q '^#!'; then
+    if [[ -n "$WIBU_LOCAL_REPO" && -f "$src" ]] && wibu_file_valid "$src"; then
         install -m 0755 "$src" "/usr/local/bin/${name}"
         return 0
     fi
     curl -sS -L --max-time 30 -o "/usr/local/bin/${name}" "${GITHUB_RAW}/${path}?v=$RANDOM"
-    if [ -s "/usr/local/bin/${name}" ] && head -n 1 "/usr/local/bin/${name}" | grep -q '^#!'; then
+    if wibu_file_valid "/usr/local/bin/${name}"; then
         chmod +x "/usr/local/bin/${name}"
     else
         : > "/usr/local/bin/${name}" 2>/dev/null
@@ -651,7 +662,7 @@ download_menu() {
     # [LOCAL INSTALL] bila installer dijalankan dari clone repo lokal, pakai
     # file tersebut (versi terbaru hasil edit) alih-alih versi di GitHub.
     if [[ -n "$WIBU_LOCAL_REPO" && -f "$src" ]]; then
-        if [ -s "$src" ] && head -n 1 "$src" | grep -q '^#!'; then
+        if wibu_file_valid "$src"; then
             cp -f "$src" "/etc/wibutunnel/tmp/$2"
             mv "/etc/wibutunnel/tmp/$2" "$dest"
             chmod +x "$dest"
@@ -674,7 +685,7 @@ download_menu() {
     if [ -s "/etc/wibutunnel/tmp/$2" ]; then
         magic4=$(head -c 4 "/etc/wibutunnel/tmp/$2" 2>/dev/null | od -An -tx1 | tr -d ' \n')
     fi
-    if [ -s "/etc/wibutunnel/tmp/$2" ] && { head -n 1 "/etc/wibutunnel/tmp/$2" | grep -q '^#!' || [ "$magic4" = "7f454c46" ]; }; then
+    if wibu_file_valid "/etc/wibutunnel/tmp/$2"; then
         mv "/etc/wibutunnel/tmp/$2" "$dest"
         chmod +x "$dest"
     else
