@@ -225,6 +225,12 @@ watchdog · renew SSL · auto-reboot harian.
 Akun yang melanggar dipindahkan ke rule `blocked` di routing Xray — koneksi
 aktif diputus langsung (`pkill`), dan notifikasi dikirim ke Telegram.
 
+> 🔐 **Integritas config terjaga.** Semua edit config Xray lewat wrapper
+> `safe_jq_edit` yang memakai `flock` (anti race condition) dan memvalidasi
+> hasil sebelum disimpan: perubahan yang menghasilkan elemen `null` (mis.
+> salah index array) atau struktur rusak **ditolak otomatis** — config lama
+> tetap utuh, xray tidak akan gagal start.
+
 ### 🔬 Deteksi IP-Sharing Live (v4.0)
 
 Karena Xray core resmi hanya melog event `accepted` (tidak ada `closed`),
@@ -255,7 +261,9 @@ menu ──► [5] Setting Server ──► [5] Update Script (Safe Mode)
 
 Sebelum update, **semua** file di `/usr/local/bin`, `/usr/local/sbin`, dan
 config Xray di-backup otomatis ke `/etc/wibutunnel/backup/pre-update-*`.
-Download divalidasi: file kosong atau tanpa shebang (404/429) akan ditolak.
+Download divalidasi via magic bytes: hanya file dengan shebang (`#!`)
+atau ELF binary (`7f454c46`) yang diterima — file kosong, error 404/429,
+maupun response HTML palsu akan ditolak sebelum dipasang.
 
 **Backup berkala:** bisa dijadwalkan dari menu backup — hasil dikirim ke chat
 Telegram.
