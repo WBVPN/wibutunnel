@@ -311,6 +311,22 @@ yang menyesuaikan ukuran dengan RAM VPS.
 - **Port terbuka:** 80, 443, 109, 143, 22
 - **Akses root**
 
+
+## 🩺 Troubleshooting Cepat
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| `ISP: Unknown / City: Unknown` | `common.sh` lama tidak punya `get_geo()`, atau binary terpasang lebih tua dari source | Re-build (`bash build.sh`) + update binary via menu `[5] Setting Server → [5] Update Script` |
+| `GAGAL: config xray tidak bisa diedit` | Logika if/else terbalik di `add_user` (jq sukses dianggap gagal) | Sudah diperbaiki di v4.0 — pastikan binary bukan versi lama |
+| Akun dibuat tapi tidak muncul di xray | Hardcode `.inbounds[N]` rusak saat urutan inbound berubah | Sudah dimigrasi ke `select(.protocol)` (null-safe) |
+| Webhook bot 403 / 502 | `WEBHOOK_SECRET` belum ada di `/etc/wibutunnel/bot.conf`, atau secret header tidak cocok | `m-setting → Setup Bot Telegram`; jangan kirim header manual |
+| `xray` OFF setelah reboot | Config tidak lolos `xray run -test` | `xray run -test -config /usr/local/etc/xray/config.json`; roll back dari `.bak.*` |
+| Install gagal di `/tmp` | tmpfs `/tmp` terlalu kecil untuk unduh xray | Installer memakai `TMPDIR=/var/tmp` sejak v4.0 |
+| Dropbear/SSH tidak bisa login | Port 109/143 belum dibuka firewall | `ufw allow 109,143,80,443,22/tcp` |
+
+> Setelah perbaikan source, **wajib** re-build seluruh binary lalu push `bin/`.
+> `common.sh` tidak pernah di-ship mentah — selalu di-inline ke tiap binary.
+
 ---
 
 <div align="center">
