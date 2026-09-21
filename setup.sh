@@ -712,7 +712,7 @@ fi
 if [ ! -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
     # [FALLBACK] certbot gagal (rate limit / domain). JANGAN hentikan installer -
     # pakai self-signed cert sementara supaya HAProxy bisa start & tunnel jalan.
-    # Cron renew-cert-wibu.sh (tiap 4 jam) akan menggantinya dengan Let's Encrypt
+    # Cron renew-cert-wibu.sh (tiap 6 jam) akan menggantinya dengan Let's Encrypt
     # otomatis begitu rate limit lewat - tanpa campur tangan admin.
     echo -e "${YELLOW}[!] certbot gagal (kemungkinan RATE LIMIT Let's Encrypt: 5 cert per"
     echo -e "    domain per 7 hari, atau domain belum pointing). Memakai self-signed"
