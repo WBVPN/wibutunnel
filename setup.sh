@@ -704,9 +704,12 @@ if _cert_valid "$domain"; then
     echo -e "\e[1;32m[+] Sertifikat $domain masih valid - pakai yang ada (hindari rate limit Let's Encrypt)\e[0m"
 elif certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
     # [FIX] Certbot 2.x+ tidak support --register-unsafely-without-email
-    certbot certonly --standalone --non-interactive --agree-tos -m "admin@${domain}" -d "$domain"
+    # [FIX] --keep-until-expiring: kalau cert valid masih ada, JANGAN tanya
+    # "Keep the existing certificate?" (prompt interaktif -> EOFError saat
+    # install non-interaktif -> installer crash di tengah jalan).
+    certbot certonly --standalone --non-interactive --agree-tos --keep-until-expiring -m "admin@${domain}" -d "$domain"
 else
-    certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos -d "$domain"
+    certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos --keep-until-expiring -d "$domain"
 fi
 
 if [ ! -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
