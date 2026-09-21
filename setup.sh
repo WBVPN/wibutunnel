@@ -766,7 +766,7 @@ cat <<'XEOF' > /usr/local/etc/xray/config.json
     {"tag": "trojan-grpc","port": 10093,"listen": "127.0.0.1","protocol": "trojan","settings": {"clients": []},"streamSettings": {"network": "grpc","sockopt": {"acceptProxyProtocol": true},"grpcSettings": {"serviceName": "trojan"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}}
   ],
   "outbounds": [{"protocol": "freedom","settings": {},"tag": "direct"},{"protocol": "blackhole","settings": {},"tag": "blocked"},{"protocol": "freedom","settings": {"accountStats": true},"tag": "user-stats"}],
-  "routing": {"domainStrategy": "AsIs","rules": [{"type": "field","inboundTag": ["api"],"outboundTag": "api"},{"type": "field","outboundTag": "blocked","user": ["DUMMY-LOCK"]},{"type": "field","outboundTag": "user-stats","user": []},{"type": "field","ip": ["geoip:private"],"outboundTag": "blocked"},{"type": "field","protocol": ["bittorrent"],"outboundTag": "blocked"}]}
+  "routing": {"domainStrategy": "AsIs","rules": [{"type": "field","inboundTag": ["api"],"outboundTag": "api"},{"type": "field","outboundTag": "blocked","user": ["DUMMY-LOCK"]},{"type": "field","ip": ["geoip:private"],"outboundTag": "blocked"},{"type": "field","protocol": ["bittorrent"],"outboundTag": "blocked"}]}
 }
 XEOF
 
@@ -1312,6 +1312,25 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "\e[1;36m[+] Verifikasi Akhir Instalasi...\e[0m"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# [SELF-HEAL] Kalau xray mati, config-nya mungkin rusak (mis. rule dengan
+# user array kosong -> xray tolak total). Hapus rule yg tidak punya field
+# efektif, lalu start. Ini mencegah install 'selesai' tapi xray OFF.
+if ! systemctl is-active --quiet xray; then
+    if [[ -f /usr/local/etc/xray/config.json ]] && command -v jq >/dev/null 2>&1; then
+        echo -e "\e[33m[!] Xray tidak aktif - mencoba perbaikan config...\e[0m"
+        cp /usr/local/etc/xray/config.json /usr/local/etc/xray/config.json.repairbak 2>/dev/null
+        jq '.routing.rules |= map(select(
+            (.outboundTag != null and .user != null and (.user | length) == 0 and .inboundTag == null and .ip == null and .domain == null and .protocol == null) | not
+        ))' /usr/local/etc/xray/config.json > /tmp/xray_repaired.json 2>/dev/null
+        if [[ -s /tmp/xray_repaired.json ]] && xray run -test -config /tmp/xray_repaired.json >/dev/null 2>&1; then
+            mv /tmp/xray_repaired.json /usr/local/etc/xray/config.json
+            chmod 644 /usr/local/etc/xray/config.json
+            systemctl restart xray 2>/dev/null
+            echo -e "\e[32m[✓] Config diperbaiki & xray dijalankan ulang\e[0m"
+        fi
+    fi
+fi
 
 systemctl is-active --quiet xray && echo -e "Xray Service        : \e[32m[OK]\e[0m" || echo -e "Xray Service        : \e[31m[FAIL]\e[0m"
 systemctl is-active --quiet haproxy && echo -e "HAProxy Service     : \e[32m[OK]\e[0m" || echo -e "HAProxy Service     : \e[31m[FAIL]\e[0m"
