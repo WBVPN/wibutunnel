@@ -731,13 +731,62 @@ fi
 [ -s /etc/haproxy/certs/"$domain".pem ] || cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain"/privkey.pem > /etc/haproxy/certs/"$domain".pem
 
 # XRAY CORE
-curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install
-# Installer XTLS akan MELEWATI pembuatan file service bila binary xray sudah
-# ada tanpa uninstall bersih (uninstall wibutunnel menghapus unit tapi
-# meninggalkan /usr/local/bin/xray). Tanpa service, xray tidak bisa jalan.
+# [BUGFIX KRITIS] /tmp di VPS kecil adalah tmpfs (RAM, sering 100MB). Installer
+# Xray mengunduh archive 21MB, lalu MENGEKSTRAK binary 36MB + geoip.dat 20MB
+# + geosite.dat 11MB -> total ~88MB di /tmp -> "write error (disk full?)" /
+# "probably truncated" / "decompression failed" di tengah jalan. Downloadnya
+# SELALU berhasil (rentetan errornya menyesatkan - terlihat seperti masalah
+# jaringan padahal ruang tmp).
+# Solusi: arahkan mktemp ke /var/tmp (disk asli, bukan tmpfs) untuk seluruh
+# operasi installer Xray. /var/tmp di disk tidak terbatas RAM.
+if [[ ! -w /var/tmp ]]; then mkdir -p /var/tmp; fi
+_XRAY_TMPDIR_OK=0
+if [[ -w /var/tmp ]] && df -P /var/tmp 2>/dev/null | awk 'NR==2{exit !($4 > 100000)}'; then
+    export TMPDIR=/var/tmp
+    _XRAY_TMPDIR_OK=1
+fi
+
+# XRAY CORE
+# [BUGFIX] /tmp sering tmpfs kecil (VPS 1GB: 100MB). Xray archive ~20MB +
+# file tmp lama (xray.tmp/xraybin dari install gagal sebelumnya, geoip.dat
+# 17MB, geosite.dat 11MB) -> curl (23) "Failure writing output" di tengah
+# download & install-release SHUT UP diam-diam. Bersihkan dulu, lalu install.
+find /tmp -maxdepth 1 -type f \( -name "xray.tmp" -o -name "xraybin" \) -delete 2>/dev/null
+find /tmp -maxdepth 1 -type d -name "xraybin" -exec rm -rf {} + 2>/dev/null
+
+for _xray_attempt in 1 2 3; do
+    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install
+    # [BUGFIX] install-release tidak ada exit code yang andal - cek binary &
+    # service BENAR-BENAR ada. Sebelumnya installer lanjut tanpa xray -> semua
+    # menu xray GAGAL & laporan akhir cuma bilang "[FAIL]" tanpa hentikan.
+    if [[ -x /usr/local/bin/xray && -f /etc/systemd/system/xray.service ]]; then
+        break
+    fi
+    echo -e "\e[33m[!] Xray gagal terpasang (attempt $_xray_attempt/3), ulangi...\e[0m"
+    find /tmp -maxdepth 1 -type f -name "xray.tmp" -delete 2>/dev/null
+    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f
+    if [[ -x /usr/local/bin/xray && -f /etc/systemd/system/xray.service ]]; then
+        break
+    fi
+done
+
+# [BUGFIX] Kalau setelah 3x xray TETAP tidak ada, JANGAN lanjut - install
+# menu tanpa xray = panel yang semua tombolnya error.
+if [[ ! -x /usr/local/bin/xray ]]; then
+    echo -e "\e[31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[31m[FATAL] Xray core gagal dipasang setelah 3x percobaan.\e[0m"
+    echo -e "\e[31mPenyebab paling umum: /tmp penuh (tmpfs kecil) atau koneksi\e[0m"
+    echo -e "\e[31mke GitHub terputus. Installer dihentikan - tidak ada gunanya\e[0m"
+    echo -e "\e[31mmemasang menu di atas xray yang tidak ada.\e[0m"
+    echo -e "\e[33mSolusi: hapus file besar di /tmp (du -sh /tmp/*), lalu\e[0m"
+    echo -e "\e[33mjalan ulang installer ini.\e[0m"
+    echo -e "\e[31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    df -h /tmp | tail -1
+    exit 1
+fi
 if [[ ! -f /etc/systemd/system/xray.service ]]; then
     echo -e "\e[33m[!] service xray tidak ada, memaksa reinstall...\e[0m"
-    curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f
+    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f
 fi
 
 # Backup config lama
@@ -1345,9 +1394,22 @@ systemctl is-active --quiet ws-stunnel && echo -e "ws-stunnel (WS)     : \e[32m[
 ss -tlnp | grep -q ":143" && echo -e "SSH Port 143        : \e[32m[OK]\e[0m" || echo -e "SSH Port 143        : \e[33m[WARNING]\e[0m"
 ss -tlnp | grep -q ":10015" && echo -e "ws-stunnel 10015    : \e[32m[OK]\e[0m" || echo -e "ws-stunnel 10015    : \e[33m[WARNING]\e[0m"
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "    INSTALASI SELESAI! REBOOT DALAM 8 DETIK...    "
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# [BUGFIX] jangan bilang "SELESAI" kalau komponen inti gagal. Sebelumnya
+# installer bilang sukses padahal xray OFF -> admin baru sadar saat client
+# komplain. Sekarang: xray/haproxy gagal = peringatan jelas di akhir.
+if ! systemctl is-active --quiet xray; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo -e "\e[31mPERINGATAN: XRAY TIDAK AKTIF! Tunnel VLESS/VMESS/TROJAN\e[0m"
+    echo -e "\e[31mtidak akan jalan sampai xray diperbaiki. Jalankan:\e[0m"
+    echo -e "\e[33m  systemctl status xray\e[0m"
+    echo -e "\e[33m  journalctl -u xray --no-pager | tail -20\e[0m"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+else
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "    INSTALASI SELESAI! REBOOT DALAM 8 DETIK...    "
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+fi
+
 if [[ "${WIBU_NO_REBOOT:-0}" == "1" ]]; then
     echo -e "\e[33m[!] WIBU_NO_REBOOT=1 -> reboot dilewati. Semua layanan sudah direstart di atas.\e[0m"
     echo -e "\e[33m    Disarankan reboot manual di waktu luang untuk menerapkan tuning sepenuhnya.\e[0m"
