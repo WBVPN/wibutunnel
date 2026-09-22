@@ -15,7 +15,27 @@ PASS = ''
 BUFLEN = 4096 * 4
 TIMEOUT = 60
 DEFAULT_HOST = '127.0.0.1:109'
-RESPONSE = 'HTTP/1.1 101 <b><font color="blue">WIBU TUNNELLING</font></b>\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: foo\r\n\r\n'
+import hashlib, base64
+
+RESPONSE = 'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
+
+# [FIX] Klien WS parser strict (okhttp, Go net/http, Swift, Chrome) menolak
+# reason phrase non-token. Versi lama memakai
+# '<b><font color="blue">WIBU TUNNELLING</font></b>' yang ILEGAL menurut
+# RFC 7230 -> klien melihat 'HTTP/1.1 101' tapi TIDAK switch protocol.
+# Sekarang memakai 'Switching Protocols' + Sec-WebSocket-Accept yang benar.
+def _ws_response(client_buffer):
+    key = ''
+    for line in client_buffer.split('\r\n'):
+        if line.lower().startswith('sec-websocket-key:'):
+            key = line.split(':', 1)[1].strip()
+    if key:
+        accept = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
+        return ('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n'
+                'Connection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n' % accept)
+    return RESPONSE
+
+
 
 class Server(threading.Thread):
     def __init__(self, host, port):
@@ -152,7 +172,7 @@ class ConnectionHandler(threading.Thread):
     def method_CONNECT(self, path):
         self.log += ' - CONNECT ' + path
         self.connect_target(path)
-        self.client.sendall(RESPONSE.encode('utf-8'))
+        self.client.sendall(_ws_response(self.client_buffer).encode('utf-8'))
         self.client_buffer = ''
         self.server.printLog(self.log)
         self.doCONNECT()
