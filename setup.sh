@@ -28,7 +28,7 @@ mkdir -p /etc/wibutunnel
 # [ROTASI TOKEN] token lama (ghp_..., full-scope) sudah di-revoke karena
 # ter-ekspose di git history. Diganti fine-grained PAT read-only yang HANYA
 # bisa baca repo wibutunnel-izin (tidak bisa tulis kemana pun).
-IZIN_TOKEN="${IZIN_TOKEN:-}"
+IZIN_TOKEN="${IZIN_TOKEN:-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}"
 if [[ -z "$IZIN_TOKEN" ]]; then
     echo -e "\e[1;31m[!] ERROR: IZIN_TOKEN environment variable required\e[0m"
     echo -e "\e[1;33m    Set via: export IZIN_TOKEN='your_token_here'\e[0m"
