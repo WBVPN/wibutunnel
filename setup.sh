@@ -40,9 +40,12 @@ REGISTERED_IP=$(echo "$GET_DATA" | awk '{print $4}' | tr -d '\r' | tr -d ' ')
 
 if [[ "$MYIP" == "$REGISTERED_IP" ]]; then
     if [[ "${EXP_DATE,,}" != "lifetime" ]]; then
-        DATE_NOW=$(date +%s)
-        DATE_EXP=$(date -d "$EXP_DATE" +%s 2>/dev/null)
-        if [[ -z "$DATE_EXP" ]] || [[ $DATE_NOW -gt $DATE_EXP ]]; then
+        # [FIX] Konsisten dengan license_expired() di common.sh: lisensi
+        # berlaku sampai AKHIR tanggal expiry, bukan tengah malam awal hari H.
+        # (Sebelumnya pakai epoch midnight -> installer menolak di hari H
+        #  padahal menu masih mengizinkan. Kedua sisi sekarang sama.)
+        TODAY=$(date +%Y-%m-%d)
+        if [[ ! "$EXP_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || [[ "$EXP_DATE" < "$TODAY" ]]; then
             clear
             echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
             echo -e "\e[1;31m               LISENSI KEDALUWARSA!               \e[0m"
