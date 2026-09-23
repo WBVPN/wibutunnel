@@ -28,7 +28,12 @@ mkdir -p /etc/wibutunnel
 # [ROTASI TOKEN] token lama (ghp_..., full-scope) sudah di-revoke karena
 # ter-ekspose di git history. Diganti fine-grained PAT read-only yang HANYA
 # bisa baca repo wibutunnel-izin (tidak bisa tulis kemana pun).
-IZIN_TOKEN="${IZIN_TOKEN:-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}"
+IZIN_TOKEN="${IZIN_TOKEN:-}"
+if [[ -z "$IZIN_TOKEN" ]]; then
+    echo -e "\e[1;31m[!] ERROR: IZIN_TOKEN environment variable required\e[0m"
+    echo -e "\e[1;33m    Set via: export IZIN_TOKEN='your_token_here'\e[0m"
+    exit 1
+fi
 printf '%s' "$IZIN_TOKEN" > /etc/wibutunnel/izin_token
 chmod 600 /etc/wibutunnel/izin_token
 LINK_IZIN="https://WBVPN:${IZIN_TOKEN}@raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
@@ -455,6 +460,12 @@ while true; do
     if [[ -z "$domain" ]]; then
         echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"
         continue
+    fi
+
+    # Validate domain format to prevent command injection
+    if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+        echo -e "\e[1;31m[!] ERROR: Invalid domain format. Only alphanumeric, dots, hyphens allowed.\e[0m"
+        exit 1
     fi
 
     # dig opsional - resolve_domain punya 5 fallback (getent/nslookup/host/DoH).
