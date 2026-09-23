@@ -54,6 +54,9 @@ SSH Tunnel · VLESS · VMESS · TROJAN · UDP Gaming · Telegram Bot
 Manajemen akun langsung dari HP — tanpa SSH ke VPS:
 
 - **Akun:** Create · Trial · Renew · Delete · List (semua protokol)
+  - Create SSH mendukung **password custom** (opsional):<br>
+    `[username] [hari] [limit_ip] [limit_gb] [password]`<br>
+    Password dikosongkan = auto-random. Divalidasi ketat `[A-Za-z0-9_-]{6,32}` (anti injeksi command).
 - **Monitoring:** cek IP online real-time, cek trafik global
 - **Konfigurasi:** detail link, ubah limit IP & kuota
 - **Backup:** kirim backup VPS langsung ke chat Telegram
@@ -265,6 +268,9 @@ Download divalidasi via magic bytes: hanya file dengan shebang (`#!`)
 atau ELF binary (`7f454c46`) yang diterima — file kosong, error 404/429,
 maupun response HTML palsu akan ditolak sebelum dipasang.
 
+> **Catatan:** `bin/bot-webhook` (handler webhook Telegram) juga masuk daftar
+> update. Fix keamanan webhook pasti sampai ke VPS lewat menu ini.
+
 **Backup berkala:** bisa dijadwalkan dari menu backup — hasil dikirim ke chat
 Telegram.
 
@@ -323,6 +329,8 @@ yang menyesuaikan ukuran dengan RAM VPS.
 | `xray` OFF setelah reboot | Config tidak lolos `xray run -test` | `xray run -test -config /usr/local/etc/xray/config.json`; roll back dari `.bak.*` |
 | Install gagal di `/tmp` | tmpfs `/tmp` terlalu kecil untuk unduh xray | Installer memakai `TMPDIR=/var/tmp` sejak v4.0 |
 | Dropbear/SSH tidak bisa login | Port 109/143 belum dibuka firewall | `ufw allow 109,143,80,443,22/tcp` |
+| `ID Telegram: Belum disetting` terus walau ulang input | `bot.conf` kehilangan baris `CHAT_ID` (heredoc rapuh pada versi lama) | Update `m-setting` via menu `[5] Update Script`, lalu Setup Bot Telegram |
+| Service mati tapi tidak pulih sendiri | `watchdog.sh` versi lama hanya pantau xray+haproxy | Update terbaru: watchdog pantau xray, haproxy, dropbear, ws-stunnel, wibu-daemon |
 
 > Setelah perbaikan source, **wajib** re-build seluruh binary lalu push `bin/`.
 > `common.sh` tidak pernah di-ship mentah — selalu di-inline ke tiap binary.
