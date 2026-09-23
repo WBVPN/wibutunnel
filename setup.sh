@@ -1345,7 +1345,10 @@ systemctl start cron
 systemctl restart xray haproxy
 
 # Set Webhook URL to Telegram
-source /etc/wibutunnel/bot.conf 2>/dev/null
+# [FIX ROBUSTNESS] jangan `source` bot.conf: satu baris cacat membuat
+# parsing berhenti & variabel setelahnya tidak dibaca. Ambil langsung.
+BOT_TOKEN=$(grep -E "^[[:space:]]*BOT_TOKEN[[:space:]]*=" /etc/wibutunnel/bot.conf 2>/dev/null | head -1 | sed -E "s/^[^=]*=[[:space:]]*//; s/^'//; s/'$//; s/^\"//; s/\"$//")
+WEBHOOK_SECRET=$(grep -E "^[[:space:]]*WEBHOOK_SECRET[[:space:]]*=" /etc/wibutunnel/bot.conf 2>/dev/null | head -1 | sed -E "s/^[^=]*=[[:space:]]*//; s/^'//; s/'$//; s/^\"//; s/\"$//")
 if [[ -n "$BOT_TOKEN" ]]; then
     # Generate webhook secret jika belum ada
     if [[ -z "$WEBHOOK_SECRET" ]]; then

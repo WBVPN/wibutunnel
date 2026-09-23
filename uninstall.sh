@@ -14,7 +14,7 @@ systemctl disable telegram-webhook.socket 2>/dev/null
 
 # Lepaskan webhook Telegram (jika bot dikonfigurasi)
 if [[ -f /etc/wibutunnel/bot.conf ]]; then
-    source /etc/wibutunnel/bot.conf 2>/dev/null
+    BOT_TOKEN=$(grep -E "^[[:space:]]*BOT_TOKEN[[:space:]]*=" /etc/wibutunnel/bot.conf 2>/dev/null | head -1 | sed -E "s/^[^=]*=[[:space:]]*//; s/^'//; s/'$//; s/^\"//; s/\"$//")
     if [[ -n "$BOT_TOKEN" ]]; then
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
     fi
