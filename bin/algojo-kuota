@@ -57,9 +57,22 @@ ssh_accounting() {
 # [FIX] Baca stat PER-USER (user>>>email>>>traffic>>>downlink+uplink).
 # Sebelumnya salah baca field $2 (untuk stat user = "email", untuk inbound = tag).
 xray api statsquery --server=127.0.0.1:10085 2>/dev/null \
-    | jq -r '.stat[]? | select(.name|startswith("user>>>")) | "\(.name) \(.value)"' \
-    | awk -F'>>>' '{print $2, $NF}' \
-    | awk '{ down[$1]+=$2 } END { for (u in down) print u, down[u] }' \
+    | jq -r '.stat[]? | select(.name | startswith("user>>>")) | "\(.name)|\(.value)"' 2>/dev/null \
+    | while IFS='|' read -r name val; do
+        # Validate fields before parsing
+        if [[ -z "$name" || -z "$val" ]]; then
+            continue
+        fi
+        
+        email=$(echo "$name" | awk -F'>>>' '{print $2}')
+        
+        # Validate email extracted
+        if [[ -z "$email" ]]; then
+            continue
+        fi
+        
+        echo "$email $val"
+    done | awk '{ down[$1]+=$2 } END { for (u in down) print u, down[u] }' \
     > /etc/wibutunnel/tmp/xray_quota_raw.txt
 
 # [SSH TUNNEL] tambahkan counter iptables untuk akun SSH

@@ -139,6 +139,13 @@ trial_ssh_menu() {
     clear; echo -e "${LINE}"; echo -e "            ${WHITE}BUAT AKUN SSH TRIAL${NC}"; echo -e "${LINE}"
     if ! ssh_ready; then echo -e "${RED}ERROR: Dropbear belum terinstal!${NC}"; read -p "Enter..." dummy; return; fi
 
+    # Rate limit check
+    CALLER_IP=$(echo "${SSH_CLIENT:-127.0.0.1}" | awk '{print $1}')
+    if ! check_trial_limit "$CALLER_IP"; then
+        read -n 1 -s -r -p "Press any key to return..."
+        return
+    fi
+
     read -p "Masukkan Waktu (Contoh: 20m, 1h, 1d) : " waktu
     if [[ "$waktu" =~ ^([0-9]+)([mhd])$ ]]; then
         val="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
@@ -159,6 +166,7 @@ trial_ssh_menu() {
         chage -E "$(date -d "@$exp_sec" +%Y-%m-%d)" -M $(( (exp_sec - $(date +%s)) / 86400 + 1 )) -I 0 "$trial_user" >/dev/null 2>&1
         safe_sed_delete "$trial_user" "$SSH_EXP_FILE"; echo "${trial_user}:${exp_date}" >> "$SSH_EXP_FILE"
         echo -e "${GREEN}Berhasil! Akun trial dibuat.${NC}"
+        record_trial "$CALLER_IP" "$trial_user"
     else
         echo -e "${RED}Gagal: ${out}${NC}"; read -p "Enter..." dummy; return
     fi

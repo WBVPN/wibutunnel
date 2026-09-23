@@ -28,7 +28,7 @@ mkdir -p /etc/wibutunnel
 # [ROTASI TOKEN] token lama (ghp_..., full-scope) sudah di-revoke karena
 # ter-ekspose di git history. Diganti fine-grained PAT read-only yang HANYA
 # bisa baca repo wibutunnel-izin (tidak bisa tulis kemana pun).
-IZIN_TOKEN="${IZIN_TOKEN:-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}"
+IZIN_TOKEN="${IZIN_TOKEN:-}"
 if [[ -z "$IZIN_TOKEN" ]]; then
     echo -e "\e[1;31m[!] ERROR: IZIN_TOKEN environment variable required\e[0m"
     echo -e "\e[1;33m    Set via: export IZIN_TOKEN='your_token_here'\e[0m"
@@ -521,6 +521,28 @@ chmod 700 /etc/wibutunnel /etc/wibutunnel/tmp
 echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
+# Detect v3.x installation and migrate accounts
+if [[ -d /etc/xray ]] && [[ -f /etc/wibutunnel/version ]]; then
+    OLD_VER=$(cat /etc/wibutunnel/version 2>/dev/null)
+    if [[ "$OLD_VER" =~ ^3\. ]]; then
+        echo -e "\e[1;36m[*] Detected v3.x installation. Migrating accounts...\e[0m"
+        BACKUP_DIR="/root/wibu_v3_backup_$(date +%s)"
+        mkdir -p "$BACKUP_DIR"
+        
+        # Backup account databases
+        for db in /etc/xray/*_exp.conf /etc/wibutunnel/*.db; do
+            [[ -f "$db" ]] && cp "$db" "$BACKUP_DIR/"
+        done
+        
+        # Backup xray config
+        [[ -f /usr/local/etc/xray/config.json ]] && cp /usr/local/etc/xray/config.json "$BACKUP_DIR/"
+        
+        echo -e "\e[1;32m[✓] v3.x data backed up to: $BACKUP_DIR\e[0m"
+        echo -e "\e[1;33m[!] After install, run manual account restoration if needed.\e[0m"
+        sleep 3
+    fi
+fi
+
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
 echo "4.0 Kurumi" > /etc/wibutunnel/version
 
@@ -637,6 +659,17 @@ iptables -A FORWARD -m string --algo bm --string "info_hash" -j DROP
 
 # Anti-DDoS & Syn-Flood Protection (Ultra Lightweight)
 echo -e "\e[1;36m[+] Memasang Anti-DDoS & SSH Brute-Force Protection...\e[0m"
+
+# Detect if system uses nftables
+if command -v nft >/dev/null 2>&1 && [[ -f /usr/sbin/iptables-nft ]]; then
+    echo -e "\e[1;36m[*] Detected nftables system. Using iptables-nft wrapper...\e[0m"
+    update-alternatives --set iptables /usr/sbin/iptables-nft 2>/dev/null || true
+    update-alternatives --set ip6tables /usr/sbin/ip6tables-nft 2>/dev/null || true
+fi
+
+# Install iptables-persistent for rule persistence
+apt-get install -y iptables-persistent >/dev/null 2>&1
+
 # 1. Drop paket cacat / malformed packets
 iptables -A INPUT -p tcp ! --syn -m state --state NEW -j DROP
 iptables -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
@@ -771,8 +804,12 @@ fi
 find /tmp -maxdepth 1 -type f \( -name "xray.tmp" -o -name "xraybin" \) -delete 2>/dev/null
 find /tmp -maxdepth 1 -type d -name "xraybin" -exec rm -rf {} + 2>/dev/null
 
+# Install xray-core with version pinning
+XRAY_VERSION="${XRAY_VERSION:-1.8.24}"  # Pin to stable version, allow override
+echo -e "\e[1;36m[*] Installing xray-core v${XRAY_VERSION}...\e[0m"
+
 for _xray_attempt in 1 2 3; do
-    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install
+    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install --version "$XRAY_VERSION"
     # [BUGFIX] install-release tidak ada exit code yang andal - cek binary &
     # service BENAR-BENAR ada. Sebelumnya installer lanjut tanpa xray -> semua
     # menu xray GAGAL & laporan akhir cuma bilang "[FAIL]" tanpa hentikan.
@@ -781,11 +818,22 @@ for _xray_attempt in 1 2 3; do
     fi
     echo -e "\e[33m[!] Xray gagal terpasang (attempt $_xray_attempt/3), ulangi...\e[0m"
     find /tmp -maxdepth 1 -type f -name "xray.tmp" -delete 2>/dev/null
-    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f
+    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f --version "$XRAY_VERSION"
     if [[ -x /usr/local/bin/xray && -f /etc/systemd/system/xray.service ]]; then
         break
     fi
 done
+
+# Verify installation
+if xray version >/dev/null 2>&1; then
+    installed_ver=$(xray version 2>&1 | head -1)
+    if ! echo "$installed_ver" | grep -q "$XRAY_VERSION"; then
+        echo -e "\e[33m[!] Warning: xray version mismatch. Installed: $installed_ver\e[0m"
+        echo -e "\e[33m[!] Expected: v${XRAY_VERSION}\e[0m"
+        echo -e "\e[33m[!] Continuing anyway, but compatibility issues may occur.\e[0m"
+        sleep 3
+    fi
+fi
 
 # [BUGFIX] Kalau setelah 3x xray TETAP tidak ada, JANGAN lanjut - install
 # menu tanpa xray = panel yang semua tombolnya error.
@@ -803,7 +851,8 @@ if [[ ! -x /usr/local/bin/xray ]]; then
 fi
 if [[ ! -f /etc/systemd/system/xray.service ]]; then
     echo -e "\e[33m[!] service xray tidak ada, memaksa reinstall...\e[0m"
-    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f
+    XRAY_VERSION="${XRAY_VERSION:-1.8.24}"
+    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f --version "$XRAY_VERSION"
 fi
 
 # Backup config lama
@@ -835,6 +884,18 @@ cat <<'XEOF' > /usr/local/etc/xray/config.json
   "routing": {"domainStrategy": "AsIs","rules": [{"type": "field","inboundTag": ["api"],"outboundTag": "api"},{"type": "field","outboundTag": "blocked","user": ["DUMMY-LOCK"]},{"type": "field","ip": ["geoip:private"],"outboundTag": "blocked"},{"type": "field","protocol": ["bittorrent"],"outboundTag": "blocked"}]}
 }
 XEOF
+
+# Check for port conflicts before HAProxy setup
+echo -e "\e[1;36m[*] Checking for port conflicts...\e[0m"
+REQUIRED_PORTS="80 443 143 109 10015 10085"
+for port in $REQUIRED_PORTS; do
+    if netstat -tuln | grep -q ":${port} "; then
+        echo -e "\e[31m[!] ERROR: Port $port already in use!\e[0m"
+        echo -e "\e[33m[!] Cannot run multiple instances on same VPS.\e[0m"
+        echo -e "\e[33m[!] Stop existing services or use different server.\e[0m"
+        exit 1
+    fi
+done
 
 # HAProxy Config (MERGED: Xray + SSH Enhanced)
 cat <<HFEOF > /etc/haproxy/haproxy.cfg
@@ -1071,8 +1132,18 @@ download_ssh_tool "bin/ssh-tunnel-install" "ssh-tunnel-install"
 
 # Jalankan installer stack SSH (idempoten: compile dropbear, keys, systemd,
 # ws-stunnel, udpgw, ip_forward + NAT, dan melepas port 80/443 dari layanan lain)
+echo -e "\e[1;36m[*] Installing SSH tunnel support (Dropbear)...\e[0m"
 if [ -x /usr/local/bin/ssh-tunnel-install ]; then
-    bash /usr/local/bin/ssh-tunnel-install || echo -e "\e[33m[!] Beberapa komponen SSH Tunnel gagal dipasang.\e[0m"
+    if ! bash /usr/local/bin/ssh-tunnel-install; then
+        echo -e "\e[31m[!] WARNING: SSH tunnel installation failed!\e[0m"
+        echo -e "\e[33m[!] SSH features will not be available.\e[0m"
+        echo -e "\e[33m[!] Check build-essential installed: apt-get install build-essential\e[0m"
+        read -p "Continue without SSH support? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
 else
     echo -e "\e[31m[!] ssh-tunnel-install tidak tersedia — fitur SSH Tunnel tidak akan jalan.\e[0m"
 fi

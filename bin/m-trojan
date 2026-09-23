@@ -83,7 +83,14 @@ add_user() {
     read -p "Limit Kuota GB (0 = Unli): " limit_kuota
     [[ -z "$limit_ip" ]] && limit_ip=0; [[ -z "$limit_kuota" ]] && limit_kuota=0
 
-    uuid=$(uuidgen); domain=$(cat "$DOMAIN_FILE")
+    uuid=$(uuidgen)
+    domain=$(cat "$DOMAIN_FILE" 2>/dev/null)
+    if [[ -z "$domain" ]]; then
+        echo -e "${RED}[!] ERROR: Domain belum dikonfigurasi!${NC}"
+        echo -e "${YELLOW}[!] Jalankan setup.sh terlebih dahulu.${NC}"
+        read -p "Enter..." dummy
+        return 1
+    fi
 
     if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
         (.inbounds[] | select(.protocol == "trojan") | .settings.clients) += [{"password": $uuid, "email": $user}]
@@ -97,7 +104,25 @@ add_user() {
     stats_rule_add "$user"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     echo "${user}:${limit_ip}" >> "$DB_IP"; echo "${user}:${limit_kuota}" >> "$DB_BW"
-    systemctl restart xray >/dev/null 2>&1
+    
+    if ! systemctl restart xray; then
+        echo -e "${RED}[!] GAGAL: xray tidak bisa restart. Rolling back account creation...${NC}"
+        
+        # Rollback config.json
+        safe_jq_edit_args --arg u "$user" \
+            '(.inbounds[] | .settings.clients) |= map(select(.email != $u))'
+        
+        # Rollback EXP_FILE
+        safe_sed_delete "$user" "$EXP_FILE"
+        
+        # Rollback DB files
+        safe_sed_delete "$user" "$DB_IP"
+        safe_sed_delete "$user" "$DB_BW"
+        
+        echo -e "${RED}[!] Account creation cancelled due to xray restart failure.${NC}"
+        read -p "Enter..." dummy
+        return 1
+    fi
 
     trojan_tls="trojan://${uuid}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
     trojan_grpc="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan&sni=${domain}#${user}"
@@ -160,6 +185,15 @@ trial_user() {
     clear; echo -e "${LINE}"; echo -e "            ${WHITE}BUAT AKUN TROJAN TRIAL${NC}"; echo -e "${LINE}"
     if [ ! -f "$CONFIG_FILE" ]; then echo -e "${RED}ERROR: Xray belum terinstal!${NC}"; read -p "Enter..." dummy; return; fi
 
+    # Get caller IP (from SSH session or default to localhost check)
+    CALLER_IP=$(echo "${SSH_CLIENT:-127.0.0.1}" | awk '{print $1}')
+
+    # Check rate limit
+    if ! check_trial_limit "$CALLER_IP"; then
+        read -n 1 -s -r -p "Press any key to return..."
+        return
+    fi
+
     user="trial-$(tr -dc 'a-z0-9' < /dev/urandom | head -c 4)"
     while user_json_exists "$user"; do user="trial-$(tr -dc 'a-z0-9' < /dev/urandom | head -c 5)"; done
 
@@ -184,6 +218,9 @@ trial_user() {
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     echo "${user}:0" >> "$DB_IP"; echo "${user}:0" >> "$DB_BW"
     systemctl restart xray >/dev/null 2>&1
+
+    # Record trial creation for rate limiting
+    record_trial "$CALLER_IP" "$user"
 
     trojan_tls="trojan://${uuid}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
     trojan_grpc="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan&sni=${domain}#${user}"
@@ -344,15 +381,52 @@ renew_user() {
     if [[ ! "$tambahan" =~ ^[0-9]+$ ]] || [ "$tambahan" -le 0 ]; then echo -e "${RED}Error: Angka tidak valid!${NC}"; read -p "Enter..." dummy; return; fi
 
     current_exp=$(db_lookup "$user" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
-    today_sec=$(date +%s)
-
-    if [[ -n "$current_exp" && ${#current_exp} -eq 10 ]]; then current_exp="${current_exp} $(date +%H:%M:%S)"; fi
-    if [ -z "$current_exp" ]; then base_sec=$today_sec
-    else exp_sec=$(date -d "$current_exp" +%s 2>/dev/null); if [ -z "$exp_sec" ] || [ "$today_sec" -gt "$exp_sec" ]; then base_sec=$today_sec; else base_sec=$exp_sec; fi; fi
-
-    new_exp=$(date -d "@$(( base_sec + (tambahan * 86400) ))" +"%Y-%m-%d %H:%M:%S")
+    today=$(date +%Y-%m-%d)
+    
+    # Calculate new expiry
+    if [[ -z "$current_exp" ]]; then
+        echo -e "${RED}[!] User tidak ditemukan di database expiry.${NC}"
+        read -p "Enter..." dummy
+        return 1
+    fi
+    
+    # Normalize current_exp if it's just a date
+    if [[ -n "$current_exp" && ${#current_exp} -eq 10 ]]; then 
+        current_exp="${current_exp} $(date +%H:%M:%S)"
+    fi
+    
+    # Parse dates to epoch
+    today_sec=$(date -d "$today" +%s)
+    exp_sec=$(date -d "$current_exp" +%s 2>/dev/null)
+    
+    # If expired or invalid date, extend from today
+    if [[ -z "$exp_sec" ]] || [[ "$exp_sec" -lt "$today_sec" ]]; then
+        echo -e "${YELLOW}[!] Account sudah expired. Extending dari hari ini.${NC}"
+        base_sec="$today_sec"
+    else
+        echo -e "${GREEN}[✓] Account masih aktif. Extending dari expiry current.${NC}"
+        base_sec="$exp_sec"
+    fi
+    
+    # Add duration
+    new_exp_sec=$((base_sec + tambahan * 86400))
+    new_exp=$(date -d "@${new_exp_sec}" +"%Y-%m-%d %H:%M:%S")
     safe_sed_delete "$user" "$EXP_FILE"; echo "${user}:${new_exp}" >> "$EXP_FILE"
     systemctl restart xray >/dev/null 2>&1
+
+    # Unlock if account was blocked for expiry
+    source /usr/local/bin/common.sh
+    if grep -q "^${user}:" "$DB_LOCK" 2>/dev/null; then
+        lock_reason=$(grep "^${user}:" "$DB_LOCK" | cut -d: -f4)
+        if [[ "$lock_reason" == "EXPIRED" ]]; then
+            # Remove from routing block
+            safe_jq_edit_args --arg u "$user" \
+                '(.routing.rules[] | select(.outboundTag == "blocked") | .user) |= map(select(. != $u))'
+            # Remove from locked DB
+            safe_sed_delete "$user" "$DB_LOCK"
+            systemctl restart xray >/dev/null 2>&1
+        fi
+    fi
 
     echo -e "\n${GREEN}Berhasil! Expired baru: $new_exp${NC}"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
@@ -404,6 +478,27 @@ change_bw_user() {
 
     safe_sed_delete "$user" "$DB_BW"; echo "${user}:${new_limit}" >> "$DB_BW"
     /usr/local/sbin/algojo-kuota >/dev/null 2>&1
+    
+    # Unlock if user was blocked for quota and limit increased
+    if [[ "$new_limit" -ne 0 ]] && grep -q "^${user}:" "$DB_LOCK" 2>/dev/null; then
+        lock_entry=$(grep "^${user}:" "$DB_LOCK")
+        lock_reason=$(echo "$lock_entry" | cut -d: -f4)
+        
+        if [[ "$lock_reason" == "QUOTA" ]]; then
+            echo -e "${YELLOW}[*] User was quota-locked. Removing block...${NC}"
+            
+            # Remove from routing block
+            safe_jq_edit_args --arg u "$user" \
+                '(.routing.rules[] | select(.outboundTag == "blocked") | .user) |= map(select(. != $u))'
+            
+            # Remove from locked DB
+            safe_sed_delete "$user" "$DB_LOCK"
+            
+            systemctl restart xray >/dev/null 2>&1
+            echo -e "${GREEN}[✓] User unlocked.${NC}"
+        fi
+    fi
+    
     echo -e "\n${GREEN}Sukses! Limit Kuota user '${user}' diubah menjadi: ${new_limit} GB${NC}"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         PESAN_BW="${THICKLINE}

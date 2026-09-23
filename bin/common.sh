@@ -48,6 +48,42 @@ get_myip() {
 }
 
 export MYIP=$(get_myip 2>/dev/null)
+
+# Check trial rate limit (max 3 per IP per day)
+check_trial_limit() {
+    local caller_ip="$1"
+    local trial_db="/etc/wibutunnel/tmp/trial_limits.db"
+    local max_trials=3
+    local cutoff_time=$(($(date +%s) - 86400))  # 24 hours ago
+    
+    mkdir -p "$(dirname "$trial_db")"
+    touch "$trial_db"
+    
+    # Clean old entries (>24h) atomically
+    if [[ -f "$trial_db" ]]; then
+        awk -F: -v cutoff="$cutoff_time" '$3 >= cutoff || $0 ~ /^#/' "$trial_db" > "${trial_db}.tmp" 2>/dev/null
+        mv "${trial_db}.tmp" "$trial_db" 2>/dev/null || touch "$trial_db"
+    fi
+    
+    # Count trials from this IP in last 24h
+    trial_count=$(grep "^${caller_ip}:" "$trial_db" 2>/dev/null | wc -l)
+    
+    if [[ "$trial_count" -ge "$max_trials" ]]; then
+        echo -e "${RED}[!] Limit trial tercapai. Maksimal ${max_trials} trial per IP per 24 jam.${NC}"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Record trial creation
+record_trial() {
+    local caller_ip="$1"
+    local username="$2"
+    local trial_db="/etc/wibutunnel/tmp/trial_limits.db"
+    
+    echo "${caller_ip}:${username}:$(date +%s)" >> "$trial_db"
+}
 if [[ -z "$MYIP" ]]; then
     echo -e "${RED}[WARNING] Gagal mendapatkan IP publik. Periksa koneksi internet.${NC}" >&2
 fi
@@ -156,17 +192,32 @@ db_has() { [[ -n "$(db_lookup "$1" "$2")" ]]; }
 # Mengembalikan 0 = expired, 1 = masih aktif.
 license_expired() {
     local exp="$1"
-    [[ -z "$exp" || "$exp" == "lifetime" ]] && return 1
-    # hanya format YYYY-MM-DD yang divalidasi
-    [[ "$exp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 1
-    local today exp_epoch
-    today=$(date +%Y-%m-%d)
-    exp_epoch=$(date -d "$exp" +%s 2>/dev/null) || return 1
-    # expired kalau tanggal expiry < tanggal hari ini
-    [[ "$exp" < "$today" ]]
+    local today=$(date +%Y-%m-%d)
+    
+    # Validate date format strictly (YYYY-MM-DD only)
+    if [[ ! "$exp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        echo -e "${RED}[!] ERROR: Invalid license date format: $exp${NC}" >&2
+        echo -e "${RED}[!] Expected format: YYYY-MM-DD${NC}" >&2
+        return 1  # Treat invalid as expired (fail-safe)
+    fi
+    
+    # String comparison works for ISO dates
+    if [[ "$exp" < "$today" ]]; then
+        return 0  # expired
+    else
+        return 1  # not expired
+    fi
 }
 
 check_license() {
+    # [SECURITY] Validate MYIP FIRST before any cache logic
+    if [[ -z "$MYIP" ]]; then
+        clear
+        echo -e "${LINE}\n${RED}AKSES DITOLAK!${NC}\n${LINE}"
+        echo -e "${RED}Gagal memverifikasi IP publik (kosong). Periksa koneksi internet.${NC}\n${LINE}"
+        exit 1
+    fi
+
     local CACHE_FILE="/etc/wibutunnel/tmp/wibu_license.cache"
     local CACHE_TTL=3600
     local CURRENT_TIME=$(date +%s)
@@ -195,15 +246,6 @@ check_license() {
                 return 0
             fi
         fi
-    fi
-
-    # [SECURITY] MYIP wajib ada; kalau kosong, grep -F -w "" akan mencocokkan
-    # semua baris izin.txt dan license bisa lolos untuk IP yang tidak terdaftar.
-    if [[ -z "$MYIP" ]]; then
-        clear
-        echo -e "${LINE}\n                 ${RED}AKSES DITOLAK!${NC}\n${LINE}"
-        echo -e " ${RED}Gagal memverifikasi IP publik (kosong). Periksa koneksi internet.${NC}\n${LINE}"
-        exit 1
     fi
 
     # [SECURITY] Daftar lisensi disimpan di repo PRIVATE (WBVPN/wibutunnel-izin).
@@ -377,8 +419,19 @@ del_ssh_user() {
     local user="$1"
     ssh_valid_user "$user" || { echo "username tidak valid"; return 1; }
     ssh_user_exists "$user" || { echo "user $user tidak ada"; return 1; }
+    
+    # Get UID before deletion for iptables cleanup
+    local uid=$(id -u "$user" 2>/dev/null)
+    
     pkill -u "$user" 2>/dev/null; sleep 1
     userdel -r "$user" >/dev/null 2>&1 || userdel "$user" >/dev/null 2>&1
+    
+    # Clean iptables rules if UID was found
+    if [[ -n "$uid" ]]; then
+        iptables -t mangle -D OUTPUT -m owner --uid-owner "$uid" -j ACCEPT 2>/dev/null
+        iptables -t mangle -D INPUT -m owner --uid-owner "$uid" -j ACCEPT 2>/dev/null
+    fi
+    
     safe_sed_delete "$user" "$SSH_EXP_FILE"
     safe_sed_delete "$user" "$SSH_DB_PASS"
     safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
@@ -559,3 +612,41 @@ get_geo() {
 # get_city / get_isp: aksesoris untuk pemanggil yang cuma butuh satu field.
 get_city() { get_geo | sed -n '1p'; }
 get_isp()  { get_geo | sed -n '2p'; }
+
+# Safe flat-file DB write with flock
+# Usage: safe_db_write "user:value" "$DB_FILE"
+safe_db_write() {
+    local content="$1"
+    local dbfile="$2"
+    local lockfile="/etc/wibutunnel/tmp/flatdb.lock"
+    
+    mkdir -p "$(dirname "$lockfile")"
+    
+    (
+        flock -x -w 30 200 || {
+            echo "[ERROR] Failed to acquire lock for $dbfile" >&2
+            return 1
+        }
+        echo "$content" >> "$dbfile"
+    ) 200>"$lockfile"
+}
+
+# Safe flat-file DB delete with flock
+# Usage: safe_db_delete "user" "$DB_FILE"
+safe_db_delete() {
+    local user="$1"
+    local dbfile="$2"
+    local lockfile="/etc/wibutunnel/tmp/flatdb.lock"
+    local tmp="/tmp/db_$$"
+    
+    mkdir -p "$(dirname "$lockfile")"
+    
+    (
+        flock -x -w 30 200 || {
+            echo "[ERROR] Failed to acquire lock for $dbfile" >&2
+            return 1
+        }
+        grep -v "^${user}:" "$dbfile" > "$tmp" 2>/dev/null || true
+        mv "$tmp" "$dbfile"
+    ) 200>"$lockfile"
+}

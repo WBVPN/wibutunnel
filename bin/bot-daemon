@@ -450,10 +450,6 @@ renew_account() {
         send_msg "❌ <b>Config xray tidak bisa dibaca!</b> Coba lagi beberapa saat."
         return
     fi
-    if ! _xray_ok "$CONFIG_FILE"; then
-        send_msg "❌ <b>Config xray tidak bisa dibaca!</b> Coba lagi beberapa saat."
-        return
-    fi
     if jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) == null' "$CONFIG_FILE" >/dev/null 2>&1; then
         send_msg "❌ <b>Gagal!</b>\nAkun <code>${user}</code> tidak ditemukan."
         return
