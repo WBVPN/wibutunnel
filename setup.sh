@@ -1267,8 +1267,12 @@ LREOF
 
 cat <<EOF > /usr/local/bin/watchdog.sh
 #!/bin/bash
-systemctl is-active --quiet xray || systemctl restart xray
-systemctl is-active --quiet haproxy || systemctl restart haproxy
+# [FIX] watchdog sebelumnya hanya cover xray+haproxy. Kalau dropbear atau
+# ws-stunnel mati, akun SSH offline selamanya tanpa auto-recovery (user
+# komplain duluan sebelum admin sadar). Sekarang semua service inti dipantau.
+for unit in xray haproxy dropbear ws-stunnel wibu-daemon; do
+    systemctl is-active --quiet "$unit" 2>/dev/null || systemctl restart "$unit" 2>/dev/null
+done
 EOF
 chmod +x /usr/local/bin/watchdog.sh
 
@@ -1289,6 +1293,11 @@ crontab -l 2>/dev/null | grep -v -E "xp|reboot|watchdog|algojo|unlocker|drop_cac
 # tiap 6 jam (rate limit reset -> langsung keambil, tanpa campur tangan admin).
 cat > /usr/local/bin/renew-cert-wibu.sh << 'RCEOF'
 #!/bin/bash
+# [FIX] trap EXIT: haproxy DIHENTIKAN untuk certbot HTTP-01 (port 80/443 harus
+# bebas). Kalau script diinterrupt di tengah (kill, OOM, reboot mendadak),
+# haproxy tetap down -> VPS offline & tidak bisa diakses. Trap ini menjamin
+# service selalu dihidupkan kembali, sukses maupun gagal.
+trap 'systemctl start haproxy 2>/dev/null' EXIT
 domain=$(cat /etc/xray/domain 2>/dev/null)
 [[ -z "$domain" ]] && exit 1
 pem="/etc/letsencrypt/live/$domain/fullchain.pem"
