@@ -89,26 +89,29 @@ Domain: Pointed to server IP (for SSL)
 ```
 
 ### Quick Start
+
+**One-Liner Install (Recommended):**
+```bash
+curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash
+```
+
+**Manual Install:**
 ```bash
 # 1. Clone repository
 git clone https://github.com/WBVPN/wibutunnel.git
 cd wibutunnel
 
-# 2. Register server IP (required for license)
-# Fork repo WBVPN/wibutunnel-izin, tambahkan IP ke izin.txt, create PR
-
-# 3. Jalankan installer
+# 2. Jalankan installer
 chmod +x setup.sh
 sudo ./setup.sh
-
-# 4. Input saat diminta:
-#    - Domain name
-#    - Telegram bot token (optional)
-#    - Telegram chat ID (optional)
-
-# 5. Akses menu
-menu
 ```
+
+**Setup Steps:**
+1. ✅ Register server IP di [wibutunnel-izin](https://github.com/WBVPN/wibutunnel-izin) (required for license)
+2. 🌐 Input domain name saat installer prompt
+3. 🤖 Input Telegram bot token & chat ID (optional)
+4. ⏳ Tunggu instalasi selesai (~5-10 menit)
+5. 🎮 Akses menu: `menu`
 
 ### Post-Installation
 ```bash
