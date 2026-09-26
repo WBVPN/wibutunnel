@@ -127,7 +127,7 @@ safe_jq_edit() {
         if jq "$filter" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             if _xray_validate "$tmp"; then
                 mv "$tmp" "$src"
-                chmod 644 "$src"
+                chmod 600 "$src"
             else
                 echo "[ERROR] hasil edit tidak valid (null padding/struktur rusak), config tidak diubah" >&2
                 rm -f "$tmp"
@@ -150,7 +150,7 @@ safe_jq_edit_args() {
         if jq "$@" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             if _xray_validate "$tmp"; then
                 mv "$tmp" "$src"
-                chmod 644 "$src"
+                chmod 600 "$src"
             else
                 echo "[ERROR] hasil edit tidak valid (null padding/struktur rusak), config tidak diubah" >&2
                 rm -f "$tmp"
@@ -259,8 +259,10 @@ check_license() {
     # Solusi jangka panjang: endpoint allow/deny per-IP, bukan bagikan token.
     local IZIN_TOKEN="${IZIN_TOKEN:-}"
     [[ -z "$IZIN_TOKEN" && -f /etc/wibutunnel/izin_token ]] && IZIN_TOKEN=$(cat /etc/wibutunnel/izin_token 2>/dev/null)
-    local LINK_IZIN="https://WBVPN:${IZIN_TOKEN}@raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
-    local GET_DATA=$(curl -sS --max-time 10 "$LINK_IZIN" | grep -F -w "$MYIP")
+    # [SECURITY] Token via Authorization header, bukan URL userinfo.
+    # URL userinfo (https://WBVPN:TOKEN@...) bocor ke `ps`/cmdline curl.
+    local IZIN_URL="https://raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
+    local GET_DATA=$(curl -sS --max-time 10 -H "Authorization: token ${IZIN_TOKEN}" "$IZIN_URL" | grep -F -w "$MYIP")
 
     if [[ -z "$GET_DATA" ]]; then
         clear

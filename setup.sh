@@ -36,8 +36,12 @@ if [[ -z "$IZIN_TOKEN" ]]; then
 fi
 printf '%s' "$IZIN_TOKEN" > /etc/wibutunnel/izin_token
 chmod 600 /etc/wibutunnel/izin_token
-LINK_IZIN="https://WBVPN:${IZIN_TOKEN}@raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
-GET_DATA=$(curl -sS --max-time 10 "$LINK_IZIN" | grep -w "$MYIP")
+# [SECURITY] Token dikirim via Authorization header, BUKAN di URL.
+# Versi lama: https://WBVPN:${IZIN_TOKEN}@... -> token muncul di `ps` /
+# /proc/*/cmdline selama curl jalan (~10s) -> bisa dibaca user lokal VPS.
+# Header tidak terlihat di argv proses manapun.
+IZIN_URL="https://raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
+GET_DATA=$(curl -sS --max-time 10 -H "Authorization: token ${IZIN_TOKEN}" "$IZIN_URL" | grep -w "$MYIP")
 
 CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
 EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')
@@ -818,7 +822,8 @@ for _xray_attempt in 1 2 3; do
     fi
     echo -e "\e[33m[!] Xray gagal terpasang (attempt $_xray_attempt/3), ulangi...\e[0m"
     find /tmp -maxdepth 1 -type f -name "xray.tmp" -delete 2>/dev/null
-    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f --version "$XRAY_VERSION"
+    # [SECURITY] pipefail lokal: curl gagal -> bash dapat stdin kosong -> lanjut seolah OK.
+    ( set -o pipefail; curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f --version "$XRAY_VERSION" ) || true
     if [[ -x /usr/local/bin/xray && -f /etc/systemd/system/xray.service ]]; then
         break
     fi
@@ -852,14 +857,28 @@ fi
 if [[ ! -f /etc/systemd/system/xray.service ]]; then
     echo -e "\e[33m[!] service xray tidak ada, memaksa reinstall...\e[0m"
     XRAY_VERSION="${XRAY_VERSION:-1.8.24}"
-    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f --version "$XRAY_VERSION"
+    # [SECURITY] pipefail lokal: curl gagal -> bash dapat stdin kosong -> lanjut seolah OK.
+    ( set -o pipefail; curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f --version "$XRAY_VERSION" ) || true
 fi
 
 # Backup config lama
 [ -f /usr/local/etc/xray/config.json ] && cp /usr/local/etc/xray/config.json "/usr/local/etc/xray/config.json.bak.$(date +%F_%H%M%S)"
 
+# [SECURITY] JANGAN timpa config bila sudah ada pelanggan. Sebelumnya install ke-2x
+# menulis template "clients": [] -> SEMUA akun VPN pelanggan lenyap. Backup .bak
+# dibuat tapi tidak pernah direstore. Sekarang: config lama dipertahankan jika
+# masih berisi klien aktif; hanya self-heal kalau config rusak/kosong.
+if [[ -f /usr/local/etc/xray/config.json ]] && command -v jq >/dev/null 2>&1; then
+    EXISTING_CLIENTS=$(jq '[.inbounds[]?.settings?.clients[]?] | length' /usr/local/etc/xray/config.json 2>/dev/null || echo 0)
+    if [[ "$EXISTING_CLIENTS" -gt 0 ]]; then
+        echo -e "\e[32m[+] Config xray lama memiliki ${EXISTING_CLIENTS} klien aktif - dipertahankan (tidak ditimpa).\e[0m"
+        SKIP_CONFIG_WRITE=1
+    fi
+fi
+
 # XRAY CONFIG (dengan StatsService + HandlerService)
 DUMMY_UUID=$(uuidgen)
+if [[ "${SKIP_CONFIG_WRITE:-0}" != "1" ]]; then
 cat <<'XEOF' > /usr/local/etc/xray/config.json
 {
   "log": {"access": "/var/log/xray/access.log","error": "/var/log/xray/error.log","loglevel": "warning"},
@@ -884,6 +903,7 @@ cat <<'XEOF' > /usr/local/etc/xray/config.json
   "routing": {"domainStrategy": "AsIs","rules": [{"type": "field","inboundTag": ["api"],"outboundTag": "api"},{"type": "field","outboundTag": "blocked","user": ["DUMMY-LOCK"]},{"type": "field","ip": ["geoip:private"],"outboundTag": "blocked"},{"type": "field","protocol": ["bittorrent"],"outboundTag": "blocked"}]}
 }
 XEOF
+fi  # end SKIP_CONFIG_WRITE
 
 # Check for port conflicts before HAProxy setup
 echo -e "\e[1;36m[*] Checking for port conflicts...\e[0m"

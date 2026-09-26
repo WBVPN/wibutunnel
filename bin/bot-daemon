@@ -274,27 +274,36 @@ create_account() {
     local link3=""
 
     if [[ "$proto" == "VLESS" ]]; then
-        safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
+        if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
             (.inbounds[] | select(.protocol == "vless") | .settings.clients) += [{"id": $uuid, "email": $user}]
-        '
+        '; then
+            send_msg "❌ <b>Gagal membuat akun!</b>\nConfig xray tidak bisa diedit (user: <code>${user}</code>). Akun dibatalkan, tidak ada data tersimpan."
+            return
+        fi
         echo "${user}:${exp_date}" >> /etc/xray/vless_exp.conf
         stats_rule_add "$user"
         link1="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&host=${domain}&type=ws&sni=${domain}#${user}"
         link2="vless://${uuid}@${domain}:80?path=/vless-ntls&security=none&encryption=none&host=${domain}&type=ws#${user}"
         link3="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless&sni=${domain}#${user}"
     elif [[ "$proto" == "VMESS" ]]; then
-        safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
+        if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
             (.inbounds[] | select(.protocol == "vmess") | .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $user}]
-        '
+        '; then
+            send_msg "❌ <b>Gagal membuat akun!</b>\nConfig xray tidak bisa diedit (user: <code>${user}</code>). Akun dibatalkan, tidak ada data tersimpan."
+            return
+        fi
         echo "${user}:${exp_date}" >> /etc/xray/vmess_exp.conf
         stats_rule_add "$user"
         link1="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"443\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/vmess\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"tls\",\"sni\":\"$domain\"}" | base64 -w 0)"
         link2="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"80\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/vmess-ntls\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"\",\"sni\":\"\"}" | base64 -w 0)"
         link3="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"443\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"grpc\",\"path\":\"vmess\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"tls\",\"sni\":\"$domain\"}" | base64 -w 0)"
     elif [[ "$proto" == "TROJAN" ]]; then
-        safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
+        if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
             (.inbounds[] | select(.protocol == "trojan") | .settings.clients) += [{"password": $uuid, "email": $user}]
-        '
+        '; then
+            send_msg "❌ <b>Gagal membuat akun!</b>\nConfig xray tidak bisa diedit (user: <code>${user}</code>). Akun dibatalkan, tidak ada data tersimpan."
+            return
+        fi
         echo "${user}:${exp_date}" >> /etc/xray/trojan_exp.conf
         stats_rule_add "$user"
         link1="trojan://${uuid}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
@@ -386,11 +395,14 @@ delete_account() {
         return
     fi
 
-    safe_jq_edit_args --arg u "$user" '
+    if ! safe_jq_edit_args --arg u "$user" '
         (.inbounds[] | .settings.clients) |= (if type == "array" then map(select(.email != $u)) else . end) |
         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u)) |
         (.routing.rules[] | select(.user != null and .outboundTag == "user-stats") | .user) |= map(select(. != $u))
-    '
+    '; then
+        send_msg "❌ <b>Gagal menghapus akun!</b>\nConfig xray tidak bisa diedit (user: <code>${user}</code>). User masih ada di config - TIDAK menghapus DB agar tidak ghost. Coba lagi atau cek manual."
+        return
+    fi
 
     safe_sed_delete "$user" /etc/xray/vless_exp.conf
     safe_sed_delete "$user" /etc/xray/vmess_exp.conf
@@ -497,8 +509,11 @@ renew_account() {
     # dilepas otomatis oleh unlocker-wibu). Sekalinya diperpanjang, KEDUA
     # penanda itu HARUS dilepas - kalau tidak, user sudah bayar/bisa dipakai
     # exp barunya tapi TETAP mati selamanya, dan bot berbohong "Berhasil".
-    safe_jq_edit_args --arg u "$user" \
-        '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
+    if ! safe_jq_edit_args --arg u "$user" \
+        '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'; then
+        send_msg "❌ <b>Gagal perpanjang akun!</b>\nConfig xray tidak bisa diedit (user: <code>${user}</code>). Expired tidak diubah."
+        return
+    fi
     safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
 
     kb=""

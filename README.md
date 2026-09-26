@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-4.0.1%20Kurumi-blue)
+![Version](https://img.shields.io/badge/version-4.0.2%20Kurumi-blue)
 ![License](https://img.shields.io/badge/license-Private-red)
 ![Platform](https://img.shields.io/badge/platform-Ubuntu%2022.04-orange)
 ![Status](https://img.shields.io/badge/status-Production%20Ready-success)
@@ -50,10 +50,14 @@
 - **🔍 Online User Monitoring** - Real-time connection tracking
 
 ### 🛡️ Security & Reliability
-- ✅ **License Validation** - GitHub-based IP registration
+- ✅ **License Validation** - IP registration via private repo, token via `Authorization` header (bukan URL)
 - ✅ **File Locking (flock)** - Race condition protection
+- ✅ **Null-Padding Guard** - Validator tolak config xray rusak sebelum restart
+- ✅ **Exit-Code Guards** - Semua edit config dicek; DB tak ditulis jika config gagal
+- ✅ **Symlink Guard** - Restore backup tolak entry symlink (anti write-through RCE)
+- ✅ **Input Validation** - Limit masa aktif & kuota numerik (anti trial permanen)
+- ✅ **Config Permission 600** - UUID/password pelanggan tak terbaca user lokal
 - ✅ **Recovery System** - Auto-recovery expired users
-- ✅ **Syntax Validation** - Pre-execution checks
 - ✅ **Graceful Degradation** - Service continues on partial failure
 
 ### ⚙️ Architecture
@@ -91,7 +95,12 @@ Domain: Pointed to server IP (for SSL)
 ### Quick Start
 
 **One-Liner Install (Recommended):**
+
+> ⚠️ **Token lisensi WAJIB** sebelum install. Dapatkan token dari admin (dikirim via
+> Telegram/email setelah registrasi IP) — jangan pernah commit token ke repo manapun.
+
 ```bash
+export IZIN_TOKEN='token_dari_admin'
 curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash
 ```
 
@@ -101,13 +110,16 @@ curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | su
 git clone https://github.com/WBVPN/wibutunnel.git
 cd wibutunnel
 
-# 2. Jalankan installer
+# 2. Set token lisensi (dari admin, lihat catatan lisensi di bawah)
+export IZIN_TOKEN='token_dari_admin'
+
+# 3. Jalankan installer
 chmod +x setup.sh
 sudo ./setup.sh
 ```
 
 **Setup Steps:**
-1. ✅ Register server IP di [wibutunnel-izin](https://github.com/WBVPN/wibutunnel-izin) (required for license)
+1. 🔑 Dapatkan `IZIN_TOKEN` dari admin (registrasi IP via Telegram)
 2. 🌐 Input domain name saat installer prompt
 3. 🤖 Input Telegram bot token & chat ID (optional)
 4. ⏳ Tunggu instalasi selesai (~5-10 menit)
@@ -450,7 +462,7 @@ menu  # View license info at top
 ## 🙏 Credits
 
 **Developer:** WBVPN Team  
-**Version:** 4.0.1 Kurumi  
+**Version:** 4.0.2 Kurumi  
 **Based on:** Xray-core, HAProxy, Dropbear  
 
 ### Technologies
@@ -461,9 +473,42 @@ menu  # View license info at top
 
 ---
 
+## 🔑 Model Lisensi & Keamanan
+
+### Cara lisensi bekerja
+1. Daftar IP pelanggan disimpan di repo **private** `WBVPN/wibutunnel-izin` (file `izin.txt`).
+2. Format baris: `IP_PUBLIK NAMA EXPIRY IP_PUBLIK` (nama **tanpa spasi** — pakai `_` atau `-`).
+3. Installer & menu membaca daftar itu pakai fine-grained PAT (read-only, scoped ke 1 repo).
+4. VPS cocokkan IP publiknya; kalau tak terdaftar/expired → akses ditolak.
+
+### Aturan token (WAJIB baca)
+- ❌ **Jangan pernah** tulis token di file yang ada di repo publik.
+- ❌ **Jangan pernah** kirim token via URL (`https://user:TOKEN@host`) — bocor ke `ps`/`/proc/*/cmdline`.
+- ✅ Pakai header: `curl -H "Authorization: token $IZIN_TOKEN"`.
+- ✅ Bikin PAT **fine-grained**: hanya repo `wibutunnel-izin`, permission `Contents: Read-only`, expiry pendek.
+- ✅ Token lama (sebelum v4.0.2) ter-ekspose di git history publik — **wajib di-revoke**.
+
+### Yang masih jadi risiko terbuka
+- **Download tanpa checksum**: installer tarik binary xray & tool via `curl|bash`/direct download tanpa verifikasi sha256/GPG. Kompromi GitHub/CDN = RCE root. Mitigasi masa depan: pin commit hash + GPG sign.
+- **Safe Update** (menu `[5]`) verifikasi magic bytes saja, bukan signature. Push ke repo utama = update ke seluruh armada. Batasi collaborator repo publik.
+- **User SSH dapat shell `/bin/bash`** (memang diperlukan untuk tunneling) — kombinasi dengan service lain yang menulis ke `/tmp` bisa jadi tangga privilege escalation. Tetap audit.
+
+---
+
 ## 🔄 Changelog
 
-### v4.0.1 Kurumi (Latest)
+### v4.0.2 Kurumi (Latest) — Security Patch
+- 🔒 **Critical:** Hapus hardcoded license token dari installer (sebelumnya terbaca di repo publik)
+- 🔒 **Critical:** Token lisensi kini dikirim via `Authorization` header, bukan URL (anti `ps` leak)
+- 🔒 **Critical:** Guard exit-code di 5 titik edit config Telegram bot (anti phantom user: akun di DB tapi tak di config / sebaliknya)
+- 🔒 **Critical:** Batas atas input trial (maks 1 tahun) + tolak `exp_date` kosong (anti trial permanen)
+- 🔒 **High:** Restore backup tolak entry symlink (anti write-through → RCE root)
+- 🔒 **High:** Permission config xray 644 → 600 (UUID pelanggan tak terbaca user SSH lokal)
+- 🔒 **High:** `pipefail` lokal di pipe `curl|bash` installer xray (anti install gagal diam-diam)
+- 🔒 **High:** Install ke-2x tak lagi menimpa config bila ada klien aktif (anti hapus akun pelanggan)
+- ✅ Dokumentasi keamanan & model lisensi dijelaskan jujur
+
+### v4.0.1 Kurumi
 - ✅ Performance: Associative arrays for O(1) lookup
 - ✅ Performance: Protocol map (75% I/O reduction)
 - ✅ Bug Fix: ws-stunnel ValueError handling

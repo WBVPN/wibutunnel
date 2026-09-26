@@ -208,6 +208,21 @@ do_restore() {
         return
     fi
 
+    # [SECURITY] Tolak symlink di hasil ekstrak. unzip default memblokir "../" dan
+    # path absolut, TAPI tetap mengekstrak entry symlink. cp -a lalu menjaga
+    # symlink hidup -> write-through ke target (mis. /etc/passwd) sebagai root.
+    # Zip attacker-controlled (link_backup) bisa berisi entry symlink berbahaya.
+    local bad_links
+    bad_links=$(find "${BACKUP_DIR}/restore-tmp" -type l 2>/dev/null | head -5)
+    if [[ -n "$bad_links" ]]; then
+        echo -e "${RED}[!] DITOLAK: backup mengandung symlink!${NC}"
+        echo -e "${YELLOW}    Symlink tidak diizinkan dalam restore (RCE lokal via write-through).${NC}"
+        echo "$bad_links" | sed 's/^/    /'
+        rm -rf "${BACKUP_DIR}/restore-tmp" "${BACKUP_DIR}/restore.zip"
+        read -p "Tekan Enter..." dummy
+        return
+    fi
+
     # [HARDENING] SIMPAN config lama DULU sebelum ditimpa. Sebelumnya script
     # langsung rm config lama baru validasi config baru -> kalau backup rusak,
     # config lama sudah hilang & xray OFF total tanpa bisa dikembalikan.

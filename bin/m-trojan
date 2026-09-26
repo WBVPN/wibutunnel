@@ -198,10 +198,22 @@ trial_user() {
     while user_json_exists "$user"; do user="trial-$(tr -dc 'a-z0-9' < /dev/urandom | head -c 5)"; done
 
     read -p "Masukkan Waktu (Contoh: 20m, 1h, 1d) : " waktu
-    if [[ "$waktu" =~ ^[0-9]+m$ ]]; then exp_date=$(date -d "+${waktu%m} minutes" +"%Y-%m-%d %H:%M:%S")
-    elif [[ "$waktu" =~ ^[0-9]+h$ ]]; then exp_date=$(date -d "+${waktu%h} hours" +"%Y-%m-%d %H:%M:%S")
-    elif [[ "$waktu" =~ ^[0-9]+d$ ]]; then exp_date=$(date -d "+${waktu%d} days" +"%Y-%m-%d %H:%M:%S")
+    # [SECURITY] Batas atas input waktu: tanpa ini, angka raksasa (mis. 99999999999d)
+    # membuat `date` overflow/gagal -> exp_date kosong -> trial tidak pernah expired.
+    local n max unit
+    if [[ "$waktu" =~ ^[0-9]+m$ ]]; then n=${waktu%m}; max=525600; unit="minutes"
+    elif [[ "$waktu" =~ ^[0-9]+h$ ]]; then n=${waktu%h}; max=8760; unit="hours"
+    elif [[ "$waktu" =~ ^[0-9]+d$ ]]; then n=${waktu%d}; max=365; unit="days"
     else echo -e "${RED}Error: Format salah!${NC}"; read -p "Enter..." dummy; return; fi
+    # Batas wajar: 1 tahun (365d / 8760h / 525600m). Komersial tidak masuk akal lebih.
+    if (( n < 1 || n > max )); then
+        echo -e "${RED}Error: Durasi tidak valid (1-${max} ${unit}).${NC}"
+        read -p "Enter..." dummy; return; fi
+    exp_date=$(date -d "+${n} ${unit}" +"%Y-%m-%d %H:%M:%S")
+    # [SECURITY] Penyakit terakhir: date gagal -> exp_date kosong -> trial permanen.
+    if [[ -z "$exp_date" ]]; then
+        echo -e "${RED}Error: Gagal menghitung tanggal expired. Akun dibatalkan.${NC}"
+        read -p "Enter..." dummy; return; fi
 
     uuid=$(uuidgen); domain=$(cat "$DOMAIN_FILE")
 
