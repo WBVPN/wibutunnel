@@ -255,12 +255,17 @@ create_account() {
         local val="${hari%[hmd]}"
         local exp_date="" hari_days=1
         # [FIX H4] cap val: date -d "+N <unit>" out-of-range -> exp KOSONG -> Lifetime.
-        [[ "$val" =~ ^[0-9]+$ && "$val" -gt 0 && "$val" -le 525600 ]] || return 1
+        # [FIX R3] Tolong panjang dulu: bash `-le` parse 64-bit dgn WRAPAROUND
+        # # (2^64+k lolos cap) -> date gagal -> Lifetime = bypass komersial.
+        [[ "$val" =~ ^[0-9]+$ && ${#val} -le 7 ]] || { send_msg "❌ Durasi tidak valid."; return 1; }
+        (( val > 0 && val <= 525600 )) || { send_msg "❌ Durasi maks 1 tahun (525600 menit / 8760 jam / 365 hari)."; return 1; }
         case "$hari" in
             *[mM]) exp_date=$(date -d "+${val} minutes" +"%Y-%m-%d %H:%M:%S") ;;
             *[hH]) exp_date=$(date -d "+${val} hours"   +"%Y-%m-%d %H:%M:%S") ;;
             *)     exp_date=$(date -d "+${val} days"    +"%Y-%m-%d %H:%M:%S"); hari_days="$val" ;;
         esac
+        # [FIX R3] date gagal (out of range) -> exp_date KOSONG -> Lifetime.
+        [[ -z "$exp_date" ]] && return 1
         local out
         if out=$(add_ssh_user "$user" "$pass" "$hari_days" "$limit_ip" "$limit_bw"); then
             # koreksi expiry untuk durasi menit/jam (add_ssh_user pakai hari)
@@ -300,7 +305,9 @@ create_account() {
 
     local clean_hari="${hari%[hmd]}"
     # [FIX H4] cap: date -d out-of-range -> exp kosong -> user Lifetime.
-    [[ "$clean_hari" =~ ^[0-9]+$ && "$clean_hari" -gt 0 && "$clean_hari" -le 525600 ]] || return 1
+    # [FIX R3] Tolong panjang: 64-bit wraparound (2^64+k) lolos cap -> Lifetime.
+    [[ "$clean_hari" =~ ^[0-9]+$ && ${#clean_hari} -le 7 ]] || return 1
+    (( clean_hari > 0 && clean_hari <= 525600 )) || return 1
     if [[ -z "${clean_hari//[0-9]/}" && -n "$clean_hari" ]]; then
         if [[ "$hari" == *m ]]; then
             exp_date=$(date -d "+${clean_hari} minutes" +"%Y-%m-%d %H:%M:%S")
@@ -316,6 +323,8 @@ create_account() {
         send_msg "❌ <b>Format Waktu Salah!</b>\nGunakan angka untuk hari, atau akhiran 'h' untuk jam, 'm' untuk menit (contoh: 30, 1h, 60m)."
         return
     fi
+    # [FIX R3] date gagal (out of range) -> exp_date KOSONG -> akun Lifetime.
+    [[ -z "$exp_date" ]] && { send_msg "❌ Durasi di luar batas (maks 1 tahun)."; return; }
     local link1=""
     local link2=""
     local link3=""
@@ -536,7 +545,9 @@ renew_account() {
 
     local clean_hari="${hari%[hmd]}"
     # [FIX H4] cap: date -d out-of-range -> exp kosong -> user Lifetime.
-    [[ "$clean_hari" =~ ^[0-9]+$ && "$clean_hari" -gt 0 && "$clean_hari" -le 525600 ]] || return 1
+    # [FIX R3] Tolong panjang: 64-bit wraparound (2^64+k) lolos cap -> Lifetime.
+    [[ "$clean_hari" =~ ^[0-9]+$ && ${#clean_hari} -le 7 ]] || return 1
+    (( clean_hari > 0 && clean_hari <= 525600 )) || return 1
     if [[ -z "${clean_hari//[0-9]/}" && -n "$clean_hari" ]]; then
         if [[ "$hari" == *m ]]; then
             exp_date=$(date -d "+${clean_hari} minutes" +"%Y-%m-%d %H:%M:%S")
@@ -552,6 +563,8 @@ renew_account() {
         send_msg "❌ <b>Format Waktu Salah!</b>\nGunakan angka untuk hari, atau akhiran 'h' untuk jam, 'm' untuk menit (contoh: 30, 1h, 60m)."
         return
     fi
+    # [FIX R3] date gagal (out of range) -> exp_date KOSONG -> akun Lifetime.
+    [[ -z "$exp_date" ]] && { send_msg "❌ Durasi di luar batas (maks 1 tahun)."; return; }
 
     safe_sed_delete "$user" "$exp_file"
     echo "${user}:${exp_date}" >> "$exp_file"

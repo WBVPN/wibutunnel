@@ -1243,9 +1243,12 @@ download_ssh_tool() {
     # [FIX L3] Verifikasi checksum: ssh-tunnel-install langsung di-bash sebagai
     # root -> supply-chain gap bila repo/MITM diganti (magic-byte tak bukti).
     local sums_dl="/etc/wibutunnel/tmp/SHA256SUMS.ssh"
-    curl -sS -L --max-time 20 -o "$sums_dl" "${GITHUB_RAW}/SHA256SUMS" 2>/dev/null
+    curl -fsSL --max-time 20 -o "$sums_dl" "${GITHUB_RAW}/SHA256SUMS" 2>/dev/null
     local want_s="" got_s=""
     want_s=$(awk -v p="$path" '$2==p{print $1}' "$sums_dl" 2>/dev/null)
+    # [FIX R3] Hard-fail bila SHA256SUMS tak terunduh / entry tak ada: soft-fail
+    # # = penyerang cukup blokir URL untuk bypass supply-chain (instalasi root).
+    [[ -n "$want_s" ]] || { echo -e "\e[31m[!] SHA256SUMS tak tersedia untuk ${name}! Tidak dipasang.\e[0m"; rm -f "/etc/wibutunnel/tmp/${name}.dl"; return 1; }
     [[ -s "/etc/wibutunnel/tmp/${name}.dl" ]] && got_s=$(sha256sum "/etc/wibutunnel/tmp/${name}.dl" 2>/dev/null | awk '{print $1}')
     if [[ -n "$want_s" && "$want_s" != "$got_s" ]]; then
         echo -e "\e[31m[!] CHECKSUM MISMATCH ${name}! Tidak dipasang (kemungkinan kompromi repo).\e[0m"

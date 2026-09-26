@@ -465,6 +465,8 @@ renew_ssh_user() {
     # [FIX B4] Cap input raksasa: (( base + val*86400 )) wrap 64-bit ->
     # date "out of range" -> new_exp KOSONG -> akun Lifetime (bypass komersial).
     [[ "$val" =~ ^[0-9]+$ ]] || { echo "durasi tidak valid"; return 1; }
+    # [FIX R3] Tolong panjang: (( )) parse 64-bit dgn wraparound -> 2^64+k lolos.
+    [[ ${#val} -le 7 ]] || { echo "durasi di luar batas (maks 1 tahun)"; return 1; }
     (( val > 0 && val <= 525600 )) || { echo "durasi di luar batas (maks 1 tahun)"; return 1; }
     case "$hari" in
         *[mM]) add_sec=$(( val * 60 )) ;;
@@ -485,6 +487,8 @@ renew_ssh_user() {
     [[ -z "$base_sec" ]] && base_sec=$(date +%s)
     local new_sec=$(( base_sec + add_sec ))
     new=$(date -d "@$new_sec" +"%Y-%m-%d %H:%M:%S")
+    # [FIX R3] date gagal (out of range) -> new KOSONG -> akun Lifetime.
+    [[ -z "$new" ]] && return 1
     chage -E "$(date -d "$new" +%Y-%m-%d)" -M $(( ( $(date -d "$new" +%s) - $(date +%s) ) / 86400 + 1 )) -I 0 "$user" >/dev/null 2>&1
     passwd -u "$user" >/dev/null 2>&1
     # [FIX] echo >> gagal diam bila file/dir tidak ada (SSH_EXP_FILE belum

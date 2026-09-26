@@ -179,10 +179,12 @@ echo -e "${LINE}"
 read -p " Masukkan Masa Aktif Baru (Hari) : " hari_baru
 # [FIX H4] cap 36500: date -d "+N days" out-of-range -> new_exp KOSONG
 # # -> user Lifetime (bypass komersial).
+# [FIX R3] Tolong panjang: 64-bit wraparound (2^64+k) lolos -gt -> Lifetime.
+[[ ${#hari_baru} -le 7 ]] || { echo -e " ${RED}Format salah! (1-36500 hari)${NC}"; sleep 2; exec menu-unlock "$FILTER_PROTO"; }
 if [[ ! "$hari_baru" =~ ^[0-9]+$ ]] || [ "$hari_baru" -le 0 ] || [ "$hari_baru" -gt 36500 ]; then
     echo -e " ${RED}Format salah!${NC}"
     sleep 2
-    [[ -n "$FILTER_PROTO" ]] && exec "menu-unlock ${FILTER_PROTO}" || exec menu-unlock
+    [[ -n "$FILTER_PROTO" ]] && exec menu-unlock "$FILTER_PROTO" || exec menu-unlock
 fi
 
 read -p " Masukkan Limit IP Baru (0=Bebas): " ip_baru
@@ -193,6 +195,8 @@ read -p " Masukkan Limit Kuota GB (0=Unli): " bw_baru
 
 # UPDATE DATA
 new_exp=$(date -d "+${hari_baru} days" +"%Y-%m-%d %H:%M:%S")
+# [FIX R3] date gagal (out of range) -> new_exp KOSONG -> akun Lifetime.
+[[ -z "$new_exp" ]] && { echo -e " ${RED}Durasi di luar batas!${NC}"; sleep 2; exec menu-unlock "$FILTER_PROTO"; }
 proto="${USER_PROTOS[$user]}"
 if [[ "$proto" == "VLESS" ]]; then
     safe_sed_delete "$user" /etc/xray/vless_exp.conf

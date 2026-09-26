@@ -114,11 +114,16 @@ echo -e "\n ${WHITE}Reaktivasi: ${GREEN}$user${NC}\n${LINE}"
 read -p " Masa Aktif Baru (Hari): " hari_baru
 # [FIX H4] Cap 36500: date -d "+N days" gagal (out of range) untuk N raksasa
 # # -> new_exp KOSONG -> user Lifetime (bypass komersial) di xp.
+# [FIX R3] Tolong panjang: 64-bit wraparound lolos cap -> Lifetime.
+[[ ${#hari_baru} -le 7 ]] || { echo -e " ${RED}Format salah! (1-36500 hari)${NC}"; sleep 2; exec menu-recovery; }
 [[ ! "$hari_baru" =~ ^[0-9]+$ || "$hari_baru" -le 0 || "$hari_baru" -gt 36500 ]] && { echo -e " ${RED}Format salah! (1-36500 hari)${NC}"; sleep 2; exec menu-recovery; }
 read -p " Limit IP Baru (0=Bebas): " ip_baru; [[ ! "$ip_baru" =~ ^[0-9]+$ ]] && ip_baru=0
 read -p " Limit Kuota GB (0=Unli): " bw_baru; [[ ! "$bw_baru" =~ ^[0-9]+$ ]] && bw_baru=0
 
-new_exp=$(date -d "+${hari_baru} days" +"%Y-%m-%d %H:%M:%S"); proto="${USER_PROTOS[$user]}"
+new_exp=$(date -d "+${hari_baru} days" +"%Y-%m-%d %H:%M:%S")
+# [FIX R3] date gagal -> new_exp KOSONG -> akun Lifetime (bypass komersial).
+[[ -z "$new_exp" ]] && { echo -e " ${RED}Durasi di luar batas!${NC}"; sleep 2; exec menu-recovery; }
+proto="${USER_PROTOS[$user]}"
 [[ "$proto" == "VLESS" ]]  && { safe_sed_delete "$user" /etc/xray/vless_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/vless_exp.conf; }
 [[ "$proto" == "VMESS" ]]  && { safe_sed_delete "$user" /etc/xray/vmess_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/vmess_exp.conf; }
 [[ "$proto" == "TROJAN" ]] && { safe_sed_delete "$user" /etc/xray/trojan_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/trojan_exp.conf; }
