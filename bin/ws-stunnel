@@ -10,6 +10,12 @@ import getopt
 LISTENING_ADDR = '127.0.0.1'
 LISTENING_PORT = 10015  # Default port
 PASS = ''
+# [FIX H9] Batas koneksi concurrent agar tidak thread/fd exhaustion (DoS).
+MAX_CONNECTIONS = 512
+# [FIX H10] Pasangan host:port target yang diizinkan. Sebelumnya hanya
+# cek startswith('localhost') -> 'localhost.evil.com:443' lolos dan ws-stunnel
+# jadi open egress proxy ke host eksternal mana pun.
+ALLOWED_TARGETS = {'127.0.0.1:109'}
 
 # Constants
 BUFLEN = 4096 * 4
@@ -51,7 +57,14 @@ class Server(threading.Thread):
         self.soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.soc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.soc.settimeout(2)
-        self.soc.bind((self.host, self.port))
+        # [FIX M-W3] bind() gagal (port dipakai) harus mematikan proses agar
+        # systemd Restart=always bekerja. Sebelumnya exception keluar dari
+        # thread, main() tetap sleep, exit 0 -> 'aktif' tapi tidak listen.
+        try:
+            self.soc.bind((self.host, self.port))
+        except OSError as e:
+            print('[FATAL] bind() gagal: %s' % str(e), file=sys.stderr)
+            sys.exit(1)
         self.soc.listen(5)  # Allow up to 5 pending connections
         self.running = True
 
@@ -59,8 +72,28 @@ class Server(threading.Thread):
             while self.running:
                 try:
                     c, addr = self.soc.accept()
-                    c.setblocking(1)
+                    # [FIX H9] timeout recv agar client yang connect tanpa
+                                       # kirim data tidak memblok thread selamanya.
+                    c.settimeout(15)
                 except socket.timeout:
+                    continue
+                except OSError:
+                    if not self.running:
+                        break
+                    continue
+
+                # [FIX H9] Tolak bila jumlah koneksi sudah mendekati batas fd.
+                with self.threadsLock:
+                    active = len(self.threads)
+                if active >= MAX_CONNECTIONS:
+                    try:
+                        c.send('HTTP/1.1 503 TooManyConnections!\r\n\r\n'.encode('utf-8'))
+                    except Exception:
+                        pass
+                    try:
+                        c.close()
+                    except Exception:
+                        pass
                     continue
 
                 conn = ConnectionHandler(c, self, addr)
@@ -98,6 +131,21 @@ class ConnectionHandler(threading.Thread):
         self.client_buffer = ''
         self.server = server
         self.log = 'Connection: ' + str(addr)
+        # [FIX M-W1] self.method dipakai di connect_target() tapi tidak pernah
+        #       di-assign -> AttributeError pada X-Real-Host tanpa port.
+        self.method = 'CONNECT'
+        self.target = None
+
+    def _target_allowed(self, hostPort):
+        # [FIX H10] whitelist target ketat. DEFAULT_HOST arsitektur ini adalah
+        # tunnel ke dropbear lokal; bukan proxy ke host/port mana pun.
+        if hostPort in ALLOWED_TARGETS or hostPort == DEFAULT_HOST:
+            return True
+        # host tanpa port -> port default tunnel, bukan 443 acak
+        i = hostPort.find(':')
+        if i == -1:
+            return hostPort in ('127.0.0.1', 'localhost')
+        return False
 
     def close(self):
         # [FIX] shutdown() melempar OSError (errno 107) bila peer sudah memutus
@@ -114,6 +162,19 @@ class ConnectionHandler(threading.Thread):
             except Exception:
                 pass
             self.clientClosed = True
+        # [FIX C2] socket TARGET tidak pernah ditutup -> fd leak per koneksi.
+        #       Setelah fd habis, ws-stunnel berhenti menerima koneksi dan
+        #       semua klien WebSocket mati.
+        if not self.targetClosed:
+            try:
+                self.target.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
+            try:
+                self.target.close()
+            except Exception:
+                pass
+            self.targetClosed = True
 
     def run(self):
         try:
@@ -132,7 +193,7 @@ class ConnectionHandler(threading.Thread):
                     self.method_CONNECT(hostPort)
                 elif len(PASS) != 0 and passwd != PASS:
                     self.client.send('HTTP/1.1 400 WrongPass!\r\n\r\n'.encode('utf-8'))
-                elif hostPort.startswith('127.0.0.1') or hostPort.startswith('localhost'):
+                elif self._target_allowed(hostPort):
                     self.method_CONNECT(hostPort)
                 else:
                     self.client.send('HTTP/1.1 403 Forbidden!\r\n\r\n'.encode('utf-8'))
@@ -157,12 +218,13 @@ class ConnectionHandler(threading.Thread):
         return head[:aux] if aux != -1 else ''
 
     def connect_target(self, host):
+        # [FIX M-W1] default port adalah LISTENING_PORT tunnel, bukan 443.
         i = host.find(':')
         if i != -1:
             port = int(host[i + 1:])
             host = host[:i]
         else:
-            port = 443 if self.method == 'CONNECT' else LISTENING_PORT
+            port = LISTENING_PORT
 
         (soc_family, soc_type, proto, _, address) = socket.getaddrinfo(host, port)[0]
         self.target = socket.socket(soc_family, soc_type, proto)
@@ -192,11 +254,12 @@ class ConnectionHandler(threading.Thread):
                         data = in_.recv(BUFLEN)
                         if data:
                             if in_ is self.target:
-                                self.client.send(data)
+                                # [FIX M-W2] sendall, bukan send — send boleh
+                                # kirim parsial pada blocking socket -> data
+                                # tunnel hilang diam-diam.
+                                self.client.sendall(data)
                             else:
-                                while data:
-                                    byte = self.target.send(data)
-                                    data = data[byte:]
+                                self.target.sendall(data)
                             count = 0
                         else:
                             break

@@ -61,7 +61,7 @@ if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
 <i>Account akan otomatis dibuka setelah durasi habis.</i>
 "
 
-    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    tg_curl -X POST sendMessage \
         -F "chat_id=${CHAT_ID}" \
         -F "disable_web_page_preview=true" \
         -F "parse_mode=html" \

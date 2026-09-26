@@ -26,7 +26,10 @@ fi
 #        curl -sL .../install.sh | sudo bash -s -- 'TOKEN_ANDA'
 #   3. Env var (HANYA jika TANPA sudo, sudo strip env var):
 #        sudo IZIN_TOKEN='TOKEN' bash install.sh
-IZIN_TOKEN="${1:-${IZIN_TOKEN:-}}"
+# [FIX H1] Token WAJIB di-export agar setup.sh (child process) menerimanya.
+# Tanpa export, token dari positional arg hanya jadi variabel shell lokal dan
+# setup.sh keluar dengan "IZIN_TOKEN environment variable required".
+export IZIN_TOKEN="${1:-${IZIN_TOKEN:-}}"
 if [[ -z "$IZIN_TOKEN" ]]; then
     echo "Error: IZIN_TOKEN kosong."
     echo ""
@@ -51,7 +54,9 @@ INSTALL_DIR="/root/wibutunnel"
 echo "[1/2] ${INSTALL_DIR} bersedia, dapatkan source terbaru..."
 cd /root || exit 1
 if [[ -d "wibutunnel/.git" ]]; then
-    cd wibutunnel && git pull --ff-only
+    # [FIX H2] Exit code git pull diperiksa — sebelumnya tertelan, installer
+    # lanjut di clone lama/usang tanpa memberi tahu pengguna.
+    cd wibutunnel && git pull --ff-only || { echo "Error: git pull gagal. Cek koneksi/repo state."; exit 1; }
 else
     rm -rf wibutunnel
     git clone https://github.com/WBVPN/wibutunnel.git

@@ -45,13 +45,22 @@ ssh_accounting() {
 
         # pastikan rule accounting ada (idempoten). HANYA chain OUTPUT:
         # -m owner tidak didukung di INPUT (Invalid argument).
+        # [FIX M-A5] -A gagal (nft error/table full) tanpa cek -> rule absen
+        # # -> counter 0 -> akun SSH bypass kuota diam-diam.
         iptables -t mangle -C OUTPUT -m owner --uid-owner "$uid" -j ACCEPT 2>/dev/null || \
-            iptables -t mangle -A OUTPUT -m owner --uid-owner "$uid" -j ACCEPT
+            { iptables -t mangle -A OUTPUT -m owner --uid-owner "$uid" -j ACCEPT 2>/dev/null \
+                || { echo "[ERROR] rule accounting gagal untuk uid $uid" >&2; continue; }; }
 
         total=$(iptables -t mangle -L OUTPUT -n -v -x 2>/dev/null | \
-            awk -v uid="$uid" '$0 ~ "owner UID match "uid {s+=$2} END {printf "%d", s+0}')
+            awk -v uid="$uid" '$0 ~ "owner UID match "uid"($|[^0-9])" {s+=$2} END {printf "%d", s+0}')
         echo "$user $total" >> /etc/wibutunnel/tmp/xray_quota_raw.txt
     done < "$DB_BW"
+
+    # [FIX M-A4] Kalau xray API gagal (binary hilang/port berubah), raw file
+    # # kosong -> delta 0 -> TIDAK ADA user pernah kena kuota. Health check.
+    if [[ ! -s /etc/wibutunnel/tmp/xray_quota_raw.txt ]]; then
+        echo "[!] algojo-kuota: xray API mengembalikan data kosong — kuota tidak bisa dihitung" >&2
+    fi
 }
 
 # [FIX] Baca stat PER-USER (user>>>email>>>traffic>>>downlink+uplink).
@@ -101,6 +110,12 @@ while read -r line; do
     user=$(echo "$line" | cut -d: -f1)
     limit_gb=$(echo "$line" | cut -d: -f2)
     [[ "$limit_gb" == "0" || -z "$limit_gb" ]] && continue
+    # [FIX H11] Validasi numerik + batas atas. Bash aritmatika 64-bit: limit_gb
+    # >= 8.6e9 wrap jadi NEGATIF -> `0 >= negatif` true -> user dikunci padahal
+    # kuota 0. Format salah ("10GB") membuat bash abort loop iterasi itu ->
+    # SEMUA user berikutnya tak pernah dicek -> kuota bypass permanen.
+    [[ "$limit_gb" =~ ^[0-9]+$ ]] || { echo "[!] algojo-kuota: limit bukan angka ($user: '$limit_gb'), lewati" >&2; continue; }
+    (( limit_gb < 8589934592 )) || { echo "[!] algojo-kuota: limit overflow ($user: $limit_gb GB), lewati" >&2; continue; }
 
     total_bytes=$(db_lookup "$user" "$DB_USAGE" | cut -d: -f2)
     [[ -z "$total_bytes" ]] && total_bytes=0
@@ -142,7 +157,7 @@ ${THICKLINE}
 <code>Waktu       : ${WAKTU}</code>
 ${THICKLINE}
 <i>Account akan otomatis dibuka jika dilonggarkan limitnya.</i>"
-                curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
+                tg_curl -X POST sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
             ) &
         fi
     fi

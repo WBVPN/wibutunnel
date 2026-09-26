@@ -19,6 +19,44 @@ BACKUP_DIR="/etc/wibutunnel/tmp"
 mkdir -p "$BACKUP_DIR"
 LOG_FILE="/var/log/wibu-backup.log"
 DOMAIN_VPS=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+# [FIX M-M5] domain/IP bisa berisi "/" atau spasi (dari restore) -> nama
+# file backup menulis ke path tak terduga. Sanitasi charset aman.
+DOMAIN_VPS=$(printf '%s' "$DOMAIN_VPS" | tr -cd 'a-zA-Z0-9.-' | head -c 100)
+[[ -z "$DOMAIN_VPS" ]] && DOMAIN_VPS="Unknown"
+
+# [FIX C5] Backup berisi config.json (semua UUID/password klien). Sebelumnya
+# zip -P "$CHAT_ID" memakai CHAT_ID sebagai password — nilai publik yang ada
+# di link chat/metadata Telegram + PKZIP traditional cipher yang brute-force
+# seketika. Ganti dengan passphrase acak 32 byte per-VPS, disimpan root-only.
+BACKUP_PASS_FILE="/etc/wibutunnel/backup_pass"
+get_backup_pass() {
+    if [[ -f "$BACKUP_PASS_FILE" ]]; then
+        cat "$BACKUP_PASS_FILE" 2>/dev/null && return 0
+    fi
+    local pass
+    pass=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 32) || return 1
+    [[ -z "$pass" ]] && return 1
+    ( umask 077; printf '%s' "$pass" > "$BACKUP_PASS_FILE" ) || return 1
+    chmod 600 "$BACKUP_PASS_FILE" 2>/dev/null
+    printf '%s' "$pass"
+}
+BACKUP_PASS="$(get_backup_pass)" || {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] GAGAL generate backup passphrase" >> "$LOG_FILE"
+}
+
+# [FIX C5] Untuk RESTORE lintas-VPS, passphrase tidak mungkin sama. Urutan:
+#   RESTORE_PASS env -> file lokal -> prompt interaktif.
+# Tanpa ini, backup dari VPS A tidak bisa di-restore di VPS B.
+resolve_restore_pass() {
+    local p="${RESTORE_PASS:-}"
+    if [[ -n "$p" ]]; then printf '%s' "$p"; return 0; fi
+    if [[ -f "$BACKUP_PASS_FILE" ]]; then
+        cat "$BACKUP_PASS_FILE" 2>/dev/null && return 0
+    fi
+    echo -e "${YELLOW}[!] Masukkan passphrase backup (diterima via Telegram saat backup dibuat):${NC}"
+    read -r p
+    printf '%s' "$p"
+}
 
 # ===== AUTO BACKUP (via Cron) =====
 # DIJALANKAN PERTAMA: mencegah check_license_silent membunuh cron job
@@ -37,8 +75,14 @@ if [[ "$1" == "auto" ]]; then
     DATE=$(date +"%Y-%m-%d_%H-%M")
     BACKUP_FILE="${BACKUP_DIR}/${DOMAIN_VPS}-${IP_VPS}.zip"
 
+    # [FIX M6] get_backup_pass bisa gagal (urandom absent/disk penuh) ->
+    # # zip -P dengan passphrase KOSONG = config pelanggan terbuka seketika.
+    if [[ -z "$BACKUP_PASS" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] GAGAL generate backup passphrase, backup dibatalkan" >> "$LOG_FILE"
+        exit 0
+    fi
     cd /
-    zip -q -P "$CHAT_ID" -r "$BACKUP_FILE" \
+    zip -q -P "$BACKUP_PASS" -r "$BACKUP_FILE" \
         usr/local/etc/xray/config.json \
         etc/xray/vless_exp.conf \
         etc/xray/vmess_exp.conf \
@@ -49,15 +93,32 @@ if [[ "$1" == "auto" ]]; then
         etc/wibutunnel/user_usage.db \
         etc/xray/domain 2>/dev/null
 
+    # [FIX C5] Kirim passphrase ke admin terpisah dari caption document.
+    if [[ -n "$BACKUP_PASS" && -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+        tg_curl -X POST sendMessage \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "parse_mode=html" \
+            --data-urlencode "text=🔐 <b>Passphrase backup ${DOMAIN_VPS}</b>\n<code>${BACKUP_PASS}</code>\n<i>Simpan aman; dipakai saat restore di VPS lain.</i>" >/dev/null 2>&1
+    fi
+
     if [[ ! -f "$BACKUP_FILE" ]]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ZIP CREATION FAILED — source files missing?" >> "$LOG_FILE"
         exit 0
     fi
 
-    TGL=$(date "+%Y-%m-%d %H:%M:%S")
-    CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n<i>File dienkripsi menggunakan CHAT ID Anda.</i>")
+    # [FIX M-M1] Tanda tangani backup (HMAC-SHA256 dengan kunci VPS). Restore
+    # # dari file tidak terpercaya hanya cek struktur + xray -test; config
+    # # malicious-yang-valid = backdoor tunneling penuh menimpa config legit.
+    if [[ -n "$BACKUP_PASS" ]]; then
+        _fh=$(sha256sum "$BACKUP_FILE" | awk '{print $1}')
+        printf '%s' "$(printf '%s' "$BACKUP_PASS$_fh" | sha256sum | awk '{print $1}')" \
+            > "${BACKUP_FILE}.sig"
+    fi
 
-    RESPONSE=$(curl -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+    TGL=$(date "+%Y-%m-%d %H:%M:%S")
+    CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n<i>File dienkripsi; passphrase dikirim ke admin via pesan terpisah.</i>")
+
+    RESPONSE=$(tg_curl -X POST sendDocument \
         -F "chat_id=${CHAT_ID}" \
         -F "document=@${BACKUP_FILE}" \
         -F "caption=${CAPTION}" \
@@ -67,8 +128,8 @@ if [[ "$1" == "auto" ]]; then
     MSG_ID=$(echo "$RESPONSE" | jq -r '.result.message_id // empty')
 
     if [[ -n "$FILE_ID" && -n "$MSG_ID" ]]; then
-        NEW_CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${FILE_ID}</code>\n\n🔐 <b>Password:</b> CHAT ID Anda")
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
+        NEW_CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${FILE_ID}</code>\n\n🔐 <b>Passphrase:</b> dikirim via pesan terpisah")
+        tg_curl -X POST editMessageCaption \
             -F "chat_id=${CHAT_ID}" \
             -F "message_id=${MSG_ID}" \
             -F "caption=${NEW_CAPTION}" \
@@ -103,8 +164,14 @@ do_backup() {
     DATE=$(date +"%Y-%m-%d_%H-%M")
     BACKUP_FILE="${BACKUP_DIR}/${DOMAIN_VPS}-${IP_VPS}.zip"
 
+    # [FIX M6] get_backup_pass bisa gagal (urandom absent/disk penuh) ->
+    # # zip -P dengan passphrase KOSONG = config pelanggan terbuka seketika.
+    if [[ -z "$BACKUP_PASS" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] GAGAL generate backup passphrase, backup dibatalkan" >> "$LOG_FILE"
+        exit 0
+    fi
     cd /
-    zip -q -P "$CHAT_ID" -r "$BACKUP_FILE" \
+    zip -q -P "$BACKUP_PASS" -r "$BACKUP_FILE" \
         usr/local/etc/xray/config.json \
         etc/xray/vless_exp.conf \
         etc/xray/vmess_exp.conf \
@@ -115,6 +182,14 @@ do_backup() {
         etc/wibutunnel/user_usage.db \
         etc/xray/domain 2>/dev/null
 
+    # [FIX C5] Kirim passphrase ke admin terpisah dari caption document.
+    if [[ -n "$BACKUP_PASS" && -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+        tg_curl -X POST sendMessage \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "parse_mode=html" \
+            --data-urlencode "text=🔐 <b>Passphrase backup ${DOMAIN_VPS}</b>\n<code>${BACKUP_PASS}</code>\n<i>Simpan aman; dipakai saat restore di VPS lain.</i>" >/dev/null 2>&1
+    fi
+
     if [[ ! -f "$BACKUP_FILE" ]]; then
         echo -e "${RED}[!] Gagal membuat file backup. Periksa apakah file sumber ada.${NC}"
         read -p "Tekan Enter..." dummy
@@ -124,9 +199,9 @@ do_backup() {
     echo -e "${YELLOW}[+] Mengirim ke Telegram...${NC}"
 
     TGL=$(date "+%Y-%m-%d %H:%M:%S")
-    CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n<i>File dienkripsi menggunakan CHAT ID Anda.</i>")
+    CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n<i>File dienkripsi; passphrase dikirim ke admin via pesan terpisah.</i>")
 
-    RESPONSE=$(curl -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+    RESPONSE=$(tg_curl -X POST sendDocument \
         -F "chat_id=${CHAT_ID}" \
         -F "document=@${BACKUP_FILE}" \
         -F "caption=${CAPTION}" \
@@ -138,8 +213,8 @@ do_backup() {
         MSG_ID=$(echo "$RESPONSE" | jq -r '.result.message_id // empty')
 
         if [[ -n "$FILE_ID" && -n "$MSG_ID" ]]; then
-            NEW_CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${FILE_ID}</code>\n\n🔐 <b>Password:</b> CHAT ID Anda")
-            curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
+            NEW_CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${FILE_ID}</code>\n\n🔐 <b>Passphrase:</b> dikirim via pesan terpisah")
+            tg_curl -X POST editMessageCaption \
                 -F "chat_id=${CHAT_ID}" \
                 -F "message_id=${MSG_ID}" \
                 -F "caption=${NEW_CAPTION}" \
@@ -165,21 +240,25 @@ do_restore() {
 
     [[ -z "$link_backup" ]] && { echo -e "${RED}Batal.${NC}"; sleep 1; return; }
 
+    # [FIX M-M4] restore-tmp harus bersih di awal; sisa restore lama
+    # (rollback/zip-kosong) ikut tercampur via unzip -o -> data lintas-backup.
+    rm -rf "${BACKUP_DIR}/restore-tmp"
     rm -f "${BACKUP_DIR}/restore.zip"
 
     if [[ "$link_backup" =~ ^https?:// ]]; then
         echo -e "${CYAN}[+] Mendeteksi Link URL...${NC}"
-        wget -q --timeout=60 -O "${BACKUP_DIR}/restore.zip" "$link_backup" 2>/dev/null
+                # [FIX M-M2] Batasi ukuran: server cepat bisa kirim GB -> disk penuh.
+        wget -q --timeout=60 --limit-size=200M -O "${BACKUP_DIR}/restore.zip" "$link_backup" 2>/dev/null
     elif [[ "$link_backup" =~ ^documents/ ]] || [[ "$link_backup" =~ \.zip$ ]]; then
         echo -e "${CYAN}[+] Mendeteksi File Path Telegram...${NC}"
         [[ -z "$BOT_TOKEN" ]] && { echo -e "${RED}Bot Token belum diatur!${NC}"; read -p "Enter..."; return; }
-        wget -q --timeout=60 -O "${BACKUP_DIR}/restore.zip" "https://api.telegram.org/file/bot${BOT_TOKEN}/${link_backup}" 2>/dev/null
+        wget -q --timeout=60 --limit-size=200M -O "${BACKUP_DIR}/restore.zip" "https://api.telegram.org/file/bot${BOT_TOKEN}/${link_backup}" 2>/dev/null
     else
         echo -e "${CYAN}[+] Mendeteksi File ID Telegram...${NC}"
         [[ -z "$BOT_TOKEN" ]] && { echo -e "${RED}Bot Token belum diatur!${NC}"; read -p "Enter..."; return; }
-        FILE_PATH=$(curl -s --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${link_backup}" | jq -r '.result.file_path // empty')
+        FILE_PATH=$(tg_curl "getFile?file_id=${link_backup}" --max-time 15 | jq -r '.result.file_path // empty')
         if [[ -n "$FILE_PATH" ]]; then
-            wget -q --timeout=60 -O "${BACKUP_DIR}/restore.zip" "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}" 2>/dev/null
+            wget -q --timeout=60 --limit-size=200M -O "${BACKUP_DIR}/restore.zip" "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}" 2>/dev/null
         else
             echo -e "${RED}[!] File ID tidak valid.${NC}"
         fi
@@ -193,10 +272,41 @@ do_restore() {
 
     echo -e "${GREEN}[+] File diterima. Verifikasi dan ekstrak...${NC}"
 
+    # [FIX A5] Resolve passphrase DULU, lalu unduh .sig dari sumber yang sama
+    # dan verifikasi HMAC. Sebelumnya: sig dicek sebelum passphrase di-resolve
+    # (selalu kosong -> dead code) dan .sig tidak pernah diunduh saat restore.
+    RESTORE_PASS_NOW="$(resolve_restore_pass)" || {
+        echo -e "${RED}[!] Passphrase tidak diberikan, batal.${NC}"; sleep 2; return 1; }
+    local sig_file="${BACKUP_DIR}/restore.zip.sig"
+    rm -f "$sig_file"
+    # unduh .sig via jalur yang sama (telegram file path / direct URL)
+    if [[ "$link_backup" =~ ^https?:// ]]; then
+        wget -q --timeout=30 --limit-size=1M -O "$sig_file" "${link_backup}.sig" 2>/dev/null
+    elif [[ "$link_backup" =~ ^documents/ ]] || [[ "$link_backup" =~ \.zip$ ]]; then
+        wget -q --timeout=30 --limit-size=1M -O "$sig_file" "https://api.telegram.org/file/bot${BOT_TOKEN}/${link_backup}.sig" 2>/dev/null
+    else
+        local SIG_PATH
+        SIG_PATH=$(tg_curl "getFile?file_id=${link_backup}.sig" --max-time 15 | jq -r '.result.file_path // empty')
+        [[ -n "$SIG_PATH" ]] && wget -q --timeout=30 --limit-size=1M -O "$sig_file" "https://api.telegram.org/file/bot${BOT_TOKEN}/${SIG_PATH}" 2>/dev/null
+    fi
+    if [[ -f "$sig_file" && -n "$RESTORE_PASS_NOW" ]]; then
+        local fh want got
+        fh=$(sha256sum "${BACKUP_DIR}/restore.zip" | awk '{print $1}')
+        want=$(tr -cd 'a-f0-9' < "$sig_file" | head -c 64)
+        got=$(printf '%s' "$RESTORE_PASS_NOW$fh" | sha256sum | awk '{print $1}')
+        if [[ "$want" != "$got" ]]; then
+            echo -e "${RED}[!] Tanda tangan backup TIDAK VALID (HMAC mismatch)! File tidak diverifikasi.${NC}"
+            rm -f "${BACKUP_DIR}/restore.zip" "$sig_file"
+            read -p "Tekan Enter..." dummy
+            return 1
+        fi
+        echo -e "${GREEN}[+] Tanda tangan backup valid.${NC}"
+    fi
+
     apt-get install -y unzip >/dev/null 2>&1
     mkdir -p "${BACKUP_DIR}/restore-tmp"
 
-    unzip -P "$CHAT_ID" -o "${BACKUP_DIR}/restore.zip" -d "${BACKUP_DIR}/restore-tmp" >/dev/null 2>&1 || {
+    unzip -P "$RESTORE_PASS_NOW" -o "${BACKUP_DIR}/restore.zip" -d "${BACKUP_DIR}/restore-tmp" >/dev/null 2>&1 || {
         unzip -o "${BACKUP_DIR}/restore.zip" -d "${BACKUP_DIR}/restore-tmp" >/dev/null 2>&1
     }
 
@@ -241,10 +351,25 @@ do_restore() {
     rm -f /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/locked_users.db /etc/wibutunnel/user_usage.db
     rm -f /etc/xray/domain
 
-    cp -a "${BACKUP_DIR}/restore-tmp/usr/local/etc/xray/config.json" /usr/local/etc/xray/ 2>/dev/null
-    cp -a "${BACKUP_DIR}/restore-tmp/etc/xray/"*.conf /etc/xray/ 2>/dev/null
-    cp -a "${BACKUP_DIR}/restore-tmp/etc/wibutunnel/"*.db /etc/wibutunnel/ 2>/dev/null
-    cp -a "${BACKUP_DIR}/restore-tmp/etc/xray/domain" /etc/xray/ 2>/dev/null
+    # [FIX M-M3] Setiap cp dicek exit code-nya. Sebelumnya gagal (disk penuh /
+    # permission) ditelan 2>/dev/null -> "RESTORE BERHASIL" palsu, config/DB
+    # setengah jalan. Gagal -> rollback snapshot + return 1.
+    local cp_fail=0
+    cp -a "${BACKUP_DIR}/restore-tmp/usr/local/etc/xray/config.json" /usr/local/etc/xray/ 2>/dev/null || cp_fail=1
+    cp -a "${BACKUP_DIR}/restore-tmp/etc/xray/"*.conf /etc/xray/ 2>/dev/null || cp_fail=1
+    cp -a "${BACKUP_DIR}/restore-tmp/etc/wibutunnel/"*.db /etc/wibutunnel/ 2>/dev/null || cp_fail=1
+    cp -a "${BACKUP_DIR}/restore-tmp/etc/xray/domain" /etc/xray/ 2>/dev/null || cp_fail=1
+    if [[ "$cp_fail" == "1" ]]; then
+        echo -e "${RED}[!] Sebagian file gagal disalin (disk penuh/permission)! Rollback...${NC}"
+        cp -a "$PRE_RESTORE_DIR/config.json" /usr/local/etc/xray/ 2>/dev/null || true
+        cp -a "$PRE_RESTORE_DIR/vless_exp.conf" "$PRE_RESTORE_DIR/vmess_exp.conf" "$PRE_RESTORE_DIR/trojan_exp.conf" /etc/xray/ 2>/dev/null || true
+        cp -a "$PRE_RESTORE_DIR/limit_ip.db" "$PRE_RESTORE_DIR/limit_bw.db" "$PRE_RESTORE_DIR/locked_users.db" "$PRE_RESTORE_DIR/user_usage.db" /etc/wibutunnel/ 2>/dev/null || true
+        cp -a "$PRE_RESTORE_DIR/domain" /etc/xray/ 2>/dev/null || true
+        chmod 600 /etc/wibutunnel/*.db 2>/dev/null
+        echo -e "${RED}[!] Restore dibatalkan. Data lama dipulihkan dari snapshot.${NC}"
+        read -p "Tekan Enter..." dummy
+        return 1
+    fi
     chmod 600 /etc/wibutunnel/*.db 2>/dev/null
     rm -rf "${BACKUP_DIR}/restore-tmp"
 
@@ -252,7 +377,18 @@ do_restore() {
     # Kalau backup berisi config rusak (ditambah null padding, inbound tanpa
     # port, dst), restart xray = service mati & VPS tidak bisa diakses.
     # ROLLBACK: config lama dipulihkan dari snapshot di PRE_RESTORE_DIR.
-    if command -v xray >/dev/null 2>&1 && ! xray run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1; then
+    # [FIX M-M6] xray absen (VPS SSH-only) -> validasi dilewati tapi config
+    # # tetap dipasang lalu restart gagal. Tolak eksplisit sebagai gantinya.
+    if ! command -v xray >/dev/null 2>&1; then
+        echo -e "${RED}[!] xray tidak terpasang di VPS ini. Restore config xray dibatalkan.${NC}"
+        cp -a "$PRE_RESTORE_DIR/config.json" /usr/local/etc/xray/ 2>/dev/null || true
+        cp -a "$PRE_RESTORE_DIR"/*.conf /etc/xray/ 2>/dev/null || true
+        cp -a "$PRE_RESTORE_DIR"/*.db /etc/wibutunnel/ 2>/dev/null || true
+        cp -a "$PRE_RESTORE_DIR/domain" /etc/xray/ 2>/dev/null || true
+        read -p "Tekan Enter..." dummy
+        return 1
+    fi
+    if ! xray run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1; then
         echo -e "${RED}[!] Config hasil restore TIDAK VALID! Xray akan gagal start.${NC}"
         echo -e "${YELLOW}    Memulihkan config lama dari snapshot...${NC}"
         cp -a "$PRE_RESTORE_DIR/config.json" /usr/local/etc/xray/ 2>/dev/null
@@ -268,6 +404,9 @@ do_restore() {
     fi
 
     systemctl restart xray haproxy cron >/dev/null 2>&1
+    # [FIX M-M4] restore-tmp harus bersih di awal; sisa restore lama
+    # (rollback/zip-kosong) ikut tercampur via unzip -o -> data lintas-backup.
+    rm -rf "${BACKUP_DIR}/restore-tmp"
     rm -f "${BACKUP_DIR}/restore.zip"
 
     echo -e "${GREEN}[+] RESTORE BERHASIL! Semua data berhasil dikembalikan.${NC}"

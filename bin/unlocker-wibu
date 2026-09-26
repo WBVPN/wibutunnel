@@ -73,7 +73,7 @@ if [[ -n "$SSH_UNLOCKED_LIST" && -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
 <b>Domain   :</b> <code>${DOMAIN}</code>
 
 <i>Akun sudah dibuka kembali dan dapat digunakan.</i>"
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        tg_curl -X POST sendMessage \
             -F "chat_id=${CHAT_ID}" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
     ) &
 fi

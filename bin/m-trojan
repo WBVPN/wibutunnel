@@ -75,13 +75,17 @@ add_user() {
     if user_json_exists "$user"; then echo -e "${RED}Error: User sudah ada!${NC}"; read -p "Enter..." dummy; return; fi
 
     read -p "Masa Aktif (Hari)  : " masaaktif
-    if [[ "$masaaktif" =~ ^[0-9]+$ ]] && [ "$masaaktif" -gt 0 ]; then
+    if [[ "$masaaktif" =~ ^[0-9]+$ ]] && [ "$masaaktif" -gt 0 ] && [ "$masaaktif" -le 36500 ]; then
         exp_date=$(date -d "+${masaaktif} days" +"%Y-%m-%d %H:%M:%S"); tampil_exp=$(date -d "$exp_date" +"%Y-%m-%d")
     else echo -e "${RED}Error: Angka tidak valid!${NC}"; read -p "Enter..." dummy; return; fi
 
     read -p "Limit IP (0 = Bebas): " limit_ip
     read -p "Limit Kuota GB (0 = Unli): " limit_kuota
-    [[ -z "$limit_ip" ]] && limit_ip=0; [[ -z "$limit_kuota" ]] && limit_kuota=0
+    # [FIX M-X3] Validasi numerik: "abc" tersimpan mentah -> algojo baca
+    # # sebagai 0 -> user dapat unlimited meski admin membatasi.
+    [[ "$limit_ip" =~ ^[0-9]+$ ]] || limit_ip=0
+    [[ "$limit_kuota" =~ ^[0-9]+$ ]] || limit_kuota=0
+    (( limit_kuota < 8589934592 )) 2>/dev/null || limit_kuota=0
 
     uuid=$(uuidgen)
     domain=$(cat "$DOMAIN_FILE" 2>/dev/null)
@@ -110,8 +114,13 @@ add_user() {
         
         # Rollback config.json
         safe_jq_edit_args --arg u "$user" \
-            '(.inbounds[] | .settings.clients) |= map(select(.email != $u))'
-        
+            '(.inbounds[] | .settings.clients) |= map(select(.email != $u))' \
+            || echo -e "${RED}[!] GAGAL rollback config.json${NC}" >&2
+
+        # [FIX M-X1] Rollback routing rule user-stats juga (sebelumnya ketinggalan
+        # -> email user nyangkut di routing -> config tetap rusak, xray tetap down).
+        stats_rule_del "$user" || echo -e "${RED}[!] GAGAL rollback stats rule${NC}" >&2
+
         # Rollback EXP_FILE
         safe_sed_delete "$user" "$EXP_FILE"
         
@@ -176,7 +185,7 @@ ${THICKLINE}
 ${THICKLINE}
 <code>${trojan_grpc}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
+        tg_curl sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -215,7 +224,14 @@ trial_user() {
         echo -e "${RED}Error: Gagal menghitung tanggal expired. Akun dibatalkan.${NC}"
         read -p "Enter..." dummy; return; fi
 
-    uuid=$(uuidgen); domain=$(cat "$DOMAIN_FILE")
+    # [FIX M-X4] domain belum diset (fresh install) -> link vmess/trojan
+    # # berisi host kosong -> client tidak connect, tetap dihitung rate-limit.
+    domain=$(cat "$DOMAIN_FILE" 2>/dev/null)
+    if [[ -z "$domain" ]]; then
+        echo -e "${RED}[!] Domain belum diset. Set domain di menu setting dulu.${NC}"
+        read -p "Enter..." dummy; return
+    fi
+    uuid=$(uuidgen)
 
     if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
         (.inbounds[] | select(.protocol == "trojan") | .settings.clients) += [{"password": $uuid, "email": $user}]
@@ -286,7 +302,7 @@ ${THICKLINE}
 ${THICKLINE}
 <code>${trojan_grpc}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
+        tg_curl sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -304,6 +320,7 @@ delete_user() {
     if safe_jq_edit_args --arg user "$user" '
         (.inbounds[] | select(.protocol == "trojan") | .settings.clients) |= map(select(.email != $user)) |
         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))
+        | .routing.rules |= map(select(.outboundTag != "blocked" or ((.user // []) | length) > 0 or ((.ip // []) | length) > 0 or ((.protocol // []) | length) > 0))
     '; then
         safe_sed_delete "$user" "$EXP_FILE"
         safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
@@ -377,7 +394,7 @@ ${THICKLINE}
 ${THICKLINE}
 <code>${trojan_grpc}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
+        tg_curl sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -390,6 +407,9 @@ renew_user() {
     clear; echo -e "${LINE}"; echo -e "             ${WHITE}PERPANJANG AKUN TROJAN${NC}"; echo -e "${LINE}"
     echo -e " ${CYAN}User Terpilih : ${GREEN}${user}${NC}"
     read -p " Jumlah Hari Tambahan : " tambahan
+    # [FIX B4] Cap: overflow 64-bit -> new_exp kosong -> akun Lifetime.
+    [[ "$tambahan" =~ ^[0-9]+$ && "$tambahan" -gt 0 && "$tambahan" -le 36500 ]] \
+        || { echo -e "${RED}Error: 1-36500 hari${NC}"; read -p "Enter..." dummy; return; }
     if [[ ! "$tambahan" =~ ^[0-9]+$ ]] || [ "$tambahan" -le 0 ]; then echo -e "${RED}Error: Angka tidak valid!${NC}"; read -p "Enter..." dummy; return; fi
 
     current_exp=$(db_lookup "$user" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
@@ -428,12 +448,12 @@ renew_user() {
 
     # Unlock if account was blocked for expiry
     source /usr/local/bin/common.sh
-    if grep -q "^${user}:" "$DB_LOCK" 2>/dev/null; then
+    if db_has "$user" "$DB_LOCK"; then
         lock_reason=$(grep "^${user}:" "$DB_LOCK" | cut -d: -f4)
         if [[ "$lock_reason" == "EXPIRED" ]]; then
             # Remove from routing block
             safe_jq_edit_args --arg u "$user" \
-                '(.routing.rules[] | select(.outboundTag == "blocked") | .user) |= map(select(. != $u))'
+                '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
             # Remove from locked DB
             safe_sed_delete "$user" "$DB_LOCK"
             systemctl restart xray >/dev/null 2>&1
@@ -449,7 +469,7 @@ ${THICKLINE}
 <b>Added     :</b> <code>${tambahan} Days</code>
 <b>Expires   :</b> <code>${new_exp}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_RENEW}" >/dev/null 2>&1
+        tg_curl sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_RENEW}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -473,7 +493,7 @@ ${THICKLINE}
 <b>User      :</b> <code>${user}</code>
 <b>Limit IP  :</b> <code>${new_limit}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_IP}" >/dev/null 2>&1
+        tg_curl sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_IP}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -492,22 +512,36 @@ change_bw_user() {
     /usr/local/sbin/algojo-kuota >/dev/null 2>&1
     
     # Unlock if user was blocked for quota and limit increased
-    if [[ "$new_limit" -ne 0 ]] && grep -q "^${user}:" "$DB_LOCK" 2>/dev/null; then
-        lock_entry=$(grep "^${user}:" "$DB_LOCK")
+    # [FIX LOW] pakai db_has/db_lookup (exact field match) bukan grep prefix.
+    # [FIX H3] Guard luar -ne 0 menolak new_limit=0 -> user kuota-habis
+    # # yang dijadikan Unlimited tetap terkunci selamanya (unlock_time=0).
+    if db_has "$user" "$DB_LOCK"; then
+        lock_entry=$(db_lookup "$user" "$DB_LOCK")
         lock_reason=$(echo "$lock_entry" | cut -d: -f4)
-        
+
         if [[ "$lock_reason" == "QUOTA" ]]; then
+            # [FIX M-X5] Jangan unlock bila limit baru MASIH di bawah pemakaian:
+            # # user dapat akses gratis sampai siklus algojo-kuota berikutnya.
+            local usage_now=0
+            usage_now=$(db_lookup "$user" /etc/wibutunnel/user_usage.db 2>/dev/null | cut -d: -f2)
+            [[ "$usage_now" =~ ^[0-9]+$ ]] || usage_now=0
+            # [FIX] limit 0 = Unlimited: tetap unlock; limit>0 hanya kalau
+            # # pemakaian di bawah limit baru (sebelumnya user unli terkunci permanen).
+            if [[ "$new_limit" -ne 0 ]] && (( usage_now >= new_limit * 1073741824 )); then
+                echo -e "${YELLOW}[!] Pemakaian (${usage_now}B) >= limit baru. Biarkan algojo yang unlock saat kuota reset.${NC}"
+            else
             echo -e "${YELLOW}[*] User was quota-locked. Removing block...${NC}"
             
             # Remove from routing block
             safe_jq_edit_args --arg u "$user" \
-                '(.routing.rules[] | select(.outboundTag == "blocked") | .user) |= map(select(. != $u))'
+                '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
             
             # Remove from locked DB
             safe_sed_delete "$user" "$DB_LOCK"
             
             systemctl restart xray >/dev/null 2>&1
             echo -e "${GREEN}[✓] User unlocked.${NC}"
+            fi
         fi
     fi
     
@@ -519,7 +553,7 @@ ${THICKLINE}
 <b>User      :</b> <code>${user}</code>
 <b>Limit BW  :</b> <code>${new_limit} GB</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_BW}" >/dev/null 2>&1
+        tg_curl sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_BW}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }

@@ -112,7 +112,7 @@ ${THICKLINE}
 <code>Expired On  : ${exp_date}</code>
 ${THICKLINE}
 <i>${FOOTER}</i>"
-                        curl -s --max-time 8 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                        tg_curl -X POST sendMessage \
                             --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1 &
                     fi
                 fi
@@ -125,7 +125,9 @@ ${THICKLINE}
         fi
     done < "$EXP_FILE"
 
-    echo -e -n "$NEW_EXP_CONTENT" > "$EXP_FILE"
+    # [FIX M-M7/8] printf (bukan echo -e: backslash di data user diinterpretasi
+# -> baris exp rusak) + tulis tmp+mv atomic (menu baca file yg sama).
+printf '%b\n' "$NEW_EXP_CONTENT" > "$EXP_FILE.tmp" && mv "$EXP_FILE.tmp" "$EXP_FILE"
 }
 
 process_expired "$VLESS_EXP" "VLESS" "$ACTIVE_VLESS"
@@ -221,7 +223,7 @@ ${THICKLINE}
 <code>Expired On  : ${ssh_exp}</code>
 ${THICKLINE}
 <i>${FOOTER}</i>"
-                        curl -s --max-time 8 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                        tg_curl -X POST sendMessage \
                             --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
                         ) &
                     fi
@@ -232,7 +234,7 @@ ${THICKLINE}
             fi
         fi
     done < /etc/xray/ssh_exp.conf
-    echo -e -n "$NEW_SSH_EXP" > /etc/xray/ssh_exp.conf
+    printf '%b\n' "$NEW_SSH_EXP" > /etc/xray/ssh_exp.conf.tmp && mv /etc/xray/ssh_exp.conf.tmp /etc/xray/ssh_exp.conf
 fi
 
 # ==========================================

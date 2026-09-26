@@ -177,7 +177,9 @@ fi
 echo -e "\n ${WHITE}Memulai Proses Reactivate untuk: ${GREEN}$user${NC}"
 echo -e "${LINE}"
 read -p " Masukkan Masa Aktif Baru (Hari) : " hari_baru
-if [[ ! "$hari_baru" =~ ^[0-9]+$ ]] || [ "$hari_baru" -le 0 ]; then
+# [FIX H4] cap 36500: date -d "+N days" out-of-range -> new_exp KOSONG
+# # -> user Lifetime (bypass komersial).
+if [[ ! "$hari_baru" =~ ^[0-9]+$ ]] || [ "$hari_baru" -le 0 ] || [ "$hari_baru" -gt 36500 ]; then
     echo -e " ${RED}Format salah!${NC}"
     sleep 2
     [[ -n "$FILTER_PROTO" ]] && exec "menu-unlock ${FILTER_PROTO}" || exec menu-unlock
@@ -211,6 +213,13 @@ safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
 echo "${user}:${bw_baru}" >> /etc/wibutunnel/limit_bw.db
 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
+# [FIX H5] SSH: reaktivasi hanya tulis exp.conf+hapus DB_LOCK, tapi
+# # user tetap passwd -l (locked) -> login ditolak selamanya. Buka kunci
+# # sistem + exp + chage dulu sebelum cabang xray.
+if [[ "$proto" == "SSH" ]]; then
+    renew_ssh_user "$user" "${hari_baru}d" 2>/dev/null
+    unlock_ssh_user "$user" >/dev/null 2>&1
+fi
 # UNLOCK DARI XRAY
 if safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'; then
     safe_sed_delete "$user" /etc/wibutunnel/locked_users.db

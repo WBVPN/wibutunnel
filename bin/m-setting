@@ -47,6 +47,29 @@ safe_update() {
 
     curl -fsS -L --max-time 30 -o "$tmp" "$raw_url" 2>/dev/null
 
+    # [FIX H13] Verifikasi integritas: unduh SHA256SUMS repo dan cocokkan.
+    # Sebelumnya hanya cek magic-byte (shebang/ELF) yang TIDAK membuktikan
+    # keaslian — kompromi repo atau MITM TLS = RCE root di setiap VPS.
+    local sums_tmp="/etc/wibutunnel/tmp/SHA256SUMS.update"
+    if curl -fsS -L --max-time 20 -o "$sums_tmp" \
+        "https://raw.githubusercontent.com/WBVPN/wibutunnel/main/SHA256SUMS" 2>/dev/null; then
+        local expected=""
+        expected=$(awk -v p="$repo_path" '$2 == p {print $1}' "$sums_tmp" 2>/dev/null)
+        local actual=""
+        [[ -s "$tmp" ]] && actual=$(sha256sum "$tmp" 2>/dev/null | awk '{print $1}')
+        if [[ -n "$expected" && -n "$actual" ]]; then
+            if [[ "$expected" != "$actual" ]]; then
+                echo -e "${RED}[!] CHECKSUM MISMATCH ${target_name}! File tidak dipasang (kemungkinan kompromi repo).${NC}"
+                rm -f "$tmp"
+                return 1
+            fi
+        else
+            echo -e "${YELLOW}[!] Checksum ${target_name} tidak tersedia di SHA256SUMS — lanjut tanpa verifikasi.${NC}"
+        fi
+    else
+        echo -e "${YELLOW}[!] SHA256SUMS tidak bisa diunduh — lanjut tanpa verifikasi checksum.${NC}"
+    fi
+
     # Validasi: tidak boleh kosong & harus file valid:
     #   - script bash (shebang 23212f) ATAU
     #   - ELF binary (magic 7f454c46) — hasil compile shc
@@ -90,7 +113,7 @@ echo -e " ${RED}[0] Kembali ke Dashboard Utama${NC}"
 echo -e "$LINE"
 
 echo -ne "${WHITE}Pilih menu: ${NC}"
-read -r sub_setting
+read -r sub_setting || exit 1
 
 case $sub_setting in
     1)
@@ -101,6 +124,9 @@ case $sub_setting in
         failed_units=""
         for unit in xray haproxy dropbear ws-stunnel wibu-daemon cron; do
             systemctl restart "$unit" 2>/dev/null
+            # [FIX M-A8] unit masih "activating" tepat setelah restart (xray
+            # lambat) -> alarm "GAGAL restart" palsu.
+            sleep 1
             systemctl is-active --quiet "$unit" 2>/dev/null || failed_units="$failed_units $unit"
         done
         if [[ -n "$failed_units" ]]; then
@@ -108,7 +134,7 @@ case $sub_setting in
         else
             echo -e "${GREEN}Semua service berhasil direstart!${NC}"
         fi
-        read -n 1 -s -r -p "Tekan tombol apa saja..."
+        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
         exec m-setting
         ;;
     2)
@@ -117,7 +143,7 @@ case $sub_setting in
         sync; echo 2 > /proc/sys/vm/drop_caches
         sync; echo 3 > /proc/sys/vm/drop_caches
         echo -e "${GREEN}RAM berhasil dibersihkan!${NC}"
-        read -n 1 -s -r -p "Tekan tombol apa saja..."
+        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
         exec m-setting
         ;;
     3)
@@ -141,7 +167,7 @@ case $sub_setting in
         else
             echo -e "${RED}Speedtest gagal diinstall. Coba: apt-get update lalu ulangi.${NC}"
         fi
-        read -n 1 -s -r -p "Tekan tombol apa saja..."
+        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
         exec m-setting
         ;;
     4)
@@ -184,7 +210,7 @@ case $sub_setting in
             vnstat -m -i "$MAIN_IFACE" | grep -v "$MAIN_IFACE" | grep -v "^$" | head -n 8
         fi
         echo -e "$LINE"
-        read -n 1 -s -r -p "Tekan tombol apa saja..."
+        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
         exec m-setting
         ;;
     5)
@@ -235,7 +261,7 @@ case $sub_setting in
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"
         echo -e "${YELLOW}Catatan: kalau ada yg rusak setelah update, backup lama ada di:${NC}"
         echo -e "${CYAN}$BK_DIR${NC}"
-        read -n 1 -s -r -p "Tekan tombol apa saja..."
+        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
         exec m-setting
         ;;
     6)
@@ -264,18 +290,18 @@ case $sub_setting in
                 if [[ -n "$input_token" && -n "$input_chatid" ]]; then
                     if [[ ! "$input_token" =~ ^[0-9]+:[A-Za-z0-9_-]{30,}$ ]]; then
                         echo -e "${RED}Format BOT TOKEN tidak valid! Harus: 123456:AAExxx...${NC}"
-                        read -n 1 -s -r -p "Tekan tombol apa saja..."
+                        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
                         exec m-setting
                     fi
                     if [[ ! "$input_chatid" =~ ^-?[0-9]+$ ]]; then
                         echo -e "${RED}CHAT ID tidak valid! Harus angka (mis. 5851934765)${NC}"
-                        read -n 1 -s -r -p "Tekan tombol apa saja..."
+                        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
                         exec m-setting
                     fi
                     tk_test=$(curl -s --max-time 10 "https://api.telegram.org/bot${input_token}/getMe")
                     if ! echo "$tk_test" | grep -q '"ok":true'; then
                         echo -e "${RED}BOT TOKEN tidak valid! (cek token dari @BotFather)${NC}"
-                        read -n 1 -s -r -p "Tekan tombol apa saja..."
+                        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
                         exec m-setting
                     fi
                     WEBHOOK_SECRET=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
@@ -319,7 +345,7 @@ EOF
                         fi
                     fi
                     systemctl enable --now telegram-webhook.socket >/dev/null 2>&1
-                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
+                    tg_curl -X POST setWebhook \
                         -F "url=https://${domain}/telehook" \
                         -F "secret_token=${WEBHOOK_SECRET}" >/dev/null 2>&1
                     echo -e "${GREEN}Bot Telegram berhasil dihidupkan!${NC}"
@@ -328,7 +354,7 @@ EOF
             3)
                 load_bot_conf
                 if [[ -n "$BOT_TOKEN" ]]; then
-                    curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
+                    tg_curl deleteWebhook >/dev/null 2>&1
                 fi
                 systemctl stop telegram-webhook.socket >/dev/null 2>&1
                 systemctl disable telegram-webhook.socket >/dev/null 2>&1
@@ -337,7 +363,7 @@ EOF
             0) exec m-setting ;;
             *) echo -e "${RED}Pilihan salah!${NC}" ;;
         esac
-        read -n 1 -s -r -p "Tekan tombol apa saja..."
+        read -n 1 -s -r -p "Tekan tombol apa saja..." || exit 1
         exec m-setting
         ;;
     7)
@@ -389,7 +415,13 @@ EOF
                 echo "$new_domain" > /etc/xray/domain
                 # sinkronkan /root/domain juga (uninstall & tool lain bacanya)
                 echo "$new_domain" > /root/domain
+                # [FIX M-A6] sed no-op kalau pola bind berbeda -> domain baru
+                # # tertulis ke /etc/xray/domain tapi cert LAMA dipakai (pesan
+                # # sukses palsu). Verifikasi eksplisit.
                 sed -i "s|bind \*:443 ssl crt .*\.pem|bind *:443 ssl crt /etc/haproxy/certs/${new_domain}.pem|g" /etc/haproxy/haproxy.cfg
+                if ! grep -q "crt /etc/haproxy/certs/${new_domain}.pem" /etc/haproxy/haproxy.cfg 2>/dev/null; then
+                    echo -e "${RED}[!] bind haproxy TIDAK terupdate. Cert lama masih dipakai.${NC}" >&2
+                fi
                 ssl_ok=true
             fi
             # [FIX] SELALU start service kembali, walau SSL gagal — kalau tidak
@@ -410,7 +442,9 @@ EOF
         clear; echo -e "$LINE"; echo -e "         ${WHITE}ATUR DURASI LOCK OTOMATIS${NC}"; echo -e "$LINE"
         echo -e "${CYAN}Saat ini durasi lock otomatis: ${GREEN}${LOCK_DURATION} menit${NC}\n"
         read -p "Durasi Lock (menit): " new_duration
-        if [[ ! "$new_duration" =~ ^[0-9]+$ ]] || [ "$new_duration" -lt 1 ]; then
+        # [FIX] Cap 525600 (1 thn menit): (( now + dur*60 )) wrap 64-bit ->
+        # # unlock_time negatif/serabut -> lock langsung lepas atau permanen.
+        if [[ ! "$new_duration" =~ ^[0-9]+$ ]] || [ "$new_duration" -lt 1 ] || [ "$new_duration" -gt 525600 ]; then
             echo -e "${RED}Durasi minimal 1!${NC}"
             sleep 2
             exec m-setting
@@ -435,7 +469,11 @@ EOF
         read -p "Tekan Enter untuk membuka editor..." dummy
         ${EDITOR:-nano} "$BANNER_FILE"
         if ! grep -q -- '-b /etc/wibutunnel/ssh-banner' /etc/default/dropbear; then
-            sed -i 's|^DROPBEAR_EXTRA_ARGS=.*|DROPBEAR_EXTRA_ARGS="-W 32768 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222 -b /etc/wibutunnel/ssh-banner"|' /etc/default/dropbear
+            if grep -q '^DROPBEAR_EXTRA_ARGS=' /etc/default/dropbear; then
+                sed -i 's|^DROPBEAR_EXTRA_ARGS=.*|DROPBEAR_EXTRA_ARGS="-W 32768 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222 -b /etc/wibutunnel/ssh-banner"|' /etc/default/dropbear
+            else
+                echo 'DROPBEAR_EXTRA_ARGS="-W 32768 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222 -b /etc/wibutunnel/ssh-banner"' >> /etc/default/dropbear
+            fi
         fi
         systemctl restart dropbear
         echo -e "${GREEN}Banner SSH diperbarui & dropbear direstart!${NC}"

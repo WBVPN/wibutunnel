@@ -2,6 +2,18 @@
 # [PATCH] Tambah validasi X-Telegram-Bot-Api-Secret-Token
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+# [FIX C1] common.sh WAJIB di-source sebelum load_bot_conf. Tanpa ini
+# load_bot_conf undefined -> WEBHOOK_SECRET selalu kosong -> fail-closed
+# menolak SEMUA request 503 dan bot Telegram mati total.
+COMMON_SH="/usr/local/bin/common.sh"
+if [[ ! -f "$COMMON_SH" ]]; then
+    echo "[FATAL] $COMMON_SH tidak ditemukan — request ditolak" >&2
+    echo -en "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n{\"error\":\"common.sh missing\"}"
+    exit 0
+fi
+# shellcheck source=/dev/null
+source "$COMMON_SH"
+
 load_bot_conf
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-}"
 

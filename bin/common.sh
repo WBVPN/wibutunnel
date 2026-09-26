@@ -66,7 +66,9 @@ check_trial_limit() {
     fi
     
     # Count trials from this IP in last 24h
-    trial_count=$(grep "^${caller_ip}:" "$trial_db" 2>/dev/null | wc -l)
+    # [FIX M-B6] grep prefix: IP "1.2.3.4" juga hitung entry "1.2.3.40" ->
+    # # customer sah diblokir trial lebih awal. Exact field match via awk.
+    trial_count=$(awk -F: -v ip="$caller_ip" '$1==ip' "$trial_db" 2>/dev/null | wc -l)
     
     if [[ "$trial_count" -ge "$max_trials" ]]; then
         echo -e "${RED}[!] Limit trial tercapai. Maksimal ${max_trials} trial per IP per 24 jam.${NC}"
@@ -98,6 +100,12 @@ fi
 # Reject juga jika JSON tidak valid / bukan object.
 _xray_validate() {
     local f="$1"
+    # [FIX M-B5] Validasi semantik oleh xray sendiri, bukan cuma struktur JSON.
+    # jq menerima config yang ditolak xray (semantic) -> restart xray gagal
+    # -> SEMUA user VPN down. `xray test -config` mendeteksi yang jq tidak.
+    if [[ -x /usr/local/bin/xray ]]; then
+        /usr/local/bin/xray test -config "$f" >/dev/null 2>&1 || return 1
+    fi
     jq -e '
         type == "object"
         and (.inbounds | type == "array")
@@ -121,7 +129,9 @@ safe_jq_edit() {
     local filter="$1"
     local src="${XRAY_CONFIG}"
     local tmp
-    tmp=$(mktemp /etc/wibutunnel/tmp/xray_edit.XXXXXX.json)
+    # [FIX M-B7] mktemp di direktori yang SAMA dengan target agar mv atomik
+    # # (beda filesystem -> mv = copy non-atomic, jendela config setengah tertulis).
+    tmp=$(mktemp "$(dirname "$src")/xray_edit.XXXXXX.json")
     (
         flock -w 30 200 || { echo "[ERROR] flock timeout on xray config" >&2; rm -f "$tmp"; return 1; }
         if jq "$filter" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
@@ -144,7 +154,7 @@ safe_jq_edit() {
 safe_jq_edit_args() {
     local src="$XRAY_CONFIG"
     local tmp
-    tmp=$(mktemp /etc/wibutunnel/tmp/xray_edit.XXXXXX.json)
+    tmp=$(mktemp "$(dirname "$src")/xray_edit.XXXXXX.json")
     (
         flock -w 30 200 || { echo "[ERROR] flock timeout on xray config" >&2; rm -f "$tmp"; return 1; }
         if jq "$@" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
@@ -452,6 +462,10 @@ renew_ssh_user() {
 
     # parsing durasi (menit/jam/hari)
     local val="${hari%[mhd]}"
+    # [FIX B4] Cap input raksasa: (( base + val*86400 )) wrap 64-bit ->
+    # date "out of range" -> new_exp KOSONG -> akun Lifetime (bypass komersial).
+    [[ "$val" =~ ^[0-9]+$ ]] || { echo "durasi tidak valid"; return 1; }
+    (( val > 0 && val <= 525600 )) || { echo "durasi di luar batas (maks 1 tahun)"; return 1; }
     case "$hari" in
         *[mM]) add_sec=$(( val * 60 )) ;;
         *[hH]) add_sec=$(( val * 3600 )) ;;
@@ -473,7 +487,11 @@ renew_ssh_user() {
     new=$(date -d "@$new_sec" +"%Y-%m-%d %H:%M:%S")
     chage -E "$(date -d "$new" +%Y-%m-%d)" -M $(( ( $(date -d "$new" +%s) - $(date +%s) ) / 86400 + 1 )) -I 0 "$user" >/dev/null 2>&1
     passwd -u "$user" >/dev/null 2>&1
-    safe_sed_delete "$user" "$SSH_EXP_FILE"; echo "${user}:${new}" >> "$SSH_EXP_FILE"
+    # [FIX] echo >> gagal diam bila file/dir tidak ada (SSH_EXP_FILE belum
+    # # dibuat) -> menu bilang BERHASIL tapi expiry tak tersimpan ke DB.
+    mkdir -p "$(dirname "$SSH_EXP_FILE")" 2>/dev/null
+    safe_sed_delete "$user" "$SSH_EXP_FILE"
+    echo "${user}:${new}" >> "$SSH_EXP_FILE" || return 1
     safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
     printf '%s' "$new"
     return 0
@@ -504,6 +522,10 @@ sanitize_user() {
     [[ -z "$u" ]] && return 1
     [[ ${#u} -gt 64 ]] && return 1
     [[ "$u" =~ [^a-zA-Z0-9._@-] ]] && return 1
+    # [FIX C4] Nama ini adalah satu-satunya isi rule "blocked" awal (setup.sh).
+    # Membuat user bernama DUMMY-LOCK lalu menghapusnya akan mengosongkan array
+    # user rule tsb -> xray menolak config -> service mati total.
+    [[ "$u" == "DUMMY-LOCK" ]] && return 1
     return 0
 }
 
@@ -617,38 +639,25 @@ get_isp()  { get_geo | sed -n '2p'; }
 
 # Safe flat-file DB write with flock
 # Usage: safe_db_write "user:value" "$DB_FILE"
-safe_db_write() {
-    local content="$1"
-    local dbfile="$2"
-    local lockfile="/etc/wibutunnel/tmp/flatdb.lock"
-    
-    mkdir -p "$(dirname "$lockfile")"
-    
-    (
-        flock -x -w 30 200 || {
-            echo "[ERROR] Failed to acquire lock for $dbfile" >&2
-            return 1
-        }
-        echo "$content" >> "$dbfile"
-    ) 200>"$lockfile"
-}
 
 # Safe flat-file DB delete with flock
 # Usage: safe_db_delete "user" "$DB_FILE"
-safe_db_delete() {
-    local user="$1"
-    local dbfile="$2"
-    local lockfile="/etc/wibutunnel/tmp/flatdb.lock"
-    local tmp="/tmp/db_$$"
-    
-    mkdir -p "$(dirname "$lockfile")"
-    
-    (
-        flock -x -w 30 200 || {
-            echo "[ERROR] Failed to acquire lock for $dbfile" >&2
-            return 1
-        }
-        grep -v "^${user}:" "$dbfile" > "$tmp" 2>/dev/null || true
-        mv "$tmp" "$dbfile"
-    ) 200>"$lockfile"
+
+# [FIX H6] Helper Telegram: token TIDAK boleh muncul di argv proses curl
+# (terlihat di /proc/*/cmdline untuk user lokal selama curl jalan -> takeover
+# bot). curl -K - membaca config dari stdin; URL tidak terlihat di argv.
+# Usage: tg_curl <method> [curl args...]   -> GET  api.telegram.org/bot<TOKEN>/<method>
+#        tg_curl -X POST <method> ...      -> POST
+tg_curl() {
+    # [FIX B1] Format call site: "tg_curl sendMessage ..." atau
+    # "tg_curl -X POST sendMessage ...". Sebelumnya "-X" dianggap method ->
+    # request ke /bot<TOKEN>/-X -> 404, SEMUA notifikasi -X POST gagal diam-diam.
+    local method="$1"; shift
+    local xpost=()
+    if [[ "$method" == "-X" ]]; then
+        xpost=(-X "$1"); method="$2"; shift 2
+    fi
+    curl -s -K - "${xpost[@]}" "$@" <<TGCONF 2>/dev/null
+url = "https://api.telegram.org/bot${BOT_TOKEN}/${method}"
+TGCONF
 }

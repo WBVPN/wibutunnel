@@ -3,7 +3,15 @@
 # Seringan kapas, secepat kilat.
 
 BOT_CONF="/etc/wibutunnel/bot.conf"
-source /usr/local/bin/common.sh 2>/dev/null
+# [FIX H8] Jangan sembunyikan kegagalan source common.sh. Sebelumnya 2>/dev/null
+# membuat bot-daemon berjalan tanpa db_lookup/safe_jq_edit_args/load_bot_conf
+# -> BOT_TOKEN kosong -> exit diam-diam, bot mati tanpa pesan. Guard exit loud.
+if [[ ! -f /usr/local/bin/common.sh ]]; then
+    echo "[FATAL] /usr/local/bin/common.sh tidak ditemukan — bot-daemon tidak bisa jalan." >&2
+    exit 1
+fi
+# shellcheck source=/dev/null
+source /usr/local/bin/common.sh || { echo "[FATAL] gagal source common.sh" >&2; exit 1; }
 OFFSET_FILE="/etc/wibutunnel/tmp/bot_offset"
 CONFIG_FILE="/usr/local/etc/xray/config.json"
 BOT_LOG="/etc/wibutunnel/tmp/bot_error.log"
@@ -45,15 +53,50 @@ send_msg() {
     local keyboard="$2"
     local target_id="${3:-${SENDER_ID:-$CHAT_ID}}"
     local resp
+    # [FIX M-B3] Telegram tolak pesan >4096 char (ok:false). list_account/
+    # check_login merangkai semua user -> admin tidak terima apa-apa dan bot
+    # terlihat nge-hang. Potong per ~3800 char dan kirim bertahap.
+    # [FIX M1] Potong di boundary baris (bukan tengah karakter) supaya tidak
+    # # membelah UTF-8 di locale C, dan kirim keyboard hanya di potongan akhir.
+    if [[ ${#text} -gt 4096 ]]; then
+        local LC_ALL="${LC_ALL:-C.UTF-8}"
+        export LC_ALL
+        local part=""
+        while [[ -n "$text" ]]; do
+            part="${text:0:3700}"
+            # geser ke newline terakhir dalam potongan (jangan belah baris)
+            local nl="${part##*$'\n'}"
+            if [[ ${#nl} -lt ${#part} && ${#part} -gt 100 ]]; then
+                part="${part%$'\n'*}"
+                text="${text:${#part}+1}"
+            else
+                text="${text:3700}"
+            fi
+            if [[ -z "$text" && -n "$keyboard" ]]; then
+                tg_curl -X POST sendMessage \
+                    --data-urlencode "chat_id=${target_id}" \
+                    --data-urlencode "parse_mode=html" \
+                    --data-urlencode "text=${part}" \
+                    --data-urlencode "reply_markup=${keyboard}" >/dev/null 2>&1
+            else
+                tg_curl -X POST sendMessage \
+                    --data-urlencode "chat_id=${target_id}" \
+                    --data-urlencode "parse_mode=html" \
+                    --data-urlencode "text=${part}" >/dev/null 2>&1
+            fi
+            sleep 0.3
+        done
+        return 0
+    fi
     if [[ -n "$keyboard" ]]; then
-        resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        resp=$(tg_curl -X POST sendMessage \
             --data-urlencode "chat_id=${target_id}" \
             --data-urlencode "disable_web_page_preview=true" \
             --data-urlencode "parse_mode=html" \
             --data-urlencode "text=${text}" \
             --data-urlencode "reply_markup=${keyboard}" 2>&1)
     else
-        resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        resp=$(tg_curl -X POST sendMessage \
             --data-urlencode "chat_id=${target_id}" \
             --data-urlencode "disable_web_page_preview=true" \
             --data-urlencode "parse_mode=html" \
@@ -76,7 +119,7 @@ edit_msg() {
     local keyboard="$4"
 
     local resp
-    resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
+    resp=$(tg_curl -X POST editMessageText \
         --data-urlencode "chat_id=${target_id}" \
         --data-urlencode "message_id=${msg_id}" \
         --data-urlencode "disable_web_page_preview=true" \
@@ -211,6 +254,8 @@ create_account() {
         fi
         local val="${hari%[hmd]}"
         local exp_date="" hari_days=1
+        # [FIX H4] cap val: date -d "+N <unit>" out-of-range -> exp KOSONG -> Lifetime.
+        [[ "$val" =~ ^[0-9]+$ && "$val" -gt 0 && "$val" -le 525600 ]] || return 1
         case "$hari" in
             *[mM]) exp_date=$(date -d "+${val} minutes" +"%Y-%m-%d %H:%M:%S") ;;
             *[hH]) exp_date=$(date -d "+${val} hours"   +"%Y-%m-%d %H:%M:%S") ;;
@@ -254,6 +299,8 @@ create_account() {
     local tampil_exp=""
 
     local clean_hari="${hari%[hmd]}"
+    # [FIX H4] cap: date -d out-of-range -> exp kosong -> user Lifetime.
+    [[ "$clean_hari" =~ ^[0-9]+$ && "$clean_hari" -gt 0 && "$clean_hari" -le 525600 ]] || return 1
     if [[ -z "${clean_hari//[0-9]/}" && -n "$clean_hari" ]]; then
         if [[ "$hari" == *m ]]; then
             exp_date=$(date -d "+${clean_hari} minutes" +"%Y-%m-%d %H:%M:%S")
@@ -421,6 +468,9 @@ delete_account() {
 
 is_admin() {
     local id=$1
+    # [FIX M-B1] id kosong tidak boleh lolos: `grep -qF -x -- ""` cocok baris
+    # kosong di bot_admins.db -> sender kosong dianggap admin.
+    [[ -z "$id" ]] && return 1
     if [[ "$id" == "$CHAT_ID" ]]; then
         return 0
     fi
@@ -485,6 +535,8 @@ renew_account() {
     local tampil_exp=""
 
     local clean_hari="${hari%[hmd]}"
+    # [FIX H4] cap: date -d out-of-range -> exp kosong -> user Lifetime.
+    [[ "$clean_hari" =~ ^[0-9]+$ && "$clean_hari" -gt 0 && "$clean_hari" -le 525600 ]] || return 1
     if [[ -z "${clean_hari//[0-9]/}" && -n "$clean_hari" ]]; then
         if [[ "$hari" == *m ]]; then
             exp_date=$(date -d "+${clean_hari} minutes" +"%Y-%m-%d %H:%M:%S")
@@ -514,6 +566,10 @@ renew_account() {
         send_msg "❌ <b>Gagal perpanjang akun!</b>\nConfig xray tidak bisa diedit (user: <code>${user}</code>). Expired tidak diubah."
         return
     fi
+    # [FIX H7] xray hanya membaca routing saat startup. Mengeluarkan user dari
+    # rule "blocked" tanpa restart berarti user tetap mati di runtime walau
+    # bot bilang "Berhasil". create/delete/renew sudah restart; renew lupa.
+    systemctl restart xray >/dev/null 2>&1
     safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
 
     kb=""
@@ -652,7 +708,7 @@ list_account() {
 backup_vps() {
     local target_id="${SENDER_ID:-$CHAT_ID}"
 
-    local load_resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    local load_resp=$(tg_curl -X POST sendMessage \
         -F "chat_id=${target_id}" \
         -F "disable_web_page_preview=true" \
         -F "parse_mode=html" \
@@ -666,7 +722,7 @@ backup_vps() {
 
     # Validate CHAT_ID before using as zip password
     if [[ -z "$CHAT_ID" ]] || [[ ! "$CHAT_ID" =~ ^[0-9]+$ ]]; then
-        send_message "❌ Error: Invalid CHAT_ID for backup encryption"
+        send_msg "❌ Error: Invalid CHAT_ID for backup encryption"
         return 1
     fi
 
@@ -685,7 +741,7 @@ backup_vps() {
     if [[ -f "$backup_file" ]]; then
         local tgl=$(date "+%Y-%m-%d %H:%M:%S")
         local caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n<i>Mengunggah dan membuat File ID...</i>")
-        local response=$(curl -s --max-time 60 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+        local response=$(tg_curl -X POST sendDocument \
             -F "chat_id=${target_id}" \
             -F "document=@${backup_file}" \
             -F "caption=${caption}" \
@@ -696,7 +752,7 @@ backup_vps() {
 
         if [[ -n "$file_id" && -n "$msg_id" && "$msg_id" != "null" ]]; then
             local new_caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${file_id}</code>\n\n🔐 <b>Password:</b> CHAT ID Anda")
-            curl -s --max-time 15 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
+            tg_curl -X POST editMessageCaption \
                 -F "chat_id=${target_id}" \
                 -F "message_id=${msg_id}" \
                 -F "parse_mode=html" \
@@ -706,14 +762,14 @@ backup_vps() {
         rm -f "$backup_file"
 
         if [[ -n "$load_msg_id" && "$load_msg_id" != "null" ]]; then
-            curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage" \
+            tg_curl -X POST deleteMessage \
                 -F "chat_id=${target_id}" \
                 -F "message_id=${load_msg_id}" >/dev/null 2>&1
         fi
     else
         send_msg "❌ <b>Gagal membuat backup!</b>"
         if [[ -n "$load_msg_id" && "$load_msg_id" != "null" ]]; then
-            curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage" \
+            tg_curl -X POST deleteMessage \
                 -F "chat_id=${target_id}" \
                 -F "message_id=${load_msg_id}" >/dev/null 2>&1
         fi
@@ -877,7 +933,7 @@ check_login() {
     fi
 
     THRESH=$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')
-    LOGIN_DATA=$(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]", " : "") ip; counts[email]++ } } } } END { for (e in ips) print e "|" counts[e] "|" ips[e] }' <(tac "$LOG_FILE" 2>/dev/null) 2>/dev/null)
+    LOGIN_DATA=$(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9][0-9][0-9][0-9]\/[0-9][0-9]\/[0-9][0-9]$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]", " : "") ip; counts[email]++ } } } } END { for (e in ips) print e "|" counts[e] "|" ips[e] }' <(tac "$LOG_FILE" 2>/dev/null) 2>/dev/null)
 
     if [[ -z "$LOGIN_DATA" ]]; then
         local msg="<b>ONLINE USERS (LIVE)</b>\n━━━━━━━━━━━━━━━━━━━━\n<i>Saat ini tidak ada user yang aktif.</i>\n━━━━━━━━━━━━━━━━━━━━"
@@ -969,15 +1025,46 @@ load_bot_conf
 if [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]]; then exit 1; fi
 
 PAYLOAD=$1
+
+# [FIX M-B2] Dedup update_id: Telegram mengirim ulang update bila webhook lambat
+# (backup_vps curl sampai 60s) dan bisa paralel. Tanpa dedup -> trial/akun ganda,
+# pesan dobel, baris expiry/limit lenyap (race RMW flat DB). OFFSET_FILE sudah
+# ada tapi dead code; sekarang dipakai.
+if [[ -n "$PAYLOAD" ]]; then
+    UPD_ID=$(printf '%s' "$PAYLOAD" | jq -r '
+        (.update_id // .callback_query.id // empty)' 2>/dev/null)
+    if [[ -n "$UPD_ID" ]]; then
+        # [FIX M2] flock: webhook Telegram = proses terpisah per request;
+        # redeliver paralel baca offset lama yg sama -> keduanya "baru".
+        exec 9>>"$OFFSET_FILE"
+        flock -n 9 || exit 0
+        LAST_OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
+        if [[ "$UPD_ID" =~ ^[0-9]+$ && "$LAST_OFFSET" =~ ^[0-9]+$ && "$UPD_ID" -le "$LAST_OFFSET" ]]; then
+            echo "[!] bot-daemon: update duplikat ($UPD_ID <= $LAST_OFFSET), abaikan" >&2
+            exit 0
+        fi
+        printf '%s' "$UPD_ID" > "$OFFSET_FILE" 2>/dev/null
+        flock -u 9
+    fi
+fi
 [[ -z "$PAYLOAD" ]] && exit 0
 
 CB_ID=$(echo "$PAYLOAD" | jq -r ".callback_query.id // empty")
+    # [FIX A1] CB_ID tidak divalidasi -> karakter " + newline di payload pecah
+    # keluar directive url curl -K -> injeksi config curl (tulisan file root).
+    [[ "$CB_ID" =~ ^[0-9]+$ ]] || CB_ID=""
 if [[ -n "$CB_ID" ]]; then
     SENDER_ID=$(echo "$PAYLOAD" | jq -r ".callback_query.message.chat.id")
+    # [FIX M-B1] chat.id dipakai langsung di path bot_state_${SENDER_ID} untuk
+    # rm/echo -> payload palsu bisa ../ dan tulis/hapus file di luar tmp.
+    if [[ ! "$SENDER_ID" =~ ^-?[0-9]+$ ]]; then
+        echo "[!] bot-daemon: SENDER_ID bukan numerik, tolak update" >&2
+        exit 1
+    fi
     MSG_ID=$(echo "$PAYLOAD" | jq -r ".callback_query.message.message_id")
     DATA=$(echo "$PAYLOAD" | jq -r ".callback_query.data // empty")
 
-    curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery?callback_query_id=${CB_ID}" >/dev/null &
+    tg_curl "answerCallbackQuery?callback_query_id=${CB_ID}" --max-time 10 >/dev/null &
 
     if is_admin "$SENDER_ID"; then
         if [[ "$DATA" == "main_menu" ]]; then
@@ -1042,6 +1129,11 @@ if [[ -n "$CB_ID" ]]; then
 else
     # Check for Text Message
     SENDER_ID=$(echo "$PAYLOAD" | jq -r ".message.chat.id // empty")
+    # [FIX M-B1] sama: path traversal via chat.id non-numerik.
+    if [[ -n "$SENDER_ID" && ! "$SENDER_ID" =~ ^-?[0-9]+$ ]]; then
+        echo "[!] bot-daemon: SENDER_ID bukan numerik, tolak update" >&2
+        exit 1
+    fi
     if [[ -n "$SENDER_ID" ]]; then
         TEXT=$(echo "$PAYLOAD" | jq -r ".message.text // empty")
         TEXT="${TEXT//$'\r'/}"

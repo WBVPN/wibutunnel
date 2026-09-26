@@ -4,6 +4,14 @@
 # [PATCH] Cleanup lengkap: service, fstab, swap, limits, log, cron
 # ==========================================
 
+# [FIX M-U1] Root check. Tanpa root: rm -rf/systemctl/sed fstab gagal
+# sebagian -> sistem setengah dibersihkan.
+if [ "${EUID}" -ne 0 ]; then
+    echo -e "\e[31mError: uninstall harus dijalankan sebagai root\e[0m"
+    echo "Gunakan: sudo bash uninstall.sh"
+    exit 1
+fi
+
 echo -e "\e[33mMemulai proses uninstall WIBU TUNNELING...\e[0m"
 
 # Hentikan semua layanan
@@ -24,11 +32,21 @@ fi
 umount -f /var/log/xray 2>/dev/null
 
 # Hapus file konfigurasi dan database
-rm -rf /usr/local/etc/xray /etc/haproxy /etc/wibutunnel /etc/xray /var/log/xray \
+# [FIX H2] /etc/wibutunnel DILUAR dari sini: marker nginx_was_enabled
+# dibutuhkan blok restore nginx di bawah. Pembersihan tunggal di baris akhir.
+rm -rf /usr/local/etc/xray /etc/haproxy /etc/xray /var/log/xray \
        /usr/local/share/xray
 # binary xray juga dihapus: installer XTLS mendeteksinya dan akan
 # MELEWATI pembuatan service ('No new version') saat reinstall.
 rm -f /usr/local/bin/xray
+
+# [FIX M-U2] Flush rule ipt + hapus rules persistent. Sebelumnya rule
+# anti-torrent/connlimit/ICMP-limit tetap aktif + reload saat reboot.
+iptables -F 2>/dev/null
+iptables -t mangle -F 2>/dev/null
+iptables -t nat -F 2>/dev/null
+ip6tables -F 2>/dev/null
+rm -f /etc/iptables/rules.v4 /etc/iptables/rules.v6 2>/dev/null
 
 # [SSH TUNNEL] Hentikan & bersihkan stack SSH (dropbear 2019 + ws-stunnel + udpgw)
 systemctl stop dropbear ws-stunnel 2>/dev/null
@@ -37,8 +55,12 @@ rm -f /etc/systemd/system/dropbear.service /etc/systemd/system/ws-stunnel.servic
 systemctl stop badvpn-udpgw@*.service 2>/dev/null
 systemctl disable badvpn-udpgw@*.service 2>/dev/null
 rm -f /etc/systemd/system/badvpn-udpgw@.service
-# Lepaskan kembali port 80 ke nginx/apache bila sebelumnya dipakai
-[[ -x /usr/sbin/nginx ]] && { systemctl enable nginx >/dev/null 2>&1; systemctl start nginx >/dev/null 2>&1; }
+# [FIX M-U3] Hanya start nginx bila memang aktif sebelum wibu ambil :80.
+# Sebelumnya selalu di-enable+start -> bind :80 dan mencuri port service user.
+if [[ -x /usr/sbin/nginx ]] && [[ -f /etc/wibutunnel/nginx_was_enabled ]]; then
+    systemctl enable nginx >/dev/null 2>&1
+    systemctl start nginx >/dev/null 2>&1
+fi
 # Bersihkan rule akunting iptables milik wibu
 if command -v iptables >/dev/null 2>&1; then
     iptables -t mangle -S 2>/dev/null | grep -o 'owner --uid-owner [0-9]*' | while read -r _ _ uid; do
@@ -101,7 +123,14 @@ systemctl daemon-reload
 rm -f /etc/logrotate.d/xray
 
 # [PATCH] Hapus binary hasil compile + source tree SSH stack (benar-bersih)
-rm -f /usr/sbin/dropbear /usr/sbin/badvpn-udpgw
+# [FIX] Hanya hapus binary wibu jika tidak baru saja direstore dari .orig
+# # (baris restore di atas jadi no-op jika binary distro dibuang lagi).
+if [[ -f /usr/sbin/dropbear.orig ]]; then
+    mv -f /usr/sbin/dropbear.orig /usr/sbin/dropbear
+else
+    rm -f /usr/sbin/dropbear
+fi
+rm -f /usr/sbin/badvpn-udpgw
 rm -rf /usr/local/src/dropbear-2019.78 /usr/local/src/dropbear-2019.78.tar.bz2 /usr/local/src/badvpn-src
 rm -f /var/log/wibutunnel-udpgw-build.log /var/log/wibu-backup.log
 # [PATCH] Reset state failed unit yang tersisa di systemd
@@ -113,7 +142,7 @@ sed -i '/^clear$/d; /^menu$/d' /root/.profile 2>/dev/null
 rm -f /root/domain 2>/dev/null
 
 # Uninstall paket bawaan (opsional)
-apt-get remove --purge -y haproxy vnstat jq >/dev/null 2>&1
+apt-get remove --purge -y haproxy >/dev/null 2>&1
 apt-get autoremove -y >/dev/null 2>&1
 
 # [PATCH] Hapus direktori config terakhir (tmp & sisa file)

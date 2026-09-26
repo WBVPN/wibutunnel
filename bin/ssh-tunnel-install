@@ -113,7 +113,13 @@ apt_selfheal() {
             [[ -n "$mad" ]] || continue
             dpkg --compare-versions "$inst" gt "$mad" 2>/dev/null || continue
             _winfo "  downgrade $pkg: $inst -> $mad"
-            apt-get install -y --allow-downgrades "$pkg=$mad" >/dev/null 2>&1
+            # [FIX M-T2] Jangan pernah downgrade lib inti: libc6/libssl/libpam/
+        # # systemd downgrade ke versi EOL merusak SSH/dropbear/systemd di VPS
+        # # produksi (fix-apt jadi bencana).
+        case "$pkg" in
+            libc6*|libssl*|libpam*|systemd*|libgnutls*|zlib1g*) continue ;;
+        esac
+        apt-get install -y --allow-downgrades "$pkg=$mad" >/dev/null 2>&1
         done
         return 0
     }
@@ -268,6 +274,11 @@ apt_selfheal() {
         return 1
     }
 
+    # [FIX M-T1] Hanya jalankan _heal_update (rm lists + download ulang puluhan
+    # MB) bila apt BENAR-BENAR sakit. Sebelumnya selalu dijalankan tanpa syarat
+    # -> setiap installer lambat & apt sempat dalam state kosong.
+    if _healthy; then rm -rf "$TMP" 2>/dev/null; return 0; fi
+
     _heal_update
     if _healthy; then rm -rf "$TMP" 2>/dev/null; return 0; fi
 
@@ -338,6 +349,14 @@ build_dropbear() {
             curl -fsSL --max-time 120 -o "$DB_TARBALL" "$m" && break
         done
         [[ -s "$DB_TARBALL" ]] || { err "gagal mengunduh source dropbear"; return 1; }
+        # [FIX] Verifikasi checksum: source ini di-compile jadi binary setuid-root.
+        # # Magic-byte bukan bukti keaslian (mirror kompromi / MITM = RCE root).
+        local db_want="525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4"
+        local db_got; db_got=$(sha256sum "$DB_TARBALL" 2>/dev/null | awk '{print $1}')
+        if [[ "$db_got" != "$db_want" ]]; then
+            err "CHECKSUM MISMATCH source dropbear! Dihapus (kemungkinan kompromi mirror)."
+            rm -f "$DB_TARBALL"; return 1
+        fi
         # validasi: harus arsip bzip2
         if ! file "$DB_TARBALL" 2>/dev/null | grep -qi "bzip2\|tar"; then
             err "source dropbear yang diunduh tidak valid (bukan tar.bz2)"; return 1
@@ -486,8 +505,36 @@ install_ws_stunnel() {
     command -v python3 >/dev/null || apt-get install -y -qq python3 >/dev/null 2>&1
     if [[ ! -x /usr/local/bin/ws-stunnel ]]; then
         info "mengunduh ws-stunnel..."
-        curl -fsSL --max-time 30 -o /usr/local/bin/ws-stunnel "${REPO_RAW}/bin/ws-stunnel" \
-            && chmod +x /usr/local/bin/ws-stunnel
+        # [FIX H14] Download + verifikasi checksum sebelum chmod +x root.
+        # Sebelumnya hanya cek `[[ -x ]]` setelah unduh — ELF apapun yang
+        # valid (termasuk trojan kalau repo/MITM diganti) langsung jalan root.
+        local wst_tmp="/etc/wibutunnel/tmp/ws-stunnel.dl"
+        mkdir -p /etc/wibutunnel/tmp
+        curl -fsSL --max-time 30 -o "$wst_tmp" "${REPO_RAW}/bin/ws-stunnel" || { err "gagal unduh ws-stunnel"; return 1; }
+        local sums_tmp="/etc/wibutunnel/tmp/SHA256SUMS.ssh"
+        local wst_ok=0
+        if curl -fsSL --max-time 20 -o "$sums_tmp" "${REPO_RAW}/SHA256SUMS" 2>/dev/null; then
+            local expected actual
+            expected=$(awk '$2 == "bin/ws-stunnel" {print $1}' "$sums_tmp" 2>/dev/null)
+            actual=$(sha256sum "$wst_tmp" 2>/dev/null | awk '{print $1}')
+            if [[ -n "$expected" && "$expected" == "$actual" ]]; then
+                wst_ok=1
+            else
+                err "CHECKSUM MISMATCH ws-stunnel! Tidak dipasang (kemungkinan kompromi repo)."
+                rm -f "$wst_tmp"
+                return 1
+            fi
+        else
+            # [FIX] Hard-fail, konsisten dgn build_dropbear: soft-fail berarti
+            # # penyerang cukup blokir URL SHA256SUMS untuk bypass supply-chain.
+            err "SHA256SUMS tidak bisa diunduh — ws-stunnel TIDAK dipasang (verifikasi wajib)."
+            rm -f "$wst_tmp"
+            return 1
+        fi
+        if [[ "$wst_ok" == "1" ]]; then
+            mv "$wst_tmp" /usr/local/bin/ws-stunnel \
+                && chmod +x /usr/local/bin/ws-stunnel
+        fi
     fi
     [[ -x /usr/local/bin/ws-stunnel ]] || { err "ws-stunnel tidak berhasil dipasang"; return 1; }
 
@@ -602,6 +649,9 @@ build_udpgw() {
         install -m 0755 "${UDPGW_SRC}/build/udpgw/badvpn-udpgw" /usr/sbin/badvpn-udpgw \
             && printf '%s' "$CFG_FLAGS" >"$MARK" \
             && ok "badvpn-udpgw di-compile & dipasang"
+        # [FIX M-T4] Bersihkan artifacts build (50-150MB limbah disk per build)
+        # # dan tarball sementara.
+        rm -rf "${UDPGW_SRC}/build" /tmp/badvpn-src.tar.gz 2>/dev/null
     else
         err "build badvpn-udpgw gagal (lihat $LOG)"
         err "--- 20 baris terakhir log ---"
@@ -667,6 +717,9 @@ free_ports() {
     local changed=0
     if ss -tlnp 2>/dev/null | grep -q ':80 .*nginx'; then
         info "nginx memegang port 80 -> dinonaktifkan (HAProxy yang akan merouting websocket 80)"
+        # [FIX] Tulis marker: free_ports jalan mandiri (menu [99]) tanpa
+        # # setup.sh -> uninstall.sh tak me-restore nginx tanpa marker ini.
+        systemctl is-enabled nginx >/dev/null 2>&1 && mkdir -p /etc/wibutunnel && touch /etc/wibutunnel/nginx_was_enabled
         systemctl stop nginx >/dev/null 2>&1; systemctl disable nginx >/dev/null 2>&1; changed=1
     fi
     if ss -tlnp 2>/dev/null | grep -q ':80 .*apache2'; then

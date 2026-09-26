@@ -105,17 +105,23 @@ add_ssh_menu() {
     if ssh_user_exists "$user"; then echo -e "${RED}Error: User sudah ada!${NC}"; read -p "Enter..." dummy; return; fi
 
     read -p "Masa Aktif (Hari)  : " masaaktif
-    if [[ "$masaaktif" =~ ^[0-9]+$ ]] && [ "$masaaktif" -gt 0 ]; then
+    # [FIX M-X2] Batas atas: input 9999999999 -> date overflow -> exp kosong
+    # -> akun Lifetime (bypass komersial).
+    if [[ "$masaaktif" =~ ^[0-9]+$ ]] && [ "$masaaktif" -gt 0 ] && [ "$masaaktif" -le 36500 ]; then
         exp_date=$(date -d "+${masaaktif} days" +"%Y-%m-%d %H:%M:%S")
-    else echo -e "${RED}Error: Angka tidak valid!${NC}"; read -p "Enter..." dummy; return; fi
+    else echo -e "${RED}Error: Angka tidak valid! (1-36500 hari)${NC}"; read -p "Enter..." dummy; return; fi
+    [[ -z "$exp_date" ]] && { echo -e "${RED}Error: tanggal expired gagal dihitung${NC}"; return; }
 
     read -p "Password (min 6)   : " pass
     [[ -n "$pass" && ${#pass} -ge 6 ]] || { echo -e "${RED}Error: Password minimal 6 karakter!${NC}"; read -p "Enter..." dummy; return; }
 
     read -p "Limit IP (0 = Bebas): " limit_ip
     read -p "Limit Kuota GB (0 = Unli): " limit_kuota
-    [[ -z "$limit_ip" ]] && limit_ip=0
-    [[ -z "$limit_kuota" ]] && limit_kuota=0
+    # [FIX L4] Validasi numerik: input "abc" tersimpan mentah ke DB -> konsumen
+    # downstream baca non-numerik sebagai 0 -> unlimited palsu.
+    [[ "$limit_ip" =~ ^[0-9]+$ ]] || limit_ip=0
+    [[ "$limit_kuota" =~ ^[0-9]+$ ]] || limit_kuota=0
+    (( limit_kuota < 8589934592 )) 2>/dev/null || limit_kuota=0
 
     if out=$(add_ssh_user "$user" "$pass" "$masaaktif" "$limit_ip" "$limit_kuota"); then
         echo -e "${GREEN}Berhasil! Akun SSH dibuat.${NC}"
@@ -128,7 +134,7 @@ add_ssh_menu() {
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         (
         PESAN="<b>SSH ACCOUNT CREATED</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>User</b> : <code>${user}</code>\n<b>Pass</b> : <code>${pass}</code>\n<b>Exp</b> : <code>${exp_date}</code>\n<b>Limit IP</b> : <code>${limit_ip}</code>\n<b>Kuota</b> : <code>${limit_kuota} GB</code>"
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
+        tg_curl -X POST sendMessage -F "chat_id=${CHAT_ID}" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
         ) &
     fi
 
@@ -160,7 +166,9 @@ trial_ssh_menu() {
     local trial_pass="$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 8)"
 
     local hari=1
+    # [FIX H4] cap trial harian: add_ssh_user tak cek exp kosong.
     [[ "$unit" == "d" ]] && hari="$val"
+    [[ "$hari" =~ ^[0-9]+$ && "$hari" -ge 1 && "$hari" -le 36500 ]] || hari=1
     if out=$(add_ssh_user "$trial_user" "$trial_pass" "$hari" 0 1); then
         local exp_sec; exp_sec=$(date -d "$exp_date" +%s)
         chage -E "$(date -d "@$exp_sec" +%Y-%m-%d)" -M $(( (exp_sec - $(date +%s)) / 86400 + 1 )) -I 0 "$trial_user" >/dev/null 2>&1
@@ -272,12 +280,11 @@ change_bw_ssh_menu() {
     [[ "$new_limit" =~ ^[0-9]+$ ]] || new_limit=0
     safe_sed_delete "$user" "$DB_BW"; echo "${user}:${new_limit}" >> "$DB_BW"
 
-    # [FIX] kuota dinaikkan (bukan 0) -> buka kunci QUOTA permanen bila ada
-    if [[ "$new_limit" != "0" ]]; then
-        lock_entry=$(db_lookup "$user" "$DB_LOCK")
-        if [[ -n "$lock_entry" && "$(echo "$lock_entry" | cut -d: -f4)" == "QUOTA" ]]; then
-            unlock_ssh_user "$user" >/dev/null 2>&1
-        fi
+    # [FIX H3] limit 0 = Unlimited juga harus membuka kunci QUOTA permanen
+    # # (sebelumnya guard != 0 mencegah persis itu -> tetap passwd -l selamanya).
+    lock_entry=$(db_lookup "$user" "$DB_LOCK")
+    if [[ -n "$lock_entry" && "$(echo "$lock_entry" | cut -d: -f4)" == "QUOTA" ]]; then
+        unlock_ssh_user "$user" >/dev/null 2>&1
     fi
     echo -e "\n ${GREEN}Limit Kuota ${user} => ${new_limit} GB${NC}"
     read -p "Tekan Enter..." dummy
