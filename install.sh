@@ -20,17 +20,24 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# [SECURITY] Token lisensi wajib. Jika piped (curl|bash), env var IZIN_TOKEN
-# tetap terbawa; jika dijalankan manual tanpa env, prompt input di sini.
-if [[ -z "${IZIN_TOKEN:-}" ]]; then
-    read -rp "Masukkan IZIN_TOKEN (dari admin): " IZIN_TOKEN
-    if [[ -z "$IZIN_TOKEN" ]]; then
-        echo "Error: IZIN_TOKEN kosong. Registrasi IP dulu, lalu ulangi."
-        echo "  export IZIN_TOKEN='token_anda'  lalu jalankan installer"
-        exit 1
-    fi
+# [SECURITY] Token lisensi wajib. Cara dapat token:
+#   1. Dari admin (registrasi IP via Telegram), atau
+#   2. Positional arg (RECOMMENDED untuk curl|bash):
+#        curl -sL .../install.sh | sudo bash -s -- 'TOKEN_ANDA'
+#   3. Env var (HANYA jika TANPA sudo, sudo strip env var):
+#        sudo IZIN_TOKEN='TOKEN' bash install.sh
+IZIN_TOKEN="${1:-${IZIN_TOKEN:-}}"
+if [[ -z "$IZIN_TOKEN" ]]; then
+    echo "Error: IZIN_TOKEN kosong."
+    echo ""
+    echo "Cara pakai yang benar:"
+    echo "  curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash -s -- 'TOKEN_ANDA'"
+    echo ""
+    echo "Atau download dulu:"
+    echo "  curl -sL -o install.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh"
+    echo "  sudo bash install.sh 'TOKEN_ANDA'"
+    exit 1
 fi
-export IZIN_TOKEN
 
 # Check OS (konsisten dengan setup.sh: Ubuntu atau Debian)
 source /etc/os-release 2>/dev/null || true
