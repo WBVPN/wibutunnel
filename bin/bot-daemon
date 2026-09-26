@@ -614,11 +614,10 @@ change_limit() {
         echo "${user}:${limit_bw}" >> /etc/wibutunnel/limit_bw.db
 
         # [FIX] kuota dinaikkan -> buka kunci QUOTA permanen bila ada
-        if [[ "$limit_bw" -ne 0 ]]; then
-            local locked; locked=$(db_lookup "$user" /etc/wibutunnel/locked_users.db)
-            if [[ -n "$locked" && "$(echo "$locked" | cut -d: -f4)" == "QUOTA" ]]; then
-                unlock_ssh_user "$user" >/dev/null 2>&1
-            fi
+        # [FIX R3] limit 0 = Unlimited juga harus unlock (konsisten dgn m-ssh:285).
+        local locked; locked=$(db_lookup "$user" /etc/wibutunnel/locked_users.db)
+        if [[ -n "$locked" && "$(echo "$locked" | cut -d: -f4)" == "QUOTA" ]]; then
+            unlock_ssh_user "$user" >/dev/null 2>&1
         fi
         local ip_str="Bebas"; [[ "$limit_ip" -ne 0 ]] && ip_str="${limit_ip} IP"
         local bw_str="Unlimited"; [[ "$limit_bw" -ne 0 ]] && bw_str="${limit_bw} GB"
@@ -644,11 +643,10 @@ change_limit() {
     # branch SSH di atas). Sebelumnya branch xray hanya update DB limit_bw,
     # tapi entry locked_users.db + routing 'blocked' tetap -> user terkunci
     # selamanya walau quota sudah dinaikkan (unlocker-wibu skip lock permanen).
-    if [[ "$limit_bw" -ne 0 ]]; then
-        local locked; locked=$(db_lookup "$user" /etc/wibutunnel/locked_users.db)
-        if [[ -n "$locked" && "$(echo "$locked" | cut -d: -f4)" == "QUOTA" ]]; then
-            /usr/local/bin/unlock-user "$user" MANUAL >/dev/null 2>&1
-        fi
+    # [FIX R3] limit 0 = Unlimited juga harus unlock (konsisten dgn m-vmess:557).
+    local locked; locked=$(db_lookup "$user" /etc/wibutunnel/locked_users.db)
+    if [[ -n "$locked" && "$(echo "$locked" | cut -d: -f4)" == "QUOTA" ]]; then
+        /usr/local/bin/unlock-user "$user" MANUAL >/dev/null 2>&1
     fi
 
     local ip_str="Bebas"; [[ "$limit_ip" -ne 0 ]] && ip_str="${limit_ip} IP"

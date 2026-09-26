@@ -495,7 +495,9 @@ renew_user() {
     # Unlock if account was blocked for expiry
     source /usr/local/bin/common.sh
     if db_has "$user" "$DB_LOCK"; then
-        lock_reason=$(grep "^${user}:" "$DB_LOCK" | cut -d: -f4)
+        # [FIX R3] db_lookup exact-field: grep prefix match ganda bila
+        # # duplicate entry / username bertitik (john.doe match johnXdoe).
+        lock_reason=$(db_lookup "$user" "$DB_LOCK" | cut -d: -f4)
         if [[ "$lock_reason" == "EXPIRED" ]]; then
             # Remove from routing block
             safe_jq_edit_args --arg u "$user" \
