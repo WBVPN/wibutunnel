@@ -42,6 +42,21 @@ get_random_quote() {
         '"Terkadang, hal terberat yang harus dilakukan adalah yang paling benar." - Edward Elric'
         '"Menjadi lemah tidak memalukan, memalukan itu jika kita diam saja." - Fuegoleon Vermillion'
         '"Jangan biarkan masa lalumu menentukan masa depanmu." - Kenshin Himura'
+        '"Jika kau kehilangan semangat, kau sudah kalah sebelum bertarung." - Monkey D. Luffy'
+        '"Orang yang tidak percaya pada diri sendiri tidak punya nilai untuk bermimpi." - Rock Lee'
+        '"Tidak ada yang mustahil jika kau berani mencoba." - Uzumaki Naruto'
+        '"Ketakutan bukanlah kelemahan, tapi cara kita menghadapinya yang menentukan." - All Might'
+        '"Kesempatan hanya datang pada mereka yang berani mengambil risiko." - Lelouch Lamperouge'
+        '"Kemenangan terbaik adalah ketika kau menang tanpa harus bertarung." - Sun Tzu (Kingdom)'
+        '"Percaya pada temanmu adalah kekuatan terbesar yang kau miliki." - Natsu Dragneel'
+        '"Jangan menyerah sebelum mencoba, karena di situlah keajaiban dimulai." - Deku'
+        '"Hidup adalah tentang pilihan, bukan kebetulan." - L Lawliet'
+        '"Kegelapan tidak akan pernah mengalahkan cahaya yang terus bersinar." - Asta'
+        '"Mimpi adalah kompas yang menunjukkan arah hidupmu." - Gon Freecss'
+        '"Jangan takut gagal, takutlah tidak pernah mencoba." - Hinata Shoyo'
+        '"Kekuatan tanpa kebijaksanaan hanyalah kehancuran." - Kakashi Hatake'
+        '"Masa depan milik mereka yang berani mengambil langkah pertama." - Senku Ishigami'
+        '"Jangan menilai seseorang dari masa lalunya, tapi dari siapa dia sekarang." - Thorfinn'
     )
     local rand=$((RANDOM % ${#quotes[@]}))
     echo "${quotes[$rand]}"
@@ -659,15 +674,15 @@ change_limit() {
 
 list_account() {
     local target_proto="$1"
-    local msg="━━━━━━━━━━━━━━━━━━━━\n <b>LIST AKUN ${target_proto}</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+    local msg="━━━━━━━━━━━━━━━━━━━━\n📋 <b>LIST AKUN ${target_proto}</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
 
     get_limits() {
         local u=$1
         local ip=$(db_lookup "$u" /etc/wibutunnel/limit_ip.db | cut -d: -f2)
         local bw=$(db_lookup "$u" /etc/wibutunnel/limit_bw.db | cut -d: -f2)
         [[ -z "$ip" || "$ip" == "0" ]] && ip="Bebas" || ip="${ip} IP"
-        [[ -z "$bw" || "$bw" == "0" ]] && bw="Unl" || bw="${bw} GB"
-        echo "IP: ${ip} | BW: ${bw}"
+        [[ -z "$bw" || "$bw" == "0" ]] && bw="Unlimited" || bw="${bw} GB"
+        echo "${ip}|${bw}"
     }
 
     if [[ "$target_proto" == "VLESS" ]]; then
@@ -675,43 +690,70 @@ list_account() {
         while IFS=":" read -r usr exp; do
             [[ -z "$usr" || "$usr" == dummy* ]] && continue
             local lmt=$(get_limits "$usr")
-            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})\n"
+            local ip_lmt=$(echo "$lmt" | cut -d'|' -f1)
+            local bw_lmt=$(echo "$lmt" | cut -d'|' -f2)
+            local exp_date=$(echo "$exp" | awk '{print $1}')
+            msg+="👤 <code>${usr}</code>\n"
+            msg+="   📅 Exp: ${exp_date}\n"
+            msg+="   🌐 IP: ${ip_lmt}\n"
+            msg+="   📊 BW: ${bw_lmt}\n\n"
             ((c++))
         done < /etc/xray/vless_exp.conf
-        [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
+        [[ "$c" -eq 0 ]] && msg+="<i>Tidak ada akun</i>\n\n"
     elif [[ "$target_proto" == "VMESS" ]]; then
         local c=0
         while IFS=":" read -r usr exp; do
             [[ -z "$usr" || "$usr" == dummy* ]] && continue
             local lmt=$(get_limits "$usr")
-            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})\n"
+            local ip_lmt=$(echo "$lmt" | cut -d'|' -f1)
+            local bw_lmt=$(echo "$lmt" | cut -d'|' -f2)
+            local exp_date=$(echo "$exp" | awk '{print $1}')
+            msg+="👤 <code>${usr}</code>\n"
+            msg+="   📅 Exp: ${exp_date}\n"
+            msg+="   🌐 IP: ${ip_lmt}\n"
+            msg+="   📊 BW: ${bw_lmt}\n\n"
             ((c++))
         done < /etc/xray/vmess_exp.conf
-        [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
+        [[ "$c" -eq 0 ]] && msg+="<i>Tidak ada akun</i>\n\n"
     elif [[ "$target_proto" == "TROJAN" ]]; then
         local c=0
         while IFS=":" read -r usr exp; do
             [[ -z "$usr" || "$usr" == dummy* ]] && continue
             local lmt=$(get_limits "$usr")
-            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})\n"
+            local ip_lmt=$(echo "$lmt" | cut -d'|' -f1)
+            local bw_lmt=$(echo "$lmt" | cut -d'|' -f2)
+            local exp_date=$(echo "$exp" | awk '{print $1}')
+            msg+="👤 <code>${usr}</code>\n"
+            msg+="   📅 Exp: ${exp_date}\n"
+            msg+="   🌐 IP: ${ip_lmt}\n"
+            msg+="   📊 BW: ${bw_lmt}\n\n"
             ((c++))
         done < /etc/xray/trojan_exp.conf
-        [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
+        [[ "$c" -eq 0 ]] && msg+="<i>Tidak ada akun</i>\n\n"
     elif [[ "$target_proto" == "SSH" ]]; then
         local c=0
         while read -r usr; do
             [[ -z "$usr" || "$usr" == dummy* ]] && continue
             local lmt=$(get_limits "$usr")
+            local ip_lmt=$(echo "$lmt" | cut -d'|' -f1)
+            local bw_lmt=$(echo "$lmt" | cut -d'|' -f2)
             local exp; exp=$(db_lookup "$usr" /etc/xray/ssh_exp.conf | cut -d: -f2- | awk '{print $1}')
             [[ -z "$exp" ]] && exp="Lifetime"
-            db_has "$usr" /etc/wibutunnel/locked_users.db && lmt="${lmt} | 🔒 LOCKED"
-            msg+=" ├ <code>${usr}</code> (Exp: ${exp} | ${lmt})\n"
+            local lock_status=""
+            db_has "$usr" /etc/wibutunnel/locked_users.db && lock_status="   🔒 Status: LOCKED\n"
+            msg+="👤 <code>${usr}</code>\n"
+            msg+="   📅 Exp: ${exp}\n"
+            msg+="   🌐 IP: ${ip_lmt}\n"
+            msg+="   📊 BW: ${bw_lmt}\n"
+            [[ -n "$lock_status" ]] && msg+="${lock_status}"
+            msg+="\n"
             ((c++))
         done < <(ssh_list_users 2>/dev/null)
-        [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
+        [[ "$c" -eq 0 ]] && msg+="<i>Tidak ada akun</i>\n\n"
     fi
 
-    msg+="\n━━━━━━━━━━━━━━━━━━━━"
+    msg+="━━━━━━━━━━━━━━━━━━━━\n"
+    msg+="<b>Total:</b> ${c} akun"
     kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
     send_msg "$msg" "$kb"
 }
@@ -762,7 +804,7 @@ backup_vps() {
         local msg_id=$(echo "$response" | jq -r '.result.message_id // empty')
 
         if [[ -n "$file_id" && -n "$msg_id" && "$msg_id" != "null" ]]; then
-            local new_caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${file_id}</code>\n\n🔐 <b>Password:</b> CHAT ID Anda")
+            local new_caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${file_id}</code>\n\n🔐 <b>Password:</b> <code>${CHAT_ID}</code>")
             tg_curl -X POST editMessageCaption \
                 -F "chat_id=${target_id}" \
                 -F "message_id=${msg_id}" \
