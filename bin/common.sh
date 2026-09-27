@@ -102,10 +102,8 @@ _xray_validate() {
     local f="$1"
     # [FIX M-B5] Validasi semantik oleh xray sendiri, bukan cuma struktur JSON.
     # jq menerima config yang ditolak xray (semantic) -> restart xray gagal
-    # -> SEMUA user VPN down. `xray test -config` mendeteksi yang jq tidak.
-    if [[ -x /usr/local/bin/xray ]]; then
-        /usr/local/bin/xray test -config "$f" >/dev/null 2>&1 || return 1
-    fi
+    # -> SEMUA user VPN down.
+    # ponytail: xray 1.8.24 no test command, only jq validation. Upgrade: use xray version with --test flag
     jq -e '
         type == "object"
         and (.inbounds | type == "array")
@@ -137,7 +135,7 @@ safe_jq_edit() {
         if jq "$filter" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             if _xray_validate "$tmp"; then
                 mv "$tmp" "$src"
-                chmod 600 "$src"
+                chmod 644 "$src"
             else
                 echo "[ERROR] hasil edit tidak valid (null padding/struktur rusak), config tidak diubah" >&2
                 rm -f "$tmp"
@@ -160,7 +158,7 @@ safe_jq_edit_args() {
         if jq "$@" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             if _xray_validate "$tmp"; then
                 mv "$tmp" "$src"
-                chmod 600 "$src"
+                chmod 644 "$src"
             else
                 echo "[ERROR] hasil edit tidak valid (null padding/struktur rusak), config tidak diubah" >&2
                 rm -f "$tmp"
@@ -383,20 +381,34 @@ ssh_get_pass() {
 
 # hitung sesi dropbear aktif per user (pgrep lebih akurat daripada utmp)
 ssh_session_count() {
-    local c
-    c=$(pgrep -fcu "$1" 2>/dev/null)
-    [[ "$c" =~ ^[0-9]+$ ]] || c=0
-    printf '%s' "$c"
+    local user="$1" count=0
+    # Get dropbear PIDs for this user from recent auth logs (last 60 min)
+    while read -r pid; do
+        [[ -n "$pid" && -d "/proc/$pid" ]] && ((count++))
+    done < <(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
+        grep "Password auth succeeded for '${user}'" | \
+        awk '{print $6}' | sed 's/[][]//g' | sort -u)
+    printf '%s' "$count"
 }
 
-# daftar IP sumber dari koneksi dropbear milik user (via ss + mapping pid)
+# daftar IP sumber dari koneksi dropbear milik user (via auth log + ss)
 ssh_active_ips() {
     local user="$1" pids out=""
-    pids=$(pgrep -u "$user" 2>/dev/null | paste -sd'|')
+    # Get active dropbear PIDs for this user
+    pids=$(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
+        grep "Password auth succeeded for '${user}'" | \
+        awk '{print $6}' | sed 's/[][]//g' | sort -u | \
+        while read -r pid; do [[ -d "/proc/$pid" ]] && echo "$pid"; done | paste -sd'|')
     [[ -z "$pids" ]] && return 0
+    # Extract source IPs from established connections (exclude 127.0.0.1)
     while read -r line; do
         out+="${line} "
-    done < <(ss -tnp state established 2>/dev/null | grep -E "pid=($pids)" | awk '{print $4}' | sed 's/:[0-9]*$//' | grep -v '^127.0.0.1$' | sort -u)
+    done < <(ss -tnp state established 2>/dev/null | \
+        grep -E "pid=($pids)" | \
+        awk '{print $5}' | \
+        sed 's/:[0-9]*$//' | \
+        grep -vE '^(127\.0\.0\.1|::1)$' | \
+        sort -u)
     printf '%s' "$out"
 }
 
