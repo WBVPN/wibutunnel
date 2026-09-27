@@ -394,10 +394,10 @@ ssh_session_count() {
 # daftar IP sumber dari koneksi dropbear milik user (via HAProxy active connections)
 ssh_active_ips() {
     local user="$1" out="" has_session=""
-    # Check if user has active dropbear session
+    # Check if user has active dropbear session (get most recent auth)
     has_session=$(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
         grep "Password auth succeeded for '${user}'" | \
-        awk '{print $6}' | sed 's/[][]//g' | head -1)
+        awk '{print $6}' | sed 's/[][]//g' | tail -1)
     
     # Verify PID still exists
     [[ -n "$has_session" && -d "/proc/$has_session" ]] || return 0
