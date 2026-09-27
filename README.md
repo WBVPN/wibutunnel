@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-4.0.2%20Kurumi-blue)
+![Version](https://img.shields.io/badge/version-4.0.3%20Kurumi-blue)
 ![License](https://img.shields.io/badge/license-Private-red)
 ![Platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-orange)
 ![Status](https://img.shields.io/badge/status-Production%20Ready-success)
@@ -223,7 +223,7 @@ Detail cara kerja lisensi & aturan token ada di seksi **🔑 Model Lisensi & Kea
 ## 🙏 Credits
 
 **Developer:** WBVPN Team  
-**Version:** 4.0.2 Kurumi  
+**Version:** 4.0.3 Kurumi  
 **Based on:** Xray-core, HAProxy, Dropbear  
 
 ### Technologies
@@ -258,7 +258,14 @@ Detail cara kerja lisensi & aturan token ada di seksi **🔑 Model Lisensi & Kea
 
 ## 🔄 Changelog
 
-### v4.0.2 Kurumi (Latest) — Security Patch
+### v4.0.3 Kurumi (Latest) — Menu & Bot Fixes
+- 🟢 Fix menu hang: `check_license()` bypass ke file lokal, ga curl GitHub tiap kali
+- 🟢 Fix menu exit loop: ganti `exec menu` jadi `continue` di invalid input
+- 🟢 Fix bot telegram: reset offset file, webhook triggered tapi ga proses update
+- 🟢 Remove duplicate menu auto-run dari `.profile` (sudah ada guard di `.bashrc`)
+- ✅ Semua fix committed & permanent di repo
+
+### v4.0.2 Kurumi — Security Patch
 - 🔴 Hapus hardcoded license token dari installer publik (sebelumnya terbaca siapa saja)
 - 🔴 Token lisensi via `Authorization` header, bukan URL (anti `ps` leak)
 - 🔴 Exit-code guard di 5 titik edit config bot (anti phantom user: akun di DB tapi tak di config / sebaliknya)
