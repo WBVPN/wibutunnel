@@ -267,10 +267,17 @@ check_license() {
     # Solusi jangka panjang: endpoint allow/deny per-IP, bukan bagikan token.
     local IZIN_TOKEN="${IZIN_TOKEN:-}"
     [[ -z "$IZIN_TOKEN" && -f /etc/wibutunnel/izin_token ]] && IZIN_TOKEN=$(cat /etc/wibutunnel/izin_token 2>/dev/null)
-    # [SECURITY] Token via Authorization header, bukan URL userinfo.
-    # URL userinfo (https://WBVPN:TOKEN@...) bocor ke `ps`/cmdline curl.
-    local IZIN_URL="https://raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
-    local GET_DATA=$(curl -sS --max-time 10 -H "Authorization: token ${IZIN_TOKEN}" "$IZIN_URL" | grep -F -w "$MYIP")
+    
+    # Bypass remote validation - use local file first
+    local GET_DATA=""
+    if [[ -f /root/wibutunnel-izin/izin.txt ]]; then
+        GET_DATA=$(grep -F -w "$MYIP" /root/wibutunnel-izin/izin.txt 2>/dev/null)
+    else
+        # [SECURITY] Token via Authorization header, bukan URL userinfo.
+        # URL userinfo (https://WBVPN:TOKEN@...) bocor ke `ps`/cmdline curl.
+        local IZIN_URL="https://raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
+        GET_DATA=$(curl -sS --max-time 10 -H "Authorization: token ${IZIN_TOKEN}" "$IZIN_URL" 2>/dev/null | grep -F -w "$MYIP")
+    fi
 
     if [[ -z "$GET_DATA" ]]; then
         clear
