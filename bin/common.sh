@@ -391,26 +391,26 @@ ssh_session_count() {
     printf '%s' "$count"
 }
 
-# daftar IP sumber dari koneksi dropbear milik user (via HAProxy logs)
+# daftar IP sumber dari koneksi dropbear milik user (via HAProxy active connections)
 ssh_active_ips() {
-    local user="$1" pids out="" active_time
-    # Get active dropbear PIDs for this user from auth logs
-    pids=$(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
+    local user="$1" out="" has_session=""
+    # Check if user has active dropbear session
+    has_session=$(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
         grep "Password auth succeeded for '${user}'" | \
-        awk '{print $6}' | sed 's/[][]//g' | sort -u | \
-        while read -r pid; do [[ -d "/proc/$pid" ]] && echo "$pid"; done | paste -sd'|')
-    [[ -z "$pids" ]] && return 0
+        awk '{print $6}' | sed 's/[][]//g' | head -1)
     
-    # Get auth timestamp to correlate HAProxy logs
-    active_time=$(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
-        grep "Password auth succeeded for '${user}'" | tail -1 | awk '{print $1, $2, $3}')
+    # Verify PID still exists
+    [[ -n "$has_session" && -d "/proc/$has_session" ]] || return 0
     
-    # Extract real client IPs from HAProxy logs (column 6 = client_ip:port)
+    # For active sessions, get all client IPs from HAProxy SSL connections
+    # (HAProxy only logs on close, so use ss for live sessions)
     while read -r line; do
         out+="${line} "
-    done < <(journalctl -u haproxy --since "${active_time:-60 minutes ago}" --no-pager 2>/dev/null | \
-        grep "ssh_dropbear/dropbear" | \
-        awk '{print $6}' | \
+    done < <(ss -tnp 2>/dev/null | \
+        grep "haproxy" | \
+        grep ":443" | \
+        grep ESTAB | \
+        awk '{print $5}' | \
         sed 's/:[0-9]*$//' | \
         grep -vE '^(127\.0\.0\.1|::1)$' | \
         sort -u)
