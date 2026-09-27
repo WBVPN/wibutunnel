@@ -391,21 +391,26 @@ ssh_session_count() {
     printf '%s' "$count"
 }
 
-# daftar IP sumber dari koneksi dropbear milik user (via auth log + ss)
+# daftar IP sumber dari koneksi dropbear milik user (via HAProxy logs)
 ssh_active_ips() {
-    local user="$1" pids out=""
-    # Get active dropbear PIDs for this user
+    local user="$1" pids out="" active_time
+    # Get active dropbear PIDs for this user from auth logs
     pids=$(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
         grep "Password auth succeeded for '${user}'" | \
         awk '{print $6}' | sed 's/[][]//g' | sort -u | \
         while read -r pid; do [[ -d "/proc/$pid" ]] && echo "$pid"; done | paste -sd'|')
     [[ -z "$pids" ]] && return 0
-    # Extract source IPs from established connections (exclude 127.0.0.1)
+    
+    # Get auth timestamp to correlate HAProxy logs
+    active_time=$(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
+        grep "Password auth succeeded for '${user}'" | tail -1 | awk '{print $1, $2, $3}')
+    
+    # Extract real client IPs from HAProxy logs (column 6 = client_ip:port)
     while read -r line; do
         out+="${line} "
-    done < <(ss -tnp state established 2>/dev/null | \
-        grep -E "pid=($pids)" | \
-        awk '{print $5}' | \
+    done < <(journalctl -u haproxy --since "${active_time:-60 minutes ago}" --no-pager 2>/dev/null | \
+        grep "ssh_dropbear/dropbear" | \
+        awk '{print $6}' | \
         sed 's/:[0-9]*$//' | \
         grep -vE '^(127\.0\.0\.1|::1)$' | \
         sort -u)
