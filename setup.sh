@@ -1643,9 +1643,8 @@ fi
 
 dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
 
-if ! grep -q "menu" /root/.profile; then
-    echo -e 'clear\nmenu' >> /root/.profile
-fi
+# [REMOVED] menu auto-run via .profile - already handled by .bashrc with MENU_RAN guard
+# Duplicate auto-run caused menu to appear twice on exit
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
