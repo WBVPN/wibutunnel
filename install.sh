@@ -1,15 +1,14 @@
 #!/bin/bash
-# Wibutunnel Quick Installer
+# Wibutunnel Quick Installer v4.0.3
 # Usage:
-#   export IZIN_TOKEN='token_dari_admin'
 #   curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash
 #
-# Token lisensi WAJIB. Dapatkan dari admin (registrasi IP via Telegram).
-# Jangan pernah commit token ke repo manapun.
+# Syarat: IP VPS terdaftar di /root/wibutunnel-izin/izin.txt
+# Clone repo izin dulu: git clone https://github.com/WBVPN/wibutunnel-izin.git /root/wibutunnel-izin
 
 echo "============================================"
 echo "   Wibutunnel VPN Management System"
-echo "   Quick Installer v4.0.2 Kurumi"
+echo "   Quick Installer v4.0.3 Kurumi"
 echo "============================================"
 echo ""
 
@@ -20,28 +19,6 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# [SECURITY] Token lisensi wajib. Cara dapat token:
-#   1. Dari admin (registrasi IP via Telegram), atau
-#   2. Positional arg (RECOMMENDED untuk curl|bash):
-#        curl -sL .../install.sh | sudo bash -s -- 'TOKEN_ANDA'
-#   3. Env var (HANYA jika TANPA sudo, sudo strip env var):
-#        sudo IZIN_TOKEN='TOKEN' bash install.sh
-# [FIX H1] Token WAJIB di-export agar setup.sh (child process) menerimanya.
-# Tanpa export, token dari positional arg hanya jadi variabel shell lokal dan
-# setup.sh keluar dengan "IZIN_TOKEN environment variable required".
-export IZIN_TOKEN="${1:-${IZIN_TOKEN:-}}"
-if [[ -z "$IZIN_TOKEN" ]]; then
-    echo "Error: IZIN_TOKEN kosong."
-    echo ""
-    echo "Cara pakai yang benar:"
-    echo "  curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash -s -- 'TOKEN_ANDA'"
-    echo ""
-    echo "Atau download dulu:"
-    echo "  curl -sL -o install.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh"
-    echo "  sudo bash install.sh 'TOKEN_ANDA'"
-    exit 1
-fi
-
 # Check OS (konsisten dengan setup.sh: Ubuntu atau Debian)
 source /etc/os-release 2>/dev/null || true
 if [[ "${ID:-}" != "ubuntu" && "${ID:-}" != "debian" ]]; then
@@ -49,13 +26,29 @@ if [[ "${ID:-}" != "ubuntu" && "${ID:-}" != "debian" ]]; then
     exit 1
 fi
 
-# Clone / update repo
+# Clone / update repo wibutunnel-izin (license check)
+echo "[1/3] Cek repo lisensi..."
+if [[ ! -d /root/wibutunnel-izin/.git ]]; then
+    echo "Clone repo lisensi..."
+    git clone https://github.com/WBVPN/wibutunnel-izin.git /root/wibutunnel-izin || {
+        echo "Error: Gagal clone repo wibutunnel-izin. Cek koneksi/akses GitHub."
+        exit 1
+    }
+else
+    echo "Update repo lisensi..."
+    cd /root/wibutunnel-izin && git pull --ff-only 2>/dev/null || true
+fi
+
+if [[ ! -f /root/wibutunnel-izin/izin.txt ]]; then
+    echo "Error: /root/wibutunnel-izin/izin.txt tidak ditemukan setelah clone."
+    exit 1
+fi
+
+# Clone / update repo utama
 INSTALL_DIR="/root/wibutunnel"
-echo "[1/2] ${INSTALL_DIR} bersedia, dapatkan source terbaru..."
+echo "[2/3] ${INSTALL_DIR} - dapatkan source terbaru..."
 cd /root || exit 1
 if [[ -d "wibutunnel/.git" ]]; then
-    # [FIX H2] Exit code git pull diperiksa — sebelumnya tertelan, installer
-    # lanjut di clone lama/usang tanpa memberi tahu pengguna.
     cd wibutunnel && git pull --ff-only || { echo "Error: git pull gagal. Cek koneksi/repo state."; exit 1; }
 else
     rm -rf wibutunnel
@@ -63,8 +56,8 @@ else
     cd wibutunnel || exit 1
 fi
 
-# Run installer utama (IZIN_TOKEN sudah di-export, setup.sh terima)
-echo "[2/2] Menjalankan installer utama..."
+# Run installer utama
+echo "[3/3] Menjalankan installer utama..."
 echo ""
 chmod +x setup.sh
 ./setup.sh
