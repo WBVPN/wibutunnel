@@ -69,10 +69,14 @@ Domain : pointed to server IP (untuk SSL)
 ### Quick Install (one-liner)
 
 ```bash
-curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash -s -- 'TOKEN_DARI_ADMIN'
+curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash -s -- 'TOKEN_LISENSI_ANDA'
 ```
 
-> Ganti `TOKEN_DARI_ADMIN` dengan token lisensi (dapat dari admin setelah registrasi IP).
+> **Cara dapat token lisensi:**
+> 1. Hubungi admin via Telegram: [@wibuvpn](https://t.me/wibuvpn) atau WhatsApp: 087757315408
+> 2. Berikan IP publik VPS kamu (installer akan deteksi otomatis)
+> 3. Admin registrasi IP → dapat token lisensi
+> 4. Ganti `TOKEN_LISENSI_ANDA` dengan token yang diberikan admin
 
 ### Manual Install
 
