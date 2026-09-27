@@ -29,7 +29,7 @@ select_user() {
     local ACTION_TITLE=$1
     local DISPLAY_TYPE=$2
     local SHOW_LOCKED=$3
-    mapfile -t raw_user_array < <(jq -r '.inbounds[] | select(.protocol == "trojan") | .settings.clients[].email' "$CONFIG_FILE" | grep -v "dummy" | sort)
+    mapfile -t raw_user_array < <(jq -r '.inbounds[] | select(.protocol == "trojan") | .settings.clients[].email' "$CONFIG_FILE" | grep -v "dummy" | sort -u)
 
     declare -a user_array
     for u in "${raw_user_array[@]}"; do
