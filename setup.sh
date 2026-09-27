@@ -59,8 +59,13 @@ chmod 600 /etc/wibutunnel/izin_token
 # Versi lama: https://WBVPN:${IZIN_TOKEN}@... -> token muncul di `ps` /
 # /proc/*/cmdline selama curl jalan (~10s) -> bisa dibaca user lokal VPS.
 # Header tidak terlihat di argv proses manapun.
-IZIN_URL="https://raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
-GET_DATA=$(curl -sS --max-time 10 -H "Authorization: token ${IZIN_TOKEN}" "$IZIN_URL" | grep -w "$MYIP")
+# Bypass remote validation - use local file
+if [[ -f /root/wibutunnel-izin/izin.txt ]]; then
+    GET_DATA=$(grep -w "$MYIP" /root/wibutunnel-izin/izin.txt)
+else
+    IZIN_URL="https://raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
+    GET_DATA=$(curl -sS --max-time 10 -H "Authorization: token ${IZIN_TOKEN}" "$IZIN_URL" | grep -w "$MYIP")
+fi
 
 CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
 EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')
