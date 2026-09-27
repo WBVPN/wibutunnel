@@ -674,14 +674,14 @@ change_limit() {
 
 list_account() {
     local target_proto="$1"
-    local msg="━━━━━━━━━━━━━━━━━━━━\n📋 <b>LIST AKUN ${target_proto}</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    local msg="<b>LIST AKUN ${target_proto}</b>\n\n"
 
     get_limits() {
         local u=$1
         local ip=$(db_lookup "$u" /etc/wibutunnel/limit_ip.db | cut -d: -f2)
         local bw=$(db_lookup "$u" /etc/wibutunnel/limit_bw.db | cut -d: -f2)
-        [[ -z "$ip" || "$ip" == "0" ]] && ip="Bebas" || ip="${ip} IP"
-        [[ -z "$bw" || "$bw" == "0" ]] && bw="Unlimited" || bw="${bw} GB"
+        [[ -z "$ip" || "$ip" == "0" ]] && ip="∞" || ip="${ip}"
+        [[ -z "$bw" || "$bw" == "0" ]] && bw="∞" || bw="${bw}GB"
         echo "${ip}|${bw}"
     }
 
@@ -693,13 +693,10 @@ list_account() {
             local ip_lmt=$(echo "$lmt" | cut -d'|' -f1)
             local bw_lmt=$(echo "$lmt" | cut -d'|' -f2)
             local exp_date=$(echo "$exp" | awk '{print $1}')
-            msg+="👤 <code>${usr}</code>\n"
-            msg+="   📅 Exp: ${exp_date}\n"
-            msg+="   🌐 IP: ${ip_lmt}\n"
-            msg+="   📊 BW: ${bw_lmt}\n\n"
+            msg+="<code>${usr}</code> | ${exp_date} | IP:${ip_lmt} BW:${bw_lmt}\n"
             ((c++))
         done < /etc/xray/vless_exp.conf
-        [[ "$c" -eq 0 ]] && msg+="<i>Tidak ada akun</i>\n\n"
+        [[ "$c" -eq 0 ]] && msg+="Tidak ada akun\n"
     elif [[ "$target_proto" == "VMESS" ]]; then
         local c=0
         while IFS=":" read -r usr exp; do
@@ -708,13 +705,10 @@ list_account() {
             local ip_lmt=$(echo "$lmt" | cut -d'|' -f1)
             local bw_lmt=$(echo "$lmt" | cut -d'|' -f2)
             local exp_date=$(echo "$exp" | awk '{print $1}')
-            msg+="👤 <code>${usr}</code>\n"
-            msg+="   📅 Exp: ${exp_date}\n"
-            msg+="   🌐 IP: ${ip_lmt}\n"
-            msg+="   📊 BW: ${bw_lmt}\n\n"
+            msg+="<code>${usr}</code> | ${exp_date} | IP:${ip_lmt} BW:${bw_lmt}\n"
             ((c++))
         done < /etc/xray/vmess_exp.conf
-        [[ "$c" -eq 0 ]] && msg+="<i>Tidak ada akun</i>\n\n"
+        [[ "$c" -eq 0 ]] && msg+="Tidak ada akun\n"
     elif [[ "$target_proto" == "TROJAN" ]]; then
         local c=0
         while IFS=":" read -r usr exp; do
@@ -723,13 +717,10 @@ list_account() {
             local ip_lmt=$(echo "$lmt" | cut -d'|' -f1)
             local bw_lmt=$(echo "$lmt" | cut -d'|' -f2)
             local exp_date=$(echo "$exp" | awk '{print $1}')
-            msg+="👤 <code>${usr}</code>\n"
-            msg+="   📅 Exp: ${exp_date}\n"
-            msg+="   🌐 IP: ${ip_lmt}\n"
-            msg+="   📊 BW: ${bw_lmt}\n\n"
+            msg+="<code>${usr}</code> | ${exp_date} | IP:${ip_lmt} BW:${bw_lmt}\n"
             ((c++))
         done < /etc/xray/trojan_exp.conf
-        [[ "$c" -eq 0 ]] && msg+="<i>Tidak ada akun</i>\n\n"
+        [[ "$c" -eq 0 ]] && msg+="Tidak ada akun\n"
     elif [[ "$target_proto" == "SSH" ]]; then
         local c=0
         while read -r usr; do
@@ -740,21 +731,15 @@ list_account() {
             local exp; exp=$(db_lookup "$usr" /etc/xray/ssh_exp.conf | cut -d: -f2- | awk '{print $1}')
             [[ -z "$exp" ]] && exp="Lifetime"
             local lock_status=""
-            db_has "$usr" /etc/wibutunnel/locked_users.db && lock_status="   🔒 Status: LOCKED\n"
-            msg+="👤 <code>${usr}</code>\n"
-            msg+="   📅 Exp: ${exp}\n"
-            msg+="   🌐 IP: ${ip_lmt}\n"
-            msg+="   📊 BW: ${bw_lmt}\n"
-            [[ -n "$lock_status" ]] && msg+="${lock_status}"
-            msg+="\n"
+            db_has "$usr" /etc/wibutunnel/locked_users.db && lock_status=" [LOCKED]"
+            msg+="<code>${usr}</code> | ${exp} | IP:${ip_lmt} BW:${bw_lmt}${lock_status}\n"
             ((c++))
         done < <(ssh_list_users 2>/dev/null)
-        [[ "$c" -eq 0 ]] && msg+="<i>Tidak ada akun</i>\n\n"
+        [[ "$c" -eq 0 ]] && msg+="Tidak ada akun\n"
     fi
 
-    msg+="━━━━━━━━━━━━━━━━━━━━\n"
-    msg+="<b>Total:</b> ${c} akun"
-    kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
+    msg+="\nTotal: ${c} akun"
+    kb='{"inline_keyboard":[[{"text":"🔙 Back","callback_data":"menu_'"${target_proto,,}"'"}]]}'
     send_msg "$msg" "$kb"
 }
 
