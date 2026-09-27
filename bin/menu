@@ -93,6 +93,6 @@ while true; do
         5) exec m-setting ;;
         6) exec m-backup ;;
         0) clear; exit ;;
-        *) echo -e "${RED}Pilihan tidak valid!${NC}"; sleep 1; exec menu ;;
+        *) echo -e "${RED}Pilihan tidak valid!${NC}"; sleep 1; clear; exec menu ;;
     esac
 done
