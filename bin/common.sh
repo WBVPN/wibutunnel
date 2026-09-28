@@ -693,3 +693,14 @@ tg_curl() {
 url = "https://api.telegram.org/bot${BOT_TOKEN}/${method}"
 TGCONF
 }
+
+# [FIX CRITICAL] Atomic lock DB write dengan flock
+# Usage: lock_db_append "user:now:unlock:reason" "$DB_LOCK"
+lock_db_append() {
+    local content="$1" db_file="$2"
+    local lock_file="${db_file}.lock"
+    exec 203>"$lock_file"
+    flock -x 203 || return 1
+    echo "$content" >> "$db_file"
+    flock -u 203
+}

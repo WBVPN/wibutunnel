@@ -133,7 +133,7 @@ while read -r line; do
             elif db_has "$user" /etc/xray/trojan_exp.conf; then proto="TROJAN"; fi
 
             now=$(date +%s)
-            echo "${user}:${now}:0:QUOTA" >> "$DB_LOCK"
+            lock_db_append "${user}:${now}:0:QUOTA" "$DB_LOCK"
 
             if ! is_xray_user "$user" && ssh_user_exists "$user" 2>/dev/null; then
                 # akun SSH: kunci di level sistem (passwd -l) + putus sesi

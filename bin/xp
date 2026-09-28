@@ -65,7 +65,9 @@ process_expired() {
 
         [[ -z "$exp_date" || "$exp_date" == "Lifetime" || "$user" == *"dummy"* ]] && { NEW_EXP_CONTENT+="${line}\n"; continue; }
 
-        if [[ ${#exp_date} -eq 10 ]]; then exp_date="${exp_date} 00:00:00"; fi
+        # [FIX CRITICAL] Date-only expiry should end at 23:59:59, not 00:00:00
+        # (users lose ~12 hours per renewal with midnight padding)
+        if [[ ${#exp_date} -eq 10 ]]; then exp_date="${exp_date} 23:59:59"; fi
         exp_sec=$(date -d "$exp_date" +%s 2>/dev/null)
         [[ -z "$exp_sec" ]] && { NEW_EXP_CONTENT+="${line}\n"; continue; }
 

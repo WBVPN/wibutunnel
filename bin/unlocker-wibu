@@ -35,6 +35,22 @@ while read -r line; do
 
     # unlock_time 0 = permanen (kuota habis / lock manual) -> skip
     [[ "$unlock_time" != "0" && "$now" -ge "$unlock_time" ]] || continue
+    
+    # [FIX CRITICAL] Check if user expired before unlocking
+    # (prevent expired users regaining access during temporary lock expiry)
+    if is_xray_user "$user"; then
+        for f in $XRAY_EXPS; do
+            exp_date=$(db_lookup "$user" "$f" 2>/dev/null | cut -d: -f2-)
+            if [[ -n "$exp_date" && "$exp_date" != "Lifetime" ]]; then
+                # Pad date-only to 23:59:59 for comparison
+                [[ ${#exp_date} -eq 10 ]] && exp_date="${exp_date} 23:59:59"
+                exp_sec=$(date -d "$exp_date" +%s 2>/dev/null)
+                if [[ -n "$exp_sec" && "$now" -ge "$exp_sec" ]]; then
+                    continue 2  # Skip unlock, user expired
+                fi
+            fi
+        done
+    fi
 
     if is_xray_user "$user"; then
         # klien xray: lepas dari routing blocked

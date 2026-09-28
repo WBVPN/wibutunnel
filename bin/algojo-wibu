@@ -90,15 +90,16 @@ mv "$STATE_TMP" "$IP_STATE" 2>/dev/null
 # ==========================================
 # Hitung jumlah IP per user & tentukan pelanggar (dengan grace period)
 # ==========================================
-declare -A IP_COUNT IP_NEWEST
+declare -A IP_COUNT IP_OLDEST
 if [[ -n "$ONLINE_PAIRS" ]]; then
     while read -r u ip; do
         [[ -z "$u" || -z "$ip" ]] && continue
         IP_COUNT["$u"]=$(( ${IP_COUNT["$u"]:-0} + 1 ))
         ts=$(awk -F: -v u="$u" -v i="$ip" '$1==u && $2==i{print $3; exit}' "$IP_STATE")
         [[ -z "$ts" ]] && ts="$NOW"
-        if [[ -z "${IP_NEWEST[$u]}" || "$ts" -gt "${IP_NEWEST[$u]}" ]]; then
-            IP_NEWEST["$u"]="$ts"
+        # [FIX CRITICAL] Track OLDEST timestamp (first seen) for grace period
+        if [[ -z "${IP_OLDEST[$u]}" || "$ts" -lt "${IP_OLDEST[$u]}" ]]; then
+            IP_OLDEST["$u"]="$ts"
         fi
     done <<< "$ONLINE_PAIRS"
 fi
@@ -112,14 +113,9 @@ for email in "${!IP_COUNT[@]}"; do
     [[ "$max_ip" =~ ^[0-9]+$ ]] || continue
     (( ${IP_COUNT["$email"]} > max_ip )) || continue
 
-    # GRACE PERIOD: multi-IP baru dianggap sharing kalau sudah bertahan
-    # lebih dari $GRACE detik. Handover singkat tidak dihitung.
-    # [FIX K1] grace HARUS berlaku di kedua mode deteksi (live ss maupun
-    # fallback window log). Sebelumnya grace hanya dicek saat USE_LIVE=1 -
-    # padahal saat ss tidak tersedia / sedang nol koneksi, script jatuh ke
-    # fallback window 3 menit TANPA grace -> user normal yg baru handover
-    # WiFi langsung dikunci palsu.
-    overlap=$(( NOW - ${IP_NEWEST["$email"]:-$NOW} ))
+    # [FIX CRITICAL] Grace period: NOW - oldest_timestamp >= GRACE
+    # (oldest = first seen, duration multi-IP active)
+    overlap=$(( NOW - ${IP_OLDEST["$email"]:-$NOW} ))
     (( overlap >= GRACE )) || continue
 
     if ! db_has "$email" "$DB_LOCK"; then
@@ -130,7 +126,7 @@ for email in "${!IP_COUNT[@]}"; do
 
         now=$(date +%s)
         unlock_time=$((now + (LOCK_DURATION * 60)))
-        echo "${email}:${now}:${unlock_time}:IP_LIMIT" >> "$DB_LOCK"
+        lock_db_append "${email}:${now}:${unlock_time}:IP_LIMIT" "$DB_LOCK"
 
         USERS_TO_LOCK+=("$email")
 
@@ -173,7 +169,7 @@ while read -r ssh_user; do
 
     now=$(date +%s)
     unlock_time=$((now + (LOCK_DURATION * 60)))
-    echo "${ssh_user}:${now}:${unlock_time}:IP_LIMIT" >> "$DB_LOCK"
+    lock_db_append "${ssh_user}:${now}:${unlock_time}:IP_LIMIT" "$DB_LOCK"
     pkill -u "$ssh_user" 2>/dev/null
 
     USERS_TO_LOCK+=("$ssh_user")
