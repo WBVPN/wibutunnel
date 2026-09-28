@@ -241,7 +241,10 @@ Detail cara kerja lisensi & aturan token ada di seksi **🔑 Model Lisensi & Kea
 
 ### Cara lisensi bekerja
 1. Daftar IP pelanggan disimpan di repo **private** `WBVPN/wibutunnel-izin` (file `izin.txt`).
-2. Format baris: `IP_PUBLIK NAMA EXPIRY IP_PUBLIK` (nama **tanpa spasi** — pakai `_` atau `-`).
+2. Format baris: `IP | CLIENT | EXP` (contoh: `103.200.216.142 | nm_priasawit | LIFETIME`).
+   - `IP`: IP publik VPS
+   - `CLIENT`: nama client tanpa spasi (gunakan `_` atau `-`)
+   - `EXP`: tanggal `YYYY-MM-DD` atau `LIFETIME`
 3. Installer & menu membaca daftar itu pakai fine-grained PAT (read-only, scoped ke 1 repo).
 4. VPS cocokkan IP publiknya; kalau tak terdaftar/expired → akses ditolak.
 
