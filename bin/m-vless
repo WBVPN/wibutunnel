@@ -80,7 +80,18 @@ add_user() {
     read -p "Masukkan Nama User : " user
     [[ -z "$user" ]] && return
     sanitize_user "$user" || { echo -e "${RED}Error: Karakter tidak valid! Hanya a-zA-Z0-9._@-${NC}"; read -p "Enter..." dummy; return; }
-    if user_json_exists "$user"; then echo -e "${RED}Error: User sudah ada!${NC}"; read -p "Enter..." dummy; return; fi
+    
+    # [FIX] flock untuk prevent TOCTOU race
+    local lock_file="/etc/wibutunnel/tmp/vless_user.lock"
+    exec 202>"$lock_file"
+    flock -x 202 || { echo -e "${RED}Lock failed${NC}"; return 1; }
+    
+    if user_json_exists "$user"; then
+        flock -u 202
+        echo -e "${RED}Error: User sudah ada!${NC}"
+        read -p "Enter..." dummy
+        return
+    fi
 
     read -p "Masa Aktif (Hari)  : " masaaktif
     if [[ "$masaaktif" =~ ^[0-9]+$ ]] && [ "$masaaktif" -gt 0 ] && [ "$masaaktif" -le 36500 ]; then

@@ -95,9 +95,6 @@ record_trial() {
     flock -x 201 || return 1
     echo "${caller_ip}:${username}:$(date +%s)" >> "$trial_db"
     flock -u 201
-    local trial_db="/etc/wibutunnel/tmp/trial_limits.db"
-    
-    echo "${caller_ip}:${username}:$(date +%s)" >> "$trial_db"
 }
 if [[ -z "$MYIP" ]]; then
     echo -e "${RED}[WARNING] Gagal mendapatkan IP publik. Periksa koneksi internet.${NC}" >&2
