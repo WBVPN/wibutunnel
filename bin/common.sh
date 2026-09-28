@@ -287,8 +287,8 @@ check_license() {
         exit 1
     fi
 
-    export CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}')
-    export EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}')
+    export CLIENT_NAME=$(echo "$GET_DATA" | awk -F '|' '{print $2}' | tr -d '\r' | tr -d ' ')
+    export EXP_DATE=$(echo "$GET_DATA" | awk -F '|' '{print $3}' | tr -d '\r' | tr -d ' ')
 
     # [SECURITY] Cek kadaluarsa: "lifetime" & format tak dikenal dianggap aktif.
     if license_expired "$EXP_DATE"; then

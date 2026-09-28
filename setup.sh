@@ -66,9 +66,9 @@ else
     GET_DATA=$(curl -sS --max-time 10 -H "Authorization: token ${IZIN_TOKEN}" "$IZIN_URL" | grep -w "$MYIP")
 fi
 
-CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
-EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')
-REGISTERED_IP=$(echo "$GET_DATA" | awk '{print $4}' | tr -d '\r' | tr -d ' ')
+REGISTERED_IP=$(echo "$GET_DATA" | awk -F '|' '{print $1}' | tr -d '\r' | tr -d ' ')
+CLIENT_NAME=$(echo "$GET_DATA" | awk -F '|' '{print $2}' | tr -d '\r' | tr -d ' ')
+EXP_DATE=$(echo "$GET_DATA" | awk -F '|' '{print $3}' | tr -d '\r' | tr -d ' ')
 
 if [[ "$MYIP" == "$REGISTERED_IP" ]]; then
     if [[ "${EXP_DATE,,}" != "lifetime" ]]; then
