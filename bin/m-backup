@@ -174,8 +174,9 @@ do_backup() {
         fi
     else
         echo -e "${RED}[!] Gagal mengirim ke Telegram. Cek koneksi atau konfigurasi Bot.${NC}"
+        echo -e "${YELLOW}[!] Backup disimpan lokal: $BACKUP_FILE${NC}"
+        # [FIX CRITICAL] Don't delete backup when Telegram upload fails
     fi
-    rm -f "$BACKUP_FILE"
     echo ""; read -p "Tekan Enter..." dummy
 }
 
@@ -229,6 +230,14 @@ do_restore() {
 
     apt-get install -y unzip >/dev/null 2>&1
     mkdir -p "${BACKUP_DIR}/restore-tmp"
+
+    # [FIX CRITICAL] Validate zip entries for path traversal before extraction
+    if unzip -l "${BACKUP_DIR}/restore.zip" 2>/dev/null | grep -qE '(\.\./|^/)'; then
+        echo -e "${RED}[!] SECURITY: Backup contains path traversal entries. Aborting.${NC}"
+        rm -rf "${BACKUP_DIR}/restore.zip"
+        read -p "Tekan Enter..." dummy
+        return 1
+    fi
 
     unzip -P "$RESTORE_PASS_NOW" -o "${BACKUP_DIR}/restore.zip" -d "${BACKUP_DIR}/restore-tmp" >/dev/null 2>&1 || {
         unzip -o "${BACKUP_DIR}/restore.zip" -d "${BACKUP_DIR}/restore-tmp" >/dev/null 2>&1
