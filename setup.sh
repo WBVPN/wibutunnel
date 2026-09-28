@@ -1643,8 +1643,10 @@ fi
 
 dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
 
-# [REMOVED] menu auto-run via .profile - already handled by .bashrc with MENU_RAN guard
-# Duplicate auto-run caused menu to appear twice on exit
+# Install menu auto-run to bashrc
+if ! grep -q "MENU_RAN" /root/.bashrc 2>/dev/null; then
+    cat setup/.bashrc_menu >> /root/.bashrc
+fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
