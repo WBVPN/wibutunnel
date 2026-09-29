@@ -1,7 +1,6 @@
 #!/bin/bash
 # ==========================================
-# WIBU TUNNELING - lock-user (Improved v2)
-# [PATCH] flock via safe_jq_edit_args, safe_sed_delete
+# WIBU TUNNELING - lock-user (v3 Modern Notification)
 # ==========================================
 
 source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
@@ -9,15 +8,17 @@ load_bot_conf
 
 user=$1
 duration=$2
-reason=$3   # IP_LIMIT atau QUOTA
+reason=$3   # IP_LIMIT, QUOTA, or MANUAL
 
 [[ -z "$user" ]] && exit 1
 
+# Lock user in xray config
 if ! safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= (. + [$u] | unique)'; then
     echo "[ERROR] lock-user: config xray tidak bisa diedit, $user tidak dikunci" >&2
     exit 1
 fi
 
+# Calculate unlock time
 now=$(date +%s)
 if [[ -n "$duration" && "$duration" != "0" ]]; then
     unlock_time=$((now + (duration * 60)))
@@ -25,6 +26,7 @@ else
     unlock_time=0
 fi
 
+# Save to locked_users.db
 safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
 echo "$user:$now:$unlock_time:$reason" >> /etc/wibutunnel/locked_users.db
 
@@ -33,9 +35,10 @@ systemctl restart xray >/dev/null 2>&1
 # === TELEGRAM NOTIFICATION ===
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-    WAKTU=$(date '+%d %b %Y %H:%M WIB')
+    IP_VPS="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+    ISP=$(get_isp 2>/dev/null || echo "Unknown")
     UNLOCK_TIME=$(date -d "@$unlock_time" '+%H:%M WIB' 2>/dev/null)
-
+    
     # Detect protocol
     if grep -q "^$user:" /etc/xray/vless_exp.conf 2>/dev/null; then
         PROTO="VLESS"
@@ -48,31 +51,88 @@ if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
     else
         PROTO="UNKNOWN"
     fi
-
+    
+    # Build notification based on reason
     if [[ "$reason" == "IP_LIMIT" ]]; then
-        ALASAN="IP: Multiple devices detected"
-    elif [[ "$reason" == "QUOTA" ]]; then
-        ALASAN="Quota limit exceeded"
-    else
-        ALASAN="Manual lock by admin"
-    fi
+        # IP Limit format with login history
+        LOGIN_HISTORY=$(awk -v u="$user" '
+        /accepted/ {
+            if ($NF == u) {
+                time_only = substr($2, 1, 8)
+                for(i=1;i<=NF;i++) {
+                    if($i=="accepted") {
+                        ip=$(i-1)
+                        sub(/^(tcp|udp):/, "", ip)
+                        sub(/:[0-9]+$/,"", ip)
+                        break
+                    }
+                }
+                print time_only, ip
+            }
+        }' <(tail -1000 /var/log/xray/access.log 2>/dev/null) | sort -u | tail -10 | awk '{print "☆ "$1" | "$2}')
+        
+        # Count unique IPs
+        IP_COUNT=$(echo "$LOGIN_HISTORY" | wc -l)
+        [[ "$IP_COUNT" -eq 0 ]] && IP_COUNT="1"
+        MAX_IP=$(db_lookup "$user" /etc/wibutunnel/limit_ip.db 2>/dev/null | cut -d: -f2)
+        [[ -z "$MAX_IP" || "$MAX_IP" == "0" ]] && MAX_IP="2"
+        
+        PESAN="═══ 🔒 AUTO LOCK ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> ${PROTO}
+<b>User   :</b> <code>${user}</code>
+<b>Reason :</b> Multiple devices (${IP_COUNT} > ${MAX_IP})
+<b>Unlock :</b> ${UNLOCK_TIME}
 
-    if [[ "$duration" == "0" ]]; then
-        DURASI_TXT="Permanent"
-        UNLOCK_TIME="Manual unlock required"
-    else
-        DURASI_TXT="${duration} min"
-    fi
-
-    PESAN="═══ 🔒 AUTO LOCK ═══
-<b>Type:</b> ${PROTO}
-<b>User:</b> <code>${user}</code>
-<b>Domain:</b> <code>${DOMAIN}</code>
-<b>Reason:</b> ${ALASAN}
-<b>Duration:</b> ${DURASI_TXT}
-<b>Unlock:</b> ${UNLOCK_TIME}
+<b>Login History:</b>
+${LOGIN_HISTORY}
 ══════════════"
 
+    elif [[ "$reason" == "QUOTA" ]]; then
+        # Bandwidth limit format
+        USAGE_BYTES=$(db_lookup "$user" /etc/wibutunnel/user_usage.db 2>/dev/null | cut -d: -f2)
+        LIMIT_BYTES=$(db_lookup "$user" /etc/wibutunnel/limit_bw.db 2>/dev/null | cut -d: -f2)
+        
+        # Convert bytes to GB
+        if [[ -n "$USAGE_BYTES" && "$USAGE_BYTES" =~ ^[0-9]+$ ]]; then
+            USAGE_GB=$(awk -v b="$USAGE_BYTES" 'BEGIN {printf "%.1f", b/1073741824}')
+        else
+            USAGE_GB="0.0"
+        fi
+        
+        if [[ -n "$LIMIT_BYTES" && "$LIMIT_BYTES" =~ ^[0-9]+$ ]]; then
+            LIMIT_GB=$(awk -v b="$LIMIT_BYTES" 'BEGIN {printf "%.0f", b/1073741824}')
+        else
+            LIMIT_GB="0"
+        fi
+        
+        PESAN="═══ 🔒 AUTO LOCK ═══
+<b>IP     :</b> <code>${IP_VPS}</code>
+<b>DOMAIN :</b> <code>${DOMAIN}</code>
+<b>ISP    :</b> ${ISP}
+Limit Bandwidth ${PROTO}
+✓ ${user}
+Limit - ${LIMIT_GB}GB
+Usage - ${USAGE_GB}GB
+
+Move to Recovery"
+
+    else
+        # Manual lock or other reason
+        [[ "$duration" == "0" ]] && UNLOCK_TIME="Manual unlock required"
+        
+        PESAN="═══ 🔒 AUTO LOCK ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> ${PROTO}
+<b>User   :</b> <code>${user}</code>
+<b>Reason :</b> Manual lock by admin
+<b>Unlock :</b> ${UNLOCK_TIME}
+══════════════"
+    fi
+    
+    # Send notification
     tg_curl -X POST sendMessage \
         -F "chat_id=${CHAT_ID}" \
         -F "disable_web_page_preview=true" \
