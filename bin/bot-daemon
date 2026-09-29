@@ -984,6 +984,63 @@ check_login() {
     fi
 }
 
+lock_account() {
+    local user="$1"
+    local proto="$2"
+    # Debug logging
+    echo "[DEBUG lock_account] user='$user' proto='$proto' user_exists_before=$user_exists" >> /tmp/bot_lock_debug.log
+    
+    # Validate user exists
+    local user_exists=false
+    if [[ "$proto" == "SSH" ]]; then
+        id "$user" >/dev/null 2>&1 && user_exists=true
+    else
+        db_has "$user" "/etc/xray/${proto,,}_exp.conf" && user_exists=true
+    fi
+    
+    echo "[DEBUG lock_account] after validation: user_exists=$user_exists" >> /tmp/bot_lock_debug.log
+    if [[ "$user_exists" == false ]]; then
+        send_msg "❌ User <code>$user</code> tidak ditemukan di protokol $proto!" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+        return 1
+    fi
+    
+    # Check already locked
+    if db_has "$user" /etc/wibutunnel/locked_users.db; then
+        send_msg "⚠️ User <code>$user</code> sudah dalam status LOCKED!" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+        return 0
+    fi
+    
+    # Lock user
+    /usr/local/bin/lock-user "$user" MANUAL >/dev/null 2>&1
+    
+    if db_has "$user" /etc/wibutunnel/locked_users.db; then
+        local lock_reason=$(db_lookup "$user" /etc/wibutunnel/locked_users.db | cut -d: -f4)
+        send_msg "🔒 <b>USER LOCKED</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Protocol:</b> $proto\n<b>Username:</b> <code>$user</code>\n<b>Status:</b> LOCKED\n<b>Reason:</b> ${lock_reason:-MANUAL}\n━━━━━━━━━━━━━━━━━━━━" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+    else
+        send_msg "❌ Gagal lock user <code>$user</code>. Coba lagi." '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+    fi
+}
+
+unlock_account() {
+    local user="$1"
+    local proto="$2"
+    
+    # Check if locked
+    if ! db_has "$user" /etc/wibutunnel/locked_users.db; then
+        send_msg "⚠️ User <code>$user</code> tidak dalam status LOCKED!" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+        return 0
+    fi
+    
+    # Unlock user
+    /usr/local/bin/unlock-user "$user" MANUAL >/dev/null 2>&1
+    
+    if ! db_has "$user" /etc/wibutunnel/locked_users.db; then
+        send_msg "🔓 <b>USER UNLOCKED</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Protocol:</b> $proto\n<b>Username:</b> <code>$user</code>\n<b>Status:</b> ACTIVE\n<b>Access:</b> Restored\n━━━━━━━━━━━━━━━━━━━━" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+    else
+        send_msg "❌ Gagal unlock user <code>$user</code>. Coba lagi." '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+    fi
+}
+
 show_main_menu() {
     local target="$1"
     local msg_id="$2"
@@ -1025,6 +1082,7 @@ show_proto_menu() {
     kb+='[{"text":"➕ Create","callback_data":"act_create_'"$proto"'"},{"text":"⏱ Trial","callback_data":"act_trial_'"$proto"'"}],'
     kb+='[{"text":"♻️ Renew","callback_data":"act_renew_'"$proto"'"},{"text":"🗑 Delete","callback_data":"act_del_'"$proto"'"}],'
     kb+='[{"text":"🟢 Cek Login","callback_data":"act_login_'"$proto"'"},{"text":"📋 List Akun","callback_data":"act_list_'"$proto"'"}],'
+    kb+='[{"text":"🔒 Lock","callback_data":"act_lock_'"$proto"'"},{"text":"🔓 Unlock","callback_data":"act_unlock_'"$proto"'"}],'
     kb+='[{"text":"🎛 Limit & BW","callback_data":"act_limit_'"$proto"'"},{"text":"🔎 Detail Link","callback_data":"act_detail_'"$proto"'"}],'
     kb+='[{"text":"🔙 Back","callback_data":"main_menu"}]'
     kb+=']}'
@@ -1050,6 +1108,8 @@ ask_input() {
         renew) text="♻️ <b>RENEW ${proto}</b>\n\nKirim data dengan format:\n<code>[username] [tambahan_hari]</code>\n\nContoh: <code>budi 30</code>" ;;
         limit) text="🎛 <b>UBAH LIMIT ${proto}</b>\n\nKirim data dengan format:\n<code>[username] [limit_ip_baru] [limit_gb_baru]</code>\n\nContoh: <code>budi 2 5</code>\n<i>(Kirim 0 untuk unlimited)</i>" ;;
         detail) text="🔎 <b>DETAIL AKUN ${proto}</b>\n\nKirim <b>Username</b>:\nContoh: <code>budi</code>" ;;
+        lock) text="🔒 <b>LOCK USER '${proto}'</b>\n\nKirim <b>Username</b> yang ingin di-lock:\nContoh: <code>budi</code>" ;;
+        unlock) text="🔓 <b>UNLOCK USER '${proto}'</b>\n\nKirim <b>Username</b> yang ingin di-unlock:\nContoh: <code>budi</code>" ;;
     esac
 
     kb='{"inline_keyboard":[[{"text":"❌ Batal","callback_data":"menu_'"${proto,,}"'"}]]}'
@@ -1174,10 +1234,13 @@ else
     fi
     if [[ -n "$SENDER_ID" ]]; then
         TEXT=$(echo "$PAYLOAD" | jq -r ".message.text // empty")
+        echo "[DEBUG TEXT] RAW_TEXT='$TEXT' LENGTH=${#TEXT}" >> /tmp/bot_text_debug.log
         TEXT="${TEXT//$'\r'/}"
 
         if is_admin "$SENDER_ID"; then
+            echo "[DEBUG check] SENDER_ID=$SENDER_ID is_admin=$(is_admin $SENDER_ID && echo true || echo false) state_exists=$(test -f /etc/wibutunnel/tmp/bot_state_$SENDER_ID && echo true || echo false) TEXT='$TEXT'" >> /tmp/bot_text_debug.log
             if [[ -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}" && ! "$TEXT" =~ ^/ ]]; then
+                echo "[DEBUG inside if] action=$action proto=$proto TEXT='$TEXT'" >> /tmp/bot_text_debug.log
                 read -r action proto < "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
                 rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
 
@@ -1216,6 +1279,15 @@ else
                         ;;
                     detail)
                         detail_account "$TEXT" "$proto"
+                        ;;
+                    lock)
+                        echo "[DEBUG lock] TEXT='$TEXT' user='$user'" >> /tmp/bot_text_debug.log
+                        user=$(echo "$TEXT" | xargs)  # trim whitespace
+                        lock_account "$user" "$proto"
+                        ;;
+                    unlock)
+                        user=$(echo "$TEXT" | xargs)  # trim whitespace
+                        unlock_account "$user" "$proto"
                         ;;
                 esac
             else
