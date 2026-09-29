@@ -209,10 +209,15 @@ if [[ -f /etc/xray/ssh_exp.conf ]]; then
                     passwd -l "$ssh_user" >/dev/null 2>&1
                     pkill -u "$ssh_user" 2>/dev/null
                     now=$(date +%s)
-                    echo "${ssh_user}:${now}:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
-                    [[ "$ssh_user" == trial-* ]] && del_ssh_user "$ssh_user" >/dev/null 2>&1
+                    IS_TRIAL=false
+                    [[ "$ssh_user" == trial-* ]] && IS_TRIAL=true
+                    
+                    # Only add to locked_users.db if NOT trial (trial will be deleted)
+                    [[ "$IS_TRIAL" == false ]] && echo "${ssh_user}:${now}:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
+                    
                     FOOTER="Move to Recovery (lock)"
-                    [[ "$ssh_user" == trial-* ]] && FOOTER="Deleted Permanently"
+                    [[ "$IS_TRIAL" == true ]] && FOOTER="Deleted Permanently"
+                    
                     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
                         (
                         DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
@@ -228,6 +233,12 @@ ${THICKLINE}
                         tg_curl -X POST sendMessage \
                             --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
                         ) &
+                    fi
+                    
+                    # Delete trial user and skip adding to NEW_SSH_EXP
+                    if [[ "$IS_TRIAL" == true ]]; then
+                        del_ssh_user "$ssh_user" >/dev/null 2>&1
+                        continue  # Skip adding this line back to ssh_exp.conf
                     fi
                 fi
                 NEW_SSH_EXP+="${line}\n"
