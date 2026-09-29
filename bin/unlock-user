@@ -27,22 +27,32 @@ if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
     WAKTU=$(date '+%d %b %Y %H:%M WIB')
 
-    if [[ "$mode" == "AUTO" ]]; then
-        CARA="Otomatis (Durasi Lock Habis)"
+    # Detect protocol
+    if grep -q "^$user:" /etc/xray/vless_exp.conf 2>/dev/null; then
+        PROTO="VLESS"
+    elif grep -q "^$user:" /etc/xray/vmess_exp.conf 2>/dev/null; then
+        PROTO="VMESS"
+    elif grep -q "^$user:" /etc/xray/trojan_exp.conf 2>/dev/null; then
+        PROTO="TROJAN"
+    elif grep -q "^$user:" /etc/xray/ssh_exp.conf 2>/dev/null || id "$user" >/dev/null 2>&1; then
+        PROTO="SSH"
     else
-        CARA="Manual oleh Admin"
+        PROTO="UNKNOWN"
     fi
 
-    PESAN="
-🔓 <b>USER DIBUKA KEMBALI</b>
+    if [[ "$mode" == "AUTO" ]]; then
+        CARA="Auto (Duration expired)"
+    else
+        CARA="Manual by admin"
+    fi
 
-<b>User     :</b> <code>${user}</code>
-<b>Cara     :</b> ${CARA}
-<b>Waktu    :</b> ${WAKTU}
-<b>Domain   :</b> <code>${DOMAIN}</code>
-
-<i>User sudah bisa login kembali.</i>
-"
+    PESAN="═══ 🔓 AUTO UNLOCK ═══
+<b>Type:</b> ${PROTO}
+<b>User:</b> <code>${user}</code>
+<b>Domain:</b> <code>${DOMAIN}</code>
+<b>Method:</b> ${CARA}
+<b>Time:</b> ${WAKTU}
+══════════════"
     tg_curl -X POST sendMessage \
         -F "chat_id=${CHAT_ID}" \
         -F "disable_web_page_preview=true" \
