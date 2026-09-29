@@ -105,15 +105,15 @@ process_expired() {
                         ISP=$(get_isp 2>/dev/null)
                         [[ -z "$ISP" ]] && ISP="Unknown"
 
-                        THICKLINE=$(printf '\u2501%.0s' {1..24})
-                        PESAN="<b>⛔ EXPIRED ACCOUNT ${PROTO_NAME}</b>
-${THICKLINE}
-<code>Host        : ${DOMAIN}</code>
-<code>Username    : ${user}</code>
-${THICKLINE}
-<code>Expired On  : ${exp_date}</code>
-${THICKLINE}
-<i>${FOOTER}</i>"
+                        PESAN="═══ ⛔ EXPIRED ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> ${PROTO_NAME}
+<b>User   :</b> <code>${user}</code>
+<b>Expired:</b> ${exp_date}
+
+<i>${FOOTER}</i>
+══════════════"
                         tg_curl -X POST sendMessage \
                             --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1 &
                     fi
@@ -176,6 +176,9 @@ if [[ ${#TRIAL_TO_DELETE[@]} -gt 0 || ${#NORMAL_TO_RECOVERY[@]} -gt 0 ]]; then
             safe_sed_delete "$u" /etc/wibutunnel/user_usage.db
         done
         for u in "${NORMAL_TO_RECOVERY[@]}"; do
+            safe_sed_delete "$u" /etc/wibutunnel/limit_ip.db
+            safe_sed_delete "$u" /etc/wibutunnel/limit_bw.db
+            safe_sed_delete "$u" /etc/wibutunnel/user_usage.db
             safe_sed_delete "$u" /etc/wibutunnel/locked_users.db
             echo "$u:$now:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
         done
@@ -221,15 +224,16 @@ if [[ -f /etc/xray/ssh_exp.conf ]]; then
                     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
                         (
                         DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-                        THICKLINE=$(printf '\u2501%.0s' {1..24})
-                        PESAN="<b>⛔ EXPIRED ACCOUNT SSH</b>
-${THICKLINE}
-<code>Host        : ${DOMAIN}</code>
-<code>Username    : ${ssh_user}</code>
-${THICKLINE}
-<code>Expired On  : ${ssh_exp}</code>
-${THICKLINE}
-<i>${FOOTER}</i>"
+                        ISP=$(get_isp 2>/dev/null || echo "Unknown")
+                        PESAN="═══ ⛔ EXPIRED ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> SSH
+<b>User   :</b> <code>${ssh_user}</code>
+<b>Expired:</b> ${ssh_exp}
+
+<i>${FOOTER}</i>
+══════════════"
                         tg_curl -X POST sendMessage \
                             --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
                         ) &
