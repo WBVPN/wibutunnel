@@ -77,9 +77,25 @@
 ✓ Port     : 80, 443 available
 ```
 
-### Install dalam 3 Langkah
+### Install dalam 1 Command
 
-**1️⃣ Clone repository izin** (wajib untuk validasi lisensi)
+**One-liner install:**
+```bash
+curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash
+```
+
+> **⚠️ Catatan Lisensi:** IP VPS harus terdaftar di `wibutunnel-izin/izin.txt`. Installer otomatis validasi via GitHub. Hubungi admin untuk registrasi IP.
+
+**Setelah install, akses menu:**
+```bash
+menu
+```
+
+### Install Manual (dengan validasi lokal)
+
+Jika ingin validasi lisensi lokal:
+
+**1️⃣ Clone repository izin**
 ```bash
 git clone https://github.com/WBVPN/wibutunnel-izin.git /root/wibutunnel-izin
 ```
