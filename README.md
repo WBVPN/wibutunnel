@@ -1,297 +1,532 @@
-# 🚀 Wibutunnel VPN Management System
+# 🚀 Wibutunnel - VPN Multi-Protocol Management
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-4.0.3%20Kurumi-blue)
-![License](https://img.shields.io/badge/license-Private-red)
-![Platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-orange)
-![Status](https://img.shields.io/badge/status-Production%20Ready-success)
+```
+██╗    ██╗██╗██████╗ ██╗   ██╗████████╗██╗   ██╗███╗   ██╗███╗   ██╗███████╗██╗     
+██║    ██║██║██╔══██╗██║   ██║╚══██╔══╝██║   ██║████╗  ██║████╗  ██║██╔════╝██║     
+██║ █╗ ██║██║██████╔╝██║   ██║   ██║   ██║   ██║██╔██╗ ██║██╔██╗ ██║█████╗  ██║     
+██║███╗██║██║██╔══██╗██║   ██║   ██║   ██║   ██║██║╚██╗██║██║╚██╗██║██╔══╝  ██║     
+╚███╔███╔╝██║██████╔╝╚██████╔╝   ██║   ╚██████╔╝██║ ╚████║██║ ╚████║███████╗███████╗
+ ╚══╝╚══╝ ╚═╝╚═════╝  ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚══════╝
+```
 
-**Multi-Protocol VPN Management Panel untuk Server Tunneling**
+![Version](https://img.shields.io/badge/version-4.0_Kurumi-blue?style=for-the-badge)
+![License](https://img.shields.io/badge/license-Private-red?style=for-the-badge)
+![Platform](https://img.shields.io/badge/Debian%20|%20Ubuntu-Compatible-orange?style=for-the-badge&logo=debian)
 
-*Mendukung SSH, VLESS, VMESS, Trojan* — auto-expiry, quota limit, IP-sharing detection, notifikasi Telegram, dan bot manajemen.
+**🎯 Solusi All-in-One untuk Server VPN Tunneling**
 
-[⚡ Fitur](#-fitur-utama) • [🔧 Instalasi](#-instalasi) • [🔑 Lisensi](#-model-lisensi--keamanan) • [🐛 Troubleshooting](#-troubleshooting)
+[Instalasi Cepat](#-instalasi-cepat) • [Fitur](#-fitur-unggulan) • [Bot Telegram](#-setup-bot-telegram) • [Dokumentasi](#-penggunaan)
+
+</div>
 
 ---
 
-## ⚡ Fitur Utama
+## ✨ Fitur Unggulan
 
-### Multi-Protocol
-| Protocol | WebSocket | gRPC | Port |
-|----------|:---------:|:----:|------|
-| VLESS | ✅ | ✅ | 10086-10088 |
-| VMESS | ✅ | ✅ | 10089-10091 |
-| Trojan | ✅ | ✅ | 10092-10093 |
-| SSH | ✅ | ❌ | 143 (Dropbear) |
+<table>
+<tr>
+<td width="50%">
 
-### Management
-- User management: create / delete / renew / trial
-- Auto-expiry (daemon cek tiap menit) + recovery
-- Quota limit per-user (GB) & IP limit
-- IP-sharing detection (grace period 120s, auto-lock)
-- Notifikasi Telegram (bot + webhook)
-- Backup & restore one-click
+### 🔐 Multi-Protocol Support
+- **VLESS** (WebSocket + gRPC)
+- **VMESS** (WebSocket + gRPC) 
+- **Trojan** (WebSocket + gRPC)
+- **SSH** (Dropbear Enhanced)
 
-### Keamanan & Reliabilitas
-- Lisensi via repo private, token via `Authorization` header (bukan URL)
-- `flock` anti race condition; validator tolak config xray rusak (null-padding guard) sebelum restart
-- Exit-code guard di semua edit config — DB tak ditulis bila config gagal (anti ghost/phantom user)
-- Symlink guard di restore backup (anti write-through RCE)
-- Validasi input: limit masa aktif & kuota numerik (anti trial permanen)
-- Config xray permission 600 — UUID pelanggan tak terbaca user lokal
+### 🤖 Manajemen Otomatis
+- ✅ Auto-expiry user (cek setiap menit)
+- ✅ Quota limit per-user (bandwidth)
+- ✅ IP-sharing detection & auto-lock
+- ✅ Trial account dengan batas waktu
+- ✅ Notifikasi Telegram real-time
 
-### Arsitektur
-```
-Internet → HAProxy :443/80
-  ├→ [SSH-2.0]           → Dropbear :143
-  ├→ [/vless*]           → Xray :10086-10088
-  ├→ [/vmess*]           → Xray :10089-10091  
-  ├→ [/trojan*]          → Xray :10092-10093
-  ├→ [Websocket Upgrade] → WS-Stunnel :10015
-  └→ [default HTTP]      → Apache :8080
-```
+</td>
+<td width="50%">
 
-**Stack:** Xray-core 1.8.24+ · HAProxy · Dropbear · Apache2 · Python3 (ws-stunnel) · Bash
+### 💼 Bot Telegram
+- 🎮 Command interaktif
+- 📊 Monitoring real-time
+- 👥 User management via chat
+- 🔔 Alert expired & quota
+- 💾 Backup & restore otomatis
+
+### 🛡️ Keamanan Enterprise
+- 🔒 License validation system
+- 🚫 Anti race-condition (flock)
+- ✔️ Config validation guard
+- 🔐 Encrypted backup (password)
+- 📝 Audit trail lengkap
+
+</td>
+</tr>
+</table>
 
 ---
 
-## 📦 Instalasi
+## 🚀 Instalasi Cepat
 
-### Requirement
+### Persyaratan Sistem
+
 ```
-OS     : Ubuntu / Debian
-RAM    : 1GB (2GB recommended)
-Disk   : 10GB free
-Domain : pointed to server IP (untuk SSL)
+✓ OS       : Ubuntu 20.04+ / Debian 11+
+✓ RAM      : Min 1GB (Rekomendasi 2GB)
+✓ Storage  : Min 10GB free space
+✓ Domain   : Subdomain pointing ke server IP
+✓ Port     : 80, 443 available
 ```
 
-### Quick Install (one-liner)
+### Install dalam 3 Langkah
 
+**1️⃣ Clone repository izin** (wajib untuk validasi lisensi)
+```bash
+git clone https://github.com/WBVPN/wibutunnel-izin.git /root/wibutunnel-izin
+```
+
+**2️⃣ Jalankan installer**
 ```bash
 curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | sudo bash
 ```
 
-> **Syarat:** IP VPS harus terdaftar di `/root/wibutunnel-izin/izin.txt`. Clone repo izin dulu:
-> ```bash
-> git clone https://github.com/WBVPN/wibutunnel-izin.git /root/wibutunnel-izin
-> ```
-
-### Manual Install
-
-```bash
-curl -sL -o install.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh
-sudo bash install.sh 'TOKEN_DARI_ADMIN'
-```
-
-Setelah selesai, masuk menu:
+**3️⃣ Masuk ke menu**
 ```bash
 menu
 ```
+
+> **⚠️ Catatan:** IP VPS harus terdaftar di `wibutunnel-izin/izin.txt`. Hubungi admin untuk registrasi.
+
+---
+
+## 🤖 Setup Bot Telegram
+
+Bot Telegram memungkinkan manajemen VPS dari chat. Setup hanya butuh 2 menit:
+
+### Langkah Setup
+
+**1. Buat Bot di BotFather**
+```
+1. Chat @BotFather di Telegram
+2. Kirim /newbot
+3. Ikuti instruksi, dapatkan BOT_TOKEN
+   Format: 123456789:AAExxx...
+```
+
+**2. Dapatkan Chat ID**
+```
+1. Chat @userinfobot di Telegram
+2. Bot akan reply dengan ID kamu
+   Format: 5851934765
+```
+
+**3. Input ke VPS**
+```bash
+menu → [5] Setting Server → [6] Setup Bot Telegram
+```
+Masukkan `BOT_TOKEN` dan `CHAT_ID` yang sudah didapat.
+
+**4. Verifikasi**
+Bot akan kirim pesan "🤖 Bot Wibu Tunneling Berhasil Terhubung!" otomatis. Kirim `/start` untuk melihat menu bot.
+
+### Command Bot Telegram
+
+| Command | Fungsi |
+|---------|--------|
+| `/start` | Menu utama bot |
+| `/status` | Cek status server & service |
+| `/users` | List semua user aktif |
+| `/create` | Buat user baru |
+| `/renew` | Perpanjang user |
+| `/delete` | Hapus user |
+| `/backup` | Backup manual ke Telegram |
+
+---
+
+## 📊 Arsitektur Sistem
+
+```
+Internet (Client)
+      ↓
+┌─────────────────────────────────────┐
+│   HAProxy :443/80 (Load Balancer)  │
+└─────────────────────────────────────┘
+      ↓
+      ├→ [SSH-2.0 Protocol]      → Dropbear :143
+      ├→ [/vless*]               → Xray :10086-10088 (WS/gRPC)
+      ├→ [/vmess*]               → Xray :10089-10091 (WS/gRPC)
+      ├→ [/trojan*]              → Xray :10092-10093 (WS/gRPC)
+      ├→ [/telehook]             → Bot Telegram :8443
+      └→ [WebSocket Upgrade]     → WS-Stunnel :10015 → Dropbear :109
+```
+
+**Tech Stack:**
+- **Xray-core 1.8.24+** - High-performance proxy engine
+- **HAProxy** - Layer 4/7 load balancer & router
+- **Dropbear** - Lightweight SSH server (enhanced)
+- **Python3** - WS-stunnel handler
+- **Bash** - System automation & menu
 
 ---
 
 ## 🎮 Penggunaan
 
+### Menu Utama
+
 ```bash
-menu   # dashboard utama
+menu  # Akses dashboard
 ```
 
 ```
-[1] SSH Tunneling   [5] Setting Server
-[2] VLESS           [6] Backup & Restore
-[3] VMESS           [7] System Information
-[4] Trojan          [0] Exit
+╔═══════════════════════════════════════════════════╗
+║          WIBU TUNNELING v4.0 Kurumi               ║
+╠═══════════════════════════════════════════════════╣
+║  [1] 🔐 Menu SSH                                  ║
+║  [2] ⚡ Menu VLESS                                ║
+║  [3] 🚀 Menu VMESS                                ║
+║  [4] 🛡️  Menu TROJAN                              ║
+║  [5] ⚙️  Setting Server                           ║
+║  [6] 💾 Backup & Restore                          ║
+║  [0] ❌ Exit                                       ║
+╚═══════════════════════════════════════════════════╝
 ```
 
-Operasi umum (ada di tiap menu protokol):
-- **Buat akun**: pilih [1] Create Akun
-- **Cek user online**: pilih [7]/[9] Cek Login Online
-- **Ganti limit kuota/IP**: pilih [6] Ganti Limit
-- **Perpanjang / hapus / kunci**: pilih sesuai menu
+### Operasi Umum
+
+**Buat User Baru**
+```
+Menu Protocol → [1] Create Akun
+→ Input username, masa aktif, quota, IP limit
+```
+
+**Cek User Online**
+```
+Menu Protocol → [7]/[9] Cek Login Online
+→ Tampil user yang sedang connect real-time
+```
+
+**Perpanjang User**
+```
+Menu Protocol → [4] Renew Akun
+→ Input username + tambahan hari
+```
+
+**Ganti Limit**
+```
+Menu Protocol → [6] Ganti Limit
+→ Ubah quota bandwidth atau IP limit
+```
+
+**Backup ke Telegram**
+```
+Menu → [6] Backup & Restore → [1] Backup Manual
+→ File .zip terenkripsi dikirim ke bot Telegram
+```
 
 ---
 
-## 🔧 Konfigurasi
+## 📁 Struktur File Penting
 
-| Component | File | Isi |
-|-----------|------|-----|
-| Xray | `/usr/local/etc/xray/config.json` | Inbound/outbound (mode 600) |
-| User Expiry | `/etc/xray/{vless,vmess,trojan,ssh}_exp.conf` | Tanggal expired |
-| Quota / IP limit | `/etc/wibutunnel/limit_bw.db`, `limit_ip.db` | Limit per-user |
-| Bot Telegram | `/etc/wibutunnel/bot.conf` | BOT_TOKEN, CHAT_ID |
-| Domain | `/etc/xray/domain` | Domain utama |
-
-**Ganti domain / bot / update script:** `menu → [5] Setting Server`
+| Path | Deskripsi |
+|------|-----------|
+| `/usr/local/etc/xray/config.json` | Config Xray (inbound/outbound) |
+| `/etc/xray/{vless,vmess,trojan}_exp.conf` | Database user & expiry date |
+| `/etc/wibutunnel/limit_bw.db` | Quota bandwidth per-user |
+| `/etc/wibutunnel/limit_ip.db` | IP limit per-user |
+| `/etc/wibutunnel/locked_users.db` | User yang ter-lock |
+| `/etc/wibutunnel/bot.conf` | Config bot Telegram |
+| `/etc/xray/domain` | Domain VPS |
+| `/usr/local/bin/menu` | Entry point menu utama |
 
 ---
 
-## 📊 Monitoring & Maintenance
+## 🔧 Maintenance & Monitoring
+
+### Cek Status Service
 
 ```bash
-# Status semua service
-systemctl is-active xray haproxy dropbear ws-stunnel wibu-daemon
+systemctl status xray haproxy dropbear ws-stunnel wibu-daemon
+```
 
-# Log xray
+### View Logs
+
+```bash
+# Xray access log
 tail -f /var/log/xray/access.log
 
-# Log expiry & quota
+# Expiry daemon
 journalctl -u cron | grep xp
-journalctl -u wibu-daemon | grep algojo
+
+# Algojo (IP/quota enforcement)
+journalctl -u wibu-daemon -f
+
+# Bot Telegram
+journalctl -u telegram-webhook@* -f
 ```
 
-Backup: `menu → [6] Backup & Restore`
+### Restart Service
 
-Untuk >50 user, tuning sysctl (`somaxconn=1024`, `tcp_max_syn_backlog=2048`, `ip_local_port_range=10000 65535`) lalu `sysctl -p`.
+```bash
+menu → [5] Setting Server → [1] Restart Semua Service
+```
+
+Atau manual:
+```bash
+systemctl restart xray haproxy dropbear ws-stunnel
+```
 
 ---
 
 ## 🐛 Troubleshooting
 
-**Service mati:**
-```bash
-xray run -test -c /usr/local/etc/xray/config.json   # cek syntax config
-journalctl -u xray --no-pager -n 50                 # lihat error
-systemctl restart xray haproxy
-```
-
-**User tak bisa connect:**
-```bash
-grep "username" /etc/xray/vless_exp.conf            # expired?
-grep "username" /etc/wibutunnel/locked_users.db     # terkunci?
-m-vless → [10] Lock / Unlock Akun                    # unlock manual
-```
-
-**Port bentrok:** `lsof -i :443` → kill PID, atau ganti port inbound config.
-
-**SSL expired:** `certbot renew --force-renewal`
-
----
-
-## 📈 Performance
-
-| Users | CPU | RAM | Recommended VPS |
-|-------|-----|-----|-----------------|
-| 0-50 | <5% | <512MB | 1 vCPU, 1GB RAM |
-| 50-200 | 5-15% | 512MB-1GB | 2 vCPU, 2GB RAM |
-| 200-500 | 15-40% | 1-2GB | 4 vCPU, 4GB RAM |
-| 500+ | 40%+ | 2GB+ | 8 vCPU, 8GB+ RAM |
-
-Optimasi internal (hash lookup O(1), protocol map) sudah aktif sejak v4.0.1.
-
----
-
----
-
-## 📚 Script Reference
-
-| Script | Fungsi |
-|--------|--------|
-| `menu` | Main dashboard |
-| `m-ssh` / `m-vless` / `m-vmess` / `m-trojan` | Manajemen per-protokol |
-| `m-setting` | Setting server, domain, bot, update script |
-| `m-backup` | Backup & restore |
-| `xp` | Expiry checker (cron 1 menit) |
-| `algojo-wibu` / `algojo-kuota` | IP-limit & quota enforcement |
-| `bot-daemon` / `bot-webhook` | Telegram bot |
-
-Semua ada di `/usr/local/bin/` (daemon: `/usr/local/sbin/`).
-
----
-
-## 🆘 Support
-
-Bug? Kumpulkan info ini sebelum lapor:
-```bash
-systemctl status xray haproxy wibu-daemon
-bash -x /usr/local/bin/xp 2>&1 | tee /tmp/xp-debug.log   # trace
-```
-Lapor: https://github.com/WBVPN/wibutunnel/issues
-
----
-
-## 📄 License
-
-**Private License** — IP registrasi disimpan di repo private `WBVPN/wibutunnel-izin`.
+<details>
+<summary><b>❌ Service Xray tidak start</b></summary>
 
 ```bash
-# Cek status lisensi (tampil di dashboard menu utama)
-menu
+# Test config syntax
+xray run -test -c /usr/local/etc/xray/config.json
+
+# Lihat error detail
+journalctl -u xray --no-pager -n 50
+
+# Restart
+systemctl restart xray
+```
+</details>
+
+<details>
+<summary><b>❌ User tidak bisa connect</b></summary>
+
+```bash
+# Cek expired
+grep "username" /etc/xray/vless_exp.conf
+
+# Cek locked
+grep "username" /etc/wibutunnel/locked_users.db
+
+# Unlock manual
+m-vless → [10] Lock/Unlock Akun
+```
+</details>
+
+<details>
+<summary><b>❌ Bot Telegram tidak respond</b></summary>
+
+```bash
+# Cek webhook status
+source /etc/wibutunnel/bot.conf
+curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo"
+
+# Cek socket aktif
+systemctl status telegram-webhook.socket
+
+# Restart
+systemctl restart telegram-webhook.socket
+```
+</details>
+
+<details>
+<summary><b>❌ Port 443/80 sudah dipakai</b></summary>
+
+```bash
+# Cek proses yang pakai port
+lsof -i :443
+
+# Kill jika perlu
+kill -9 <PID>
+
+# Atau ganti port di config HAProxy
+nano /etc/haproxy/haproxy.cfg
+```
+</details>
+
+<details>
+<summary><b>❌ SSL Certificate expired</b></summary>
+
+```bash
+# Renew manual
+certbot renew --force-renewal
+
+# Atau via menu
+menu → [5] Setting → [8] Ganti Domain & Renew SSL
+```
+</details>
+
+---
+
+## 📈 Performance Tuning
+
+### Rekomendasi VPS berdasarkan Jumlah User
+
+| Users | CPU Usage | RAM Usage | Rekomendasi Spec |
+|-------|-----------|-----------|------------------|
+| 1-50 | <5% | <512MB | 1 vCPU, 1GB RAM |
+| 50-150 | 5-15% | 512MB-1GB | 2 vCPU, 2GB RAM |
+| 150-300 | 15-30% | 1-2GB | 2 vCPU, 4GB RAM |
+| 300-500 | 30-50% | 2-3GB | 4 vCPU, 4GB RAM |
+| 500+ | 50%+ | 3GB+ | 4+ vCPU, 8GB+ RAM |
+
+### Optimasi Kernel (untuk >200 user)
+
+Edit `/etc/sysctl.conf`:
+```bash
+net.core.somaxconn = 1024
+net.ipv4.tcp_max_syn_backlog = 2048
+net.ipv4.ip_local_port_range = 10000 65535
+net.ipv4.tcp_fin_timeout = 15
 ```
 
-Detail cara kerja lisensi & aturan token ada di seksi **🔑 Model Lisensi & Keamanan** di bawah.
+Apply:
+```bash
+sysctl -p
+```
 
 ---
 
-## 🙏 Credits
+## 🔐 Model Lisensi
 
-**Developer:** WBVPN Team  
-**Version:** 4.0.3 Kurumi  
-**Based on:** Xray-core, HAProxy, Dropbear  
+### Cara Kerja
 
-### Technologies
-- [Xray-core](https://github.com/XTLS/Xray-core) - High-performance proxy
-- [HAProxy](http://www.haproxy.org/) - Load balancer & proxy
-- [Dropbear](https://matt.ucc.asn.au/dropbear/dropbear.html) - Lightweight SSH
-- [Let's Encrypt](https://letsencrypt.org/) - Free SSL certificates
+1. **Whitelist IP**: IP VPS terdaftar di repo private `WBVPN/wibutunnel-izin` (file `izin.txt`)
+2. **Format**: `IP | CLIENT_NAME | EXPIRY_DATE`
+   ```
+   110.232.90.195 | Tulu | LIFETIME
+   103.200.216.142 | nm_priasawit | 2026-12-31
+   ```
+3. **Validasi**: Installer & menu cek IP publik VPS vs daftar izin
+4. **Token**: Akses repo pakai fine-grained PAT (read-only, 1 repo only)
+
+### Keamanan Token
+
+✅ **DO:**
+- Pakai header `Authorization: token $TOKEN`
+- Fine-grained PAT: Contents read-only, 1 repo
+- Store di `/etc/wibutunnel/izin_token` (mode 600)
+
+❌ **DON'T:**
+- Hardcode token di repo publik
+- Pakai token di URL (`https://user:TOKEN@github.com`)
+- Share token via chat/email
 
 ---
 
-## 🔑 Model Lisensi & Keamanan
+## 🛡️ Security Features
 
-### Cara lisensi bekerja
-1. Daftar IP pelanggan disimpan di repo **private** `WBVPN/wibutunnel-izin` (file `izin.txt`).
-2. Format baris: `IP | CLIENT | EXP` (contoh: `103.200.216.142 | nm_priasawit | LIFETIME`).
-   - `IP`: IP publik VPS
-   - `CLIENT`: nama client tanpa spasi (gunakan `_` atau `-`)
-   - `EXP`: tanggal `YYYY-MM-DD` atau `LIFETIME`
-3. Installer & menu membaca daftar itu pakai fine-grained PAT (read-only, scoped ke 1 repo).
-4. VPS cocokkan IP publiknya; kalau tak terdaftar/expired → akses ditolak.
+- ✅ **Exit-code guard**: Config validation sebelum restart service
+- ✅ **Flock anti race**: Prevent concurrent edit corruption
+- ✅ **Input validation**: Reject invalid trial/quota input
+- ✅ **Symlink guard**: Prevent write-through attack di restore
+- ✅ **Config permission 600**: UUID tidak terbaca user SSH lokal
+- ✅ **Encrypted backup**: Password = CHAT_ID Telegram
+- ✅ **Webhook secret**: Token validation untuk bot endpoint
 
-### Aturan token (WAJIB baca)
-- ❌ **Jangan pernah** tulis token di file yang ada di repo publik.
-- ❌ **Jangan pernah** kirim token via URL (`https://user:TOKEN@host`) — bocor ke `ps`/`/proc/*/cmdline`.
-- ✅ Pakai header: `curl -H "Authorization: token $IZIN_TOKEN"`.
-- ✅ Bikin PAT **fine-grained**: hanya repo `wibutunnel-izin`, permission `Contents: Read-only`, expiry pendek.
-- ✅ Token lama (sebelum v4.0.2) ter-ekspose di git history publik — **wajib di-revoke**.
+---
 
-### Yang masih jadi risiko terbuka
-- **Download tanpa checksum**: installer tarik binary xray & tool via `curl|bash`/direct download tanpa verifikasi sha256/GPG. Kompromi GitHub/CDN = RCE root. Mitigasi masa depan: pin commit hash + GPG sign.
-- **Safe Update** (menu `[5]`) verifikasi magic bytes saja, bukan signature. Push ke repo utama = update ke seluruh armada. Batasi collaborator repo publik.
-- **User SSH dapat shell `/bin/bash`** (memang diperlukan untuk tunneling) — kombinasi dengan service lain yang menulis ke `/tmp` bisa jadi tangga privilege escalation. Tetap audit.
+## 📚 Command Reference
+
+| Command | Fungsi |
+|---------|--------|
+| `menu` | Dashboard utama |
+| `m-ssh` | Menu SSH management |
+| `m-vless` | Menu VLESS management |
+| `m-vmess` | Menu VMESS management |
+| `m-trojan` | Menu Trojan management |
+| `m-setting` | Setting server (domain, bot, update) |
+| `m-backup` | Backup & restore manual |
+| `xp` | Expiry checker (auto via cron) |
+| `algojo-wibu` | IP-limit enforcement daemon |
+| `algojo-kuota` | Quota enforcement daemon |
 
 ---
 
 ## 🔄 Changelog
 
-### v4.0.3 Kurumi (Latest) — Menu & Bot Fixes
-- 🟢 Fix menu hang: `check_license()` bypass ke file lokal, ga curl GitHub tiap kali
-- 🟢 Fix menu exit loop: ganti `exec menu` jadi `continue` di invalid input
-- 🟢 Fix bot telegram: reset offset file, webhook triggered tapi ga proses update
-- 🟢 Remove duplicate menu auto-run dari `.profile` (sudah ada guard di `.bashrc`)
-- ✅ Semua fix committed & permanent di repo
+### v4.0 Kurumi (Current)
 
-### v4.0.2 Kurumi — Security Patch
-- 🔴 Hapus hardcoded license token dari installer publik (sebelumnya terbaca siapa saja)
-- 🔴 Token lisensi via `Authorization` header, bukan URL (anti `ps` leak)
-- 🔴 Exit-code guard di 5 titik edit config bot (anti phantom user: akun di DB tapi tak di config / sebaliknya)
-- 🔴 Batas atas input trial (maks 1 thn) + tolak `exp_date` kosong (anti trial permanen)
-- 🟠 Restore backup tolak symlink (anti write-through → RCE root)
-- 🟠 Config xray 644 → 600 (UUID pelanggan tak terbaca user SSH lokal)
-- 🟠 `pipefail` di pipe `curl|bash` installer xray (anti install gagal diam-diam)
-- 🟠 Install ke-2x tak menimpa config bila ada klien aktif (anti hapus akun pelanggan)
-- ✅ README: model lisensi & risiko keamanan didokumentasikan jujur
+**🔒 Security Improvements**
+- Remove hardcoded license token dari public repo
+- Token via `Authorization` header (anti `ps` leak)
+- Exit-code guard prevent phantom user
+- Symlink guard di restore backup
+- Config xray permission 600
 
-### v4.0.1 — Performance (hash lookup O(1), protocol map), bugfix ws-stunnel
+**🐛 Bug Fixes**
+- Fix menu hang (license check bypass ke local)
+- Fix bot webhook processing
+- Fix concurrent edit race condition
+- Fix trial permanent exploit
 
-### v4.0 — Rilis awal: multi-protocol, Telegram bot, auto-expiry, quota, IP-sharing detection
+**⚡ Performance**
+- Hash lookup O(1) untuk user search
+- Protocol mapping optimization
+- Cached geo lookup (10 menit)
+
+**✨ Features**
+- Multi-protocol (VLESS, VMESS, Trojan, SSH)
+- Auto-expiry real-time (cek tiap menit)
+- IP-sharing detection (grace 120s)
+- Quota bandwidth limit
+- Telegram bot + webhook
+- One-click backup/restore
+
+---
+
+## 🆘 Support & Contribute
+
+### Laporkan Bug
+
+Sebelum lapor, kumpulkan informasi:
+```bash
+# System info
+uname -a
+cat /etc/os-release
+
+# Service status
+systemctl status xray haproxy wibu-daemon
+
+# Debug trace
+bash -x /usr/local/bin/xp 2>&1 | tee /tmp/xp-debug.log
+```
+
+Buat issue: [GitHub Issues](https://github.com/WBVPN/wibutunnel/issues)
+
+### Kontak
+
+- 📱 **Telegram**: [@wibuvpnstore](https://t.me/wibuvpnstore)
+- 📞 **WhatsApp**: [+62 877-5731-5408](https://wa.me/6287757315408)
+- 💬 **Grup WA**: [FREE CONFIG By WIBUVPN](https://chat.whatsapp.com/La5nXNSOYQj8cZ5Ugyk3l8)
+
+---
+
+## 🙏 Credits
+
+**Developed by:** WBVPN Team  
+**Version:** 4.0 Kurumi  
+**License:** Private (Registered IP Only)
+
+### Built With
+
+- [Xray-core](https://github.com/XTLS/Xray-core) - Next-gen proxy engine
+- [HAProxy](http://www.haproxy.org/) - Reliable load balancer
+- [Dropbear](https://matt.ucc.asn.au/dropbear/dropbear.html) - Lightweight SSH
+- [Let's Encrypt](https://letsencrypt.org/) - Free SSL certificates
+- [Telegram Bot API](https://core.telegram.org/bots/api) - Bot automation
 
 ---
 
 <div align="center">
 
-**⭐ Star repo ini jika bermanfaat!**
+**⭐ Star repo ini jika membantu!**
+
+```
+╔═══════════════════════════════════════════════════════╗
+║  💰 VPN PREMIUM 7K / 30 HARI                         ║
+║  🎁 Trial tersedia via Telegram Bot                  ║
+║  🚀 Server cepat & stabil di seluruh Indonesia       ║
+╚═══════════════════════════════════════════════════════╝
+```
 
 Made with ❤️ for Indonesian VPN Community
+
+[⬆️ Back to Top](#-wibutunnel---vpn-multi-protocol-management)
 
 </div>
