@@ -144,19 +144,35 @@ while read -r line; do
             fi
 
             (
+                # Get protocol
+                if db_has "$user" /etc/xray/vless_exp.conf; then
+                    PROTO="VLESS"
+                elif db_has "$user" /etc/xray/vmess_exp.conf; then
+                    PROTO="VMESS"
+                elif db_has "$user" /etc/xray/trojan_exp.conf; then
+                    PROTO="TROJAN"
+                else
+                    PROTO="UNKNOWN"
+                fi
+                
                 DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-                WAKTU=$(date '+%d %b %Y %H:%M WIB')
-                THICKLINE=$(printf '\u2501%.0s' {1..24})
-                PESAN="🔒 <b>USER DIKUNCI OTOMATIS</b>
-${THICKLINE}
-<code>User        : ${user}</code>
-<code>Alasan      : Kuota Habis</code>
-<code>Durasi      : Permanen (sampai di-unlock manual)</code>
-${THICKLINE}
-<code>Host        : ${DOMAIN}</code>
-<code>Waktu       : ${WAKTU}</code>
-${THICKLINE}
-<i>Account akan otomatis dibuka jika dilonggarkan limitnya.</i>"
+                IP_VPS="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+                ISP=$(get_isp 2>/dev/null || echo "Unknown")
+                
+                # Convert bytes to GB
+                USAGE_GB=$(awk -v b="$usage" 'BEGIN {printf "%.1f", b/1073741824}')
+                LIMIT_GB=$(awk -v b="$limit" 'BEGIN {printf "%.0f", b/1073741824}')
+                
+                PESAN="═══ 🔒 AUTO LOCK ═══
+<b>IP     :</b> <code>${IP_VPS}</code>
+<b>DOMAIN :</b> <code>${DOMAIN}</code>
+<b>ISP    :</b> ${ISP}
+Limit Bandwidth ${PROTO}
+✓ ${user}
+Limit - ${LIMIT_GB}GB
+Usage - ${USAGE_GB}GB
+
+Move to Recovery"
                 tg_curl -X POST sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
             ) &
         fi

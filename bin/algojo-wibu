@@ -131,19 +131,50 @@ for email in "${!IP_COUNT[@]}"; do
         USERS_TO_LOCK+=("$email")
 
         (
+            # Get protocol
+            if db_has "$email" /etc/xray/vless_exp.conf; then
+                PROTO="VLESS"
+            elif db_has "$email" /etc/xray/vmess_exp.conf; then
+                PROTO="VMESS"
+            elif db_has "$email" /etc/xray/trojan_exp.conf; then
+                PROTO="TROJAN"
+            else
+                PROTO="UNKNOWN"
+            fi
+            
             DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-            WAKTU=$(date '+%d %b %Y %H:%M WIB')
-            THICKLINE=$(printf '\u2501%.0s' {1..24})
-            PESAN="\U0001F512 <b>USER DIKUNCI OTOMATIS</b>
-${THICKLINE}
-<code>User        : ${email}</code>
-<code>Alasan      : Melebihi Limit IP (${IP_COUNT["$email"]} > ${max_ip})</code>
-<code>Durasi      : ${LOCK_DURATION} menit</code>
-${THICKLINE}
-<code>Host        : ${DOMAIN}</code>
-<code>Waktu       : ${WAKTU}</code>
-${THICKLINE}
-<i>Account akan otomatis dibuka setelah durasi habis.</i>"
+            IP_VPS="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+            ISP=$(get_isp 2>/dev/null || echo "Unknown")
+            UNLOCK_TIME=$(date -d "@$unlock_time" '+%H:%M WIB')
+            
+            # Extract login history
+            LOGIN_HISTORY=$(awk -v u="$email" '
+            /accepted/ {
+                if ($NF == u) {
+                    time_only = substr($2, 1, 8)
+                    for(i=1;i<=NF;i++) {
+                        if($i=="accepted") {
+                            ip=$(i-1)
+                            sub(/^(tcp|udp):/, "", ip)
+                            sub(/:[0-9]+$/,"", ip)
+                            break
+                        }
+                    }
+                    print time_only, ip
+                }
+            }' <(tail -1000 /var/log/xray/access.log 2>/dev/null) | sort -u | tail -10 | awk '{print "☆ "$1" | "$2}')
+            
+            PESAN="═══ 🔒 AUTO LOCK ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> ${PROTO}
+<b>User   :</b> <code>${email}</code>
+<b>Reason :</b> Multiple devices (${IP_COUNT["$email"]} > ${max_ip})
+<b>Unlock :</b> ${UNLOCK_TIME}
+
+<b>Login History:</b>
+${LOGIN_HISTORY}
+══════════════"
             tg_curl -X POST sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
         ) &
     fi
@@ -175,18 +206,19 @@ while read -r ssh_user; do
     USERS_TO_LOCK+=("$ssh_user")
     (
         DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-        WAKTU=$(date '+%d %b %Y %H:%M WIB')
-        THICKLINE=$(printf '\u2501%.0s' {1..24})
-        PESAN="\U0001F512 <b>SSH USER DIKUNCI OTOMATIS</b>
-${THICKLINE}
-<code>User        : ${ssh_user}</code>
-<code>Alasan      : Melebihi Limit IP/Sesi (${sess_count} > ${max_ip})</code>
-<code>Durasi      : ${LOCK_DURATION} menit</code>
-${THICKLINE}
-<code>Host        : ${DOMAIN}</code>
-<code>Waktu       : ${WAKTU}</code>
-${THICKLINE}
-<i>Account akan otomatis dibuka setelah durasi habis.</i>"
+        IP_VPS="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+        ISP=$(get_isp 2>/dev/null || echo "Unknown")
+        UNLOCK_TIME=$(date -d "@$unlock_time" '+%H:%M WIB')
+        
+        # SSH sessions (no login history for SSH from access.log)
+        PESAN="═══ 🔒 AUTO LOCK ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> SSH
+<b>User   :</b> <code>${ssh_user}</code>
+<b>Reason :</b> Multiple sessions (${sess_count} > ${max_ip})
+<b>Unlock :</b> ${UNLOCK_TIME}
+══════════════"
         tg_curl -X POST sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
     ) &
 done < <(ssh_list_users)
