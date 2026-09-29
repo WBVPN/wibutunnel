@@ -1010,13 +1010,11 @@ lock_account() {
         return 0
     fi
     
-    # Lock user
-    /usr/local/bin/lock-user "$user" MANUAL >/dev/null 2>&1
+    # Lock user - call with correct params: (user, duration=0, reason=MANUAL)
+    /usr/local/bin/lock-user "$user" 0 MANUAL >/dev/null 2>&1
     
-    if db_has "$user" /etc/wibutunnel/locked_users.db; then
-        local lock_reason=$(db_lookup "$user" /etc/wibutunnel/locked_users.db | cut -d: -f4)
-        send_msg "🔒 <b>USER LOCKED</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Protocol:</b> $proto\n<b>Username:</b> <code>$user</code>\n<b>Status:</b> LOCKED\n<b>Reason:</b> ${lock_reason:-MANUAL}\n━━━━━━━━━━━━━━━━━━━━" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
-    else
+    # Verify locked (system notification already sent by lock-user script)
+    if ! db_has "$user" /etc/wibutunnel/locked_users.db; then
         send_msg "❌ Gagal lock user <code>$user</code>. Coba lagi." '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
     fi
 }
@@ -1031,12 +1029,11 @@ unlock_account() {
         return 0
     fi
     
-    # Unlock user
+    # Unlock user (system notification sent by unlock-user script)
     /usr/local/bin/unlock-user "$user" MANUAL >/dev/null 2>&1
     
-    if ! db_has "$user" /etc/wibutunnel/locked_users.db; then
-        send_msg "🔓 <b>USER UNLOCKED</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>Protocol:</b> $proto\n<b>Username:</b> <code>$user</code>\n<b>Status:</b> ACTIVE\n<b>Access:</b> Restored\n━━━━━━━━━━━━━━━━━━━━" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
-    else
+    # Verify unlocked
+    if db_has "$user" /etc/wibutunnel/locked_users.db; then
         send_msg "❌ Gagal unlock user <code>$user</code>. Coba lagi." '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
     fi
 }
