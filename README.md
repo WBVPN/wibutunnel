@@ -110,8 +110,6 @@ curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/install.sh | su
 menu
 ```
 
-> **⚠️ Catatan:** IP VPS harus terdaftar di `wibutunnel-izin/izin.txt`. Hubungi admin untuk registrasi.
-
 ---
 
 ## 🤖 Setup Bot Telegram
