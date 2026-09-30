@@ -440,7 +440,27 @@ apt_selfheal() {
 
     rm -rf "$TMP" 2>/dev/null
 }
-apt_selfheal || { echo -e "\e[1;31m[FATAL] apt tidak bisa diperbaiki otomatis (semua mirror gagal). Installer dihentikan.\e[0m"; exit 1; }
+
+# [BUGFIX 2026-09-30] apt_selfheal dapat hang 3-5 menit di VPS dengan archive sources.
+# Tambahkan timeout 5 menit untuk prevent indefinite hang.
+(
+    apt_selfheal
+) &
+APT_HEAL_PID=$!
+(
+    sleep 300
+    kill -9 $APT_HEAL_PID 2>/dev/null
+) &
+TIMEOUT_PID=$!
+
+if wait $APT_HEAL_PID 2>/dev/null; then
+    kill $TIMEOUT_PID 2>/dev/null
+    wait $TIMEOUT_PID 2>/dev/null
+else
+    echo -e "\e[1;33m[WARN] apt_selfheal timeout setelah 5 menit, melanjutkan instalasi...\e[0m"
+    kill $TIMEOUT_PID 2>/dev/null
+    wait $TIMEOUT_PID 2>/dev/null
+fi
 
 # DOMAIN INPUT
 # [FALLBACK] resolve domain walaupun dig gagal terpasang.
