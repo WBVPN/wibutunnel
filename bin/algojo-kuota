@@ -1,0 +1,193 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - algojo-kuota (v4.0 KURUMI)
+# [PATCH] flock via safe_jq_edit, unique tmp path
+# ==========================================
+source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
+load_bot_conf
+DB_BW="/etc/wibutunnel/limit_bw.db"
+DB_USAGE="/etc/wibutunnel/user_usage.db"
+DB_LOCK="/etc/wibutunnel/locked_users.db"
+
+[[ ! -f "$DB_BW" ]] && exit 0
+touch "$DB_USAGE"
+
+# ==========================================
+# SSH TUNNEL: akunting trafik via iptables -m owner (per uid)
+# ==========================================
+# Klien xray dihitung lewat Xray API; akun SSH tidak punya stat API,
+# jadi dipakai counter iptables mangle OUTPUT dengan owner match.
+#
+# CATATAN: -m owner --uid-owner hanya valid di chain OUTPUT (paket yang
+# dikirim proses milik user tsb). Untuk tunnel SSH, dropbear setelah auth
+# menjalankan child proses sebagai user tersebut, sehingga seluruh trafik
+# server->klien (download, arah dominan pada tunneling) terhitung di sini.
+# Counter reset saat reboot -> logika delta di bawah menanganinya.
+
+XRAY_EXPS="/etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf"
+
+is_xray_user() {
+    local u="$1" f
+    for f in $XRAY_EXPS; do
+        [[ -f "$f" ]] && db_has "$u" "$f" && return 0
+    done
+    return 1
+}
+
+ssh_accounting() {
+    command -v iptables >/dev/null 2>&1 || return 0
+    local user limit uid ob ib total
+    while IFS=: read -r user limit; do
+        [[ -z "$user" || "$user" == *"dummy"* ]] && continue
+        [[ "$limit" == "0" || -z "$limit" ]] && continue
+        is_xray_user "$user" && continue          # hindari dobel hitung
+        uid=$(id -u "$user" 2>/dev/null) || continue
+
+        # pastikan rule accounting ada (idempoten). HANYA chain OUTPUT:
+        # -m owner tidak didukung di INPUT (Invalid argument).
+        # [FIX M-A5] -A gagal (nft error/table full) tanpa cek -> rule absen
+        # # -> counter 0 -> akun SSH bypass kuota diam-diam.
+        iptables -t mangle -C OUTPUT -m owner --uid-owner "$uid" -j ACCEPT 2>/dev/null || \
+            { iptables -t mangle -A OUTPUT -m owner --uid-owner "$uid" -j ACCEPT 2>/dev/null \
+                || { echo "[ERROR] rule accounting gagal untuk uid $uid" >&2; continue; }; }
+
+        total=$(iptables -t mangle -L OUTPUT -n -v -x 2>/dev/null | \
+            awk -v uid="$uid" '$0 ~ "owner UID match "uid"($|[^0-9])" {s+=$2} END {printf "%d", s+0}')
+        echo "$user $total" >> /etc/wibutunnel/tmp/xray_quota_raw.txt
+    done < "$DB_BW"
+
+    # [FIX M-A4] Kalau xray API gagal (binary hilang/port berubah), raw file
+    # # kosong -> delta 0 -> TIDAK ADA user pernah kena kuota. Health check.
+    if [[ ! -s /etc/wibutunnel/tmp/xray_quota_raw.txt ]]; then
+        echo "[!] algojo-kuota: xray API mengembalikan data kosong — kuota tidak bisa dihitung" >&2
+    fi
+}
+
+# [FIX] Baca stat PER-USER (user>>>email>>>traffic>>>downlink+uplink).
+# Sebelumnya salah baca field $2 (untuk stat user = "email", untuk inbound = tag).
+xray api statsquery --server=127.0.0.1:10085 2>/dev/null \
+    | jq -r '.stat[]? | select(.name | startswith("user>>>")) | "\(.name)|\(.value)"' 2>/dev/null \
+    | while IFS='|' read -r name val; do
+        # Validate fields before parsing
+        if [[ -z "$name" || -z "$val" ]]; then
+            continue
+        fi
+        
+        email=$(echo "$name" | awk -F'>>>' '{print $2}')
+        
+        # Validate email extracted
+        if [[ -z "$email" ]]; then
+            continue
+        fi
+        
+        echo "$email $val"
+    done | awk '{ down[$1]+=$2 } END { for (u in down) print u, down[u] }' \
+    > /etc/wibutunnel/tmp/xray_quota_raw.txt
+
+# [SSH TUNNEL] tambahkan counter iptables untuk akun SSH
+ssh_accounting
+
+awk '
+FNR==NR { curr[$1] = $2; next }
+{
+    if ($1 in curr) {
+        c = curr[$1]
+        delta = (c < $3) ? c : (c - $3)
+        $2 += delta
+        $3 = c
+        seen[$1] = 1
+    }
+    print $1 ":" $2 ":" $3
+}
+END {
+    for (u in curr) {
+        if (!seen[u]) print u ":" curr[u] ":" curr[u]
+    }
+}' /etc/wibutunnel/tmp/xray_quota_raw.txt FS=":" OFS=":" "$DB_USAGE" > /etc/wibutunnel/tmp/db_usage.tmp && mv /etc/wibutunnel/tmp/db_usage.tmp "$DB_USAGE"
+
+USERS_TO_LOCK=()
+while read -r line; do
+    user=$(echo "$line" | cut -d: -f1)
+    limit_gb=$(echo "$line" | cut -d: -f2)
+    [[ "$limit_gb" == "0" || -z "$limit_gb" ]] && continue
+    # [FIX H11] Validasi numerik + batas atas. Bash aritmatika 64-bit: limit_gb
+    # >= 8.6e9 wrap jadi NEGATIF -> `0 >= negatif` true -> user dikunci padahal
+    # kuota 0. Format salah ("10GB") membuat bash abort loop iterasi itu ->
+    # SEMUA user berikutnya tak pernah dicek -> kuota bypass permanen.
+    [[ "$limit_gb" =~ ^[0-9]+$ ]] || { echo "[!] algojo-kuota: limit bukan angka ($user: '$limit_gb'), lewati" >&2; continue; }
+    (( limit_gb < 8589934592 )) || { echo "[!] algojo-kuota: limit overflow ($user: $limit_gb GB), lewati" >&2; continue; }
+
+    total_bytes=$(db_lookup "$user" "$DB_USAGE" | cut -d: -f2)
+    [[ -z "$total_bytes" ]] && total_bytes=0
+    # [FIX M6] dulu pakai bc untuk komparasi float. bc TIDAK dijamin
+    # terinstall (script hanya pastikan jq). Kalau bc absen -> output kosong
+    # -> (( )) -> selalu false -> QUOTA LOCK TIDAK PERNAH JALAN diam-diam
+    # untuk SEMUA user. Sekarang komparasi integer murni di bash: bandingkan
+    # byte (limit_gb * 1073741824), presisi lebih dari cukup untuk GB.
+    limit_bytes=$(( limit_gb * 1073741824 ))
+    if (( total_bytes >= limit_bytes )); then
+        if ! db_has "$user" "$DB_LOCK"; then
+            proto="UNKNOWN"
+            if db_has "$user" /etc/xray/vless_exp.conf; then proto="VLESS"
+            elif db_has "$user" /etc/xray/vmess_exp.conf; then proto="VMESS"
+            elif db_has "$user" /etc/xray/trojan_exp.conf; then proto="TROJAN"; fi
+
+            now=$(date +%s)
+            lock_db_append "${user}:${now}:0:QUOTA" "$DB_LOCK"
+
+            if ! is_xray_user "$user" && ssh_user_exists "$user" 2>/dev/null; then
+                # akun SSH: kunci di level sistem (passwd -l) + putus sesi
+                passwd -l "$user" >/dev/null 2>&1
+                pkill -u "$user" 2>/dev/null
+            else
+                USERS_TO_LOCK+=("$user")
+            fi
+
+            (
+                # Get protocol
+                if db_has "$user" /etc/xray/vless_exp.conf; then
+                    PROTO="VLESS"
+                elif db_has "$user" /etc/xray/vmess_exp.conf; then
+                    PROTO="VMESS"
+                elif db_has "$user" /etc/xray/trojan_exp.conf; then
+                    PROTO="TROJAN"
+                else
+                    PROTO="UNKNOWN"
+                fi
+                
+                DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                IP_VPS="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+                ISP=$(get_isp 2>/dev/null || echo "Unknown")
+                
+                # Convert bytes to GB
+                USAGE_GB=$(awk -v b="$usage" 'BEGIN {printf "%.1f", b/1073741824}')
+                LIMIT_GB=$(awk -v b="$limit" 'BEGIN {printf "%.0f", b/1073741824}')
+                
+                PESAN="═══ 🔒 AUTO LOCK ═══
+<b>IP     :</b> <code>${IP_VPS}</code>
+<b>DOMAIN :</b> <code>${DOMAIN}</code>
+<b>ISP    :</b> ${ISP}
+Limit Bandwidth ${PROTO}
+✓ ${user}
+Limit - ${LIMIT_GB}GB
+Usage - ${USAGE_GB}GB
+
+Move to Recovery"
+                tg_curl -X POST sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
+            ) &
+        fi
+    fi
+done < "$DB_BW"
+rm -f /etc/wibutunnel/tmp/xray_quota_raw.txt
+
+if [[ ${#USERS_TO_LOCK[@]} -gt 0 ]]; then
+    jq_args=()
+    for usr in "${USERS_TO_LOCK[@]}"; do
+        jq_args+=("$usr")
+    done
+    if safe_jq_edit_args --argjson users "$(printf '%s\n' "${jq_args[@]}" | jq -R . | jq -s .)" '(.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) |= (. + $users | unique)'; then
+        systemctl restart xray >/dev/null 2>&1
+    else
+        echo "[ERROR] algojo-kuota: gagal mengedit config xray" >&2
+    fi
+fi

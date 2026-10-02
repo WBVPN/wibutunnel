@@ -1,0 +1,264 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - xp.sh (v4.0 KURUMI)
+# [FIX] Lock path + jq exact match
+# ==========================================
+
+source /usr/local/bin/common.sh
+if ! command -v jq &> /dev/null; then apt-get install -y jq &>/dev/null; fi
+check_license_silent
+
+exec 200>/etc/wibutunnel/tmp/xp.lock
+flock -n 200 || exit 0
+
+load_bot_conf
+
+CONFIG_FILE="/usr/local/etc/xray/config.json"
+VLESS_EXP="/etc/xray/vless_exp.conf"
+VMESS_EXP="/etc/xray/vmess_exp.conf"
+TROJAN_EXP="/etc/xray/trojan_exp.conf"
+
+
+today_sec=$(date +%s)
+RESTART_NEEDED=false
+NOTIFIED_USERS=" "
+
+TRIAL_TO_DELETE=()
+NORMAL_TO_RECOVERY=()
+
+# Extract all active users in one go (Ultra Fast)
+# [KRITIS] cek exit jq: kalau config.json sedang ditulis (race dgn menu) atau
+# struktur inbound berubah, jq GAGAL -> ACTIVE_* kosong -> script menganggap
+# SEMUA user "tidak ada di config" -> menghapus seluruh data expiry tanpa
+# recovery. Jangan pernah lanjut jika jq gagal.
+ACTIVE_VLESS=$(jq -r '[.inbounds[]|select(.protocol=="vless")|.settings.clients[]?.email] | unique | join(" ")' "$CONFIG_FILE" 2>/dev/null)
+if [[ $? -ne 0 || ! -s "$CONFIG_FILE" ]]; then
+    echo "[$(date '+%F %T')] xp: config xray tidak bisa dibaca, skip expire cycle" >&2
+    exit 1
+fi
+ACTIVE_VMESS=$(jq -r '[.inbounds[]|select(.protocol=="vmess")|.settings.clients[]?.email] | unique | join(" ")' "$CONFIG_FILE" 2>/dev/null)
+ACTIVE_TROJAN=$(jq -r '[.inbounds[]|select(.protocol=="trojan")|.settings.clients[]?.email] | unique | join(" ")' "$CONFIG_FILE" 2>/dev/null)
+# perlindungan tambahan: kalau semua kosong (bukan karena memang tidak ada
+# user, tapi karena jq error), jangan lanjut
+if [[ -z "$ACTIVE_VLESS$ACTIVE_VMESS$ACTIVE_TROJAN" ]]; then
+    # pastikan config memang valid sebelum percaya "tidak ada user"
+    if ! jq -e '.inbounds | length >= 1' "$CONFIG_FILE" >/dev/null 2>&1; then
+        echo "[$(date '+%F %T')] xp: config xray tidak valid, skip expire cycle" >&2
+        exit 1
+    fi
+fi
+
+process_expired() {
+    local EXP_FILE=$1
+    local PROTO_NAME=$2
+    local ACTIVE_USERS=$3
+
+    [[ ! -f "$EXP_FILE" ]] && return
+    awk '!seen[$0]++' "$EXP_FILE" > /etc/wibutunnel/tmp/exp_clean && mv /etc/wibutunnel/tmp/exp_clean "$EXP_FILE"
+
+    local NEW_EXP_CONTENT=""
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        user=$(echo "$line" | cut -d: -f1)
+        exp_date=$(echo "$line" | cut -d: -f2-)
+
+        [[ -z "$exp_date" || "$exp_date" == "Lifetime" || "$user" == *"dummy"* ]] && { NEW_EXP_CONTENT+="${line}\n"; continue; }
+
+        # [FIX CRITICAL] Date-only expiry should end at 23:59:59, not 00:00:00
+        # (users lose ~12 hours per renewal with midnight padding)
+        if [[ ${#exp_date} -eq 10 ]]; then exp_date="${exp_date} 23:59:59"; fi
+        exp_sec=$(date -d "$exp_date" +%s 2>/dev/null)
+        [[ -z "$exp_sec" ]] && { NEW_EXP_CONTENT+="${line}\n"; continue; }
+
+        # Check if user exists in RAM instead of reading file
+        if [[ " $ACTIVE_USERS " == *" $user "* ]]; then
+            if [ "$today_sec" -ge "$exp_sec" ]; then
+
+                # Mencegah spam jika user sudah dalam status EXPIRED di recovery
+                if [[ -n "$(awk -F: -v u="$user" '$1==u && $4=="EXPIRED"' /etc/wibutunnel/locked_users.db 2>/dev/null)" ]]; then
+                    NEW_EXP_CONTENT+="${line}\n"
+                    continue
+                fi
+
+                if [[ "$user" == *"trial"* ]]; then
+                    TRIAL_TO_DELETE+=("$user")
+                    # [FIX H2] Jangan hapus DB/penanda dulu! Dulu commit ke DB
+                    # dilakukan DI SINI, sebelum jq apply blokir di bawah. Kalau
+                    # jq itu gagal (flock timeout / config rusak), user sudah
+                    # ditandai EXPIRED tapi TIDAK diblokir -> akses selamanya
+                    # (guard anti-spam di atas skip user EXPIRED selamanya).
+                    # Commit DB sekarang SETELAH jq sukses (liat bawah).
+                    # Do not append to NEW_EXP_CONTENT (removes from EXP_FILE)
+                    FOOTER="Deleted Permanently"
+                else
+                    NORMAL_TO_RECOVERY+=("$user")
+                    NEW_EXP_CONTENT+="${line}\n"
+                    FOOTER="Move to Recovery"
+                fi
+
+                if [[ ! "$NOTIFIED_USERS" == *" ${user}_${PROTO_NAME} "* ]]; then
+                    NOTIFIED_USERS+=" ${user}_${PROTO_NAME} "
+                    if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+                        DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                        IP_VPS="${MYIP:-$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null)}"
+                        ISP=$(get_isp 2>/dev/null)
+                        [[ -z "$ISP" ]] && ISP="Unknown"
+
+                        PESAN="═══ ⛔ EXPIRED ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> ${PROTO_NAME}
+<b>User   :</b> <code>${user}</code>
+<b>Expired:</b> ${exp_date}
+
+<i>${FOOTER}</i>
+══════════════"
+                        tg_curl -X POST sendMessage \
+                            --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1 &
+                    fi
+                fi
+            else
+                NEW_EXP_CONTENT+="${line}\n"
+            fi
+        else
+            # User not in config anymore, naturally removed from EXP_FILE
+            :
+        fi
+    done < "$EXP_FILE"
+
+    # [FIX M-M7/8] printf (bukan echo -e: backslash di data user diinterpretasi
+# -> baris exp rusak) + tulis tmp+mv atomic (menu baca file yg sama).
+printf '%b\n' "$NEW_EXP_CONTENT" > "$EXP_FILE.tmp" && mv "$EXP_FILE.tmp" "$EXP_FILE"
+}
+
+process_expired "$VLESS_EXP" "VLESS" "$ACTIVE_VLESS"
+process_expired "$VMESS_EXP" "VMESS" "$ACTIVE_VMESS"
+process_expired "$TROJAN_EXP" "TROJAN" "$ACTIVE_TROJAN"
+
+if [[ ${#TRIAL_TO_DELETE[@]} -gt 0 || ${#NORMAL_TO_RECOVERY[@]} -gt 0 ]]; then
+    # [FIX H4] Dulu filter jq dibangun dgn interpolasi string mentah
+    # (JQ_FILTER+="...select(.email != \"$u\")..."). Username berisi "
+    # atau \ (mis. dari exp file hasil restore malicious) bisa MENGUBAH
+    # program jq itu sendiri -> injeksi config-level. Sekarang array user
+    # dibangun sbg JSON valid & dilewatkan via --argjson (tipe aman, tidak
+    # pernah di-parse sebagai kode jq).
+    TRIAL_JSON="[]"
+    if [[ ${#TRIAL_TO_DELETE[@]} -gt 0 ]]; then
+        TRIAL_JSON=$(printf '%s\n' "${TRIAL_TO_DELETE[@]}" | jq -Rn '[inputs]')
+    fi
+    EXPIRED_JSON="[]"
+    if [[ ${#NORMAL_TO_RECOVERY[@]} -gt 0 ]]; then
+        EXPIRED_JSON=$(printf '%s\n' "${NORMAL_TO_RECOVERY[@]}" | jq -Rn '[inputs]')
+    fi
+
+    # 1. Hapus trial user dari semua inbound (null-safe: inbound api tanpa
+    #    field clients -> guard type == "array").
+    # 2. Tambah user expired normal ke routing blocked.
+    if safe_jq_edit_args \
+        --argjson trials "$TRIAL_JSON" \
+        --argjson expired "$EXPIRED_JSON" '
+        (.inbounds[] | .settings.clients) |= (if type == "array"
+            then map(select(.email as $e | ($trials | index($e) | not)))
+            else . end)
+        | (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user)
+            |= (. + $expired | unique)
+    '; then
+        # [FIX H2] BARU di sini - SETELAH config xray benar-benar di-update -
+        # commit penanda DB. Kalau jq di atas gagal, DB tidak disentuh, jadi
+        # siklus xp berikutnya akan mencoba lagi (user belum dianggap
+        # EXPIRED) -> self-healing, tidak ada bypass permanen.
+        now=$(date +%s)
+        for u in "${TRIAL_TO_DELETE[@]}"; do
+            safe_sed_delete "$u" /etc/wibutunnel/limit_ip.db
+            safe_sed_delete "$u" /etc/wibutunnel/limit_bw.db
+            safe_sed_delete "$u" /etc/wibutunnel/locked_users.db
+            safe_sed_delete "$u" /etc/wibutunnel/user_usage.db
+        done
+        for u in "${NORMAL_TO_RECOVERY[@]}"; do
+            safe_sed_delete "$u" /etc/wibutunnel/limit_ip.db
+            safe_sed_delete "$u" /etc/wibutunnel/limit_bw.db
+            safe_sed_delete "$u" /etc/wibutunnel/user_usage.db
+            safe_sed_delete "$u" /etc/wibutunnel/locked_users.db
+            echo "$u:$now:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
+        done
+        systemctl restart xray >/dev/null 2>&1
+    else
+        echo "[ERROR] xp.sh: gagal mengedit config xray, restart dibatalkan" >&2
+    fi
+fi
+
+# ==========================================
+# SSH TUNNEL: auto-lock akun yang sudah kadaluarsa
+# ==========================================
+# Akun SSH pakai user sistem; chage -E sudah menolak login otomatis, tapi sesi
+# yang masih aktif harus diputus, dan status dicatat ke locked_users.db
+# (reason=EXPIRED) agar muncul di Recovery Center & bisa diperpanjang kembali.
+if [[ -f /etc/xray/ssh_exp.conf ]]; then
+    today_sec=$(date +%s)
+    NEW_SSH_EXP=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && { NEW_SSH_EXP+="${line}\n"; continue; }
+        ssh_user=$(echo "$line" | cut -d: -f1)
+        ssh_exp=$(echo "$line" | cut -d: -f2-)
+        [[ "$ssh_user" == *"dummy"* ]] && { NEW_SSH_EXP+="${line}\n"; continue; }
+
+        ssh_exp_sec=$(date -d "$ssh_exp" +%s 2>/dev/null)
+        [[ -z "$ssh_exp_sec" ]] && { NEW_SSH_EXP+="${line}\n"; continue; }
+
+        if ssh_user_exists "$ssh_user"; then
+            if [[ "$today_sec" -ge "$ssh_exp_sec" ]]; then
+                if ! db_has "$ssh_user" /etc/wibutunnel/locked_users.db; then
+                    passwd -l "$ssh_user" >/dev/null 2>&1
+                    pkill -u "$ssh_user" 2>/dev/null
+                    now=$(date +%s)
+                    IS_TRIAL=false
+                    [[ "$ssh_user" == trial-* ]] && IS_TRIAL=true
+                    
+                    # Only add to locked_users.db if NOT trial (trial will be deleted)
+                    [[ "$IS_TRIAL" == false ]] && echo "${ssh_user}:${now}:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
+                    
+                    FOOTER="Move to Recovery (lock)"
+                    [[ "$IS_TRIAL" == true ]] && FOOTER="Deleted Permanently"
+                    
+                    if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+                        (
+                        DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                        ISP=$(get_isp 2>/dev/null || echo "Unknown")
+                        PESAN="═══ ⛔ EXPIRED ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> SSH
+<b>User   :</b> <code>${ssh_user}</code>
+<b>Expired:</b> ${ssh_exp}
+
+<i>${FOOTER}</i>
+══════════════"
+                        tg_curl -X POST sendMessage \
+                            --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
+                        ) &
+                    fi
+                    
+                    # Delete trial user and skip adding to NEW_SSH_EXP
+                    if [[ "$IS_TRIAL" == true ]]; then
+                        del_ssh_user "$ssh_user" >/dev/null 2>&1
+                        continue  # Skip adding this line back to ssh_exp.conf
+                    fi
+                fi
+                NEW_SSH_EXP+="${line}\n"
+            else
+                NEW_SSH_EXP+="${line}\n"
+            fi
+        fi
+    done < /etc/xray/ssh_exp.conf
+    printf '%b\n' "$NEW_SSH_EXP" > /etc/xray/ssh_exp.conf.tmp && mv /etc/xray/ssh_exp.conf.tmp /etc/xray/ssh_exp.conf
+fi
+
+# ==========================================
+# AUTO TRUNCATE LOGS (PREVENT DISK FULL)
+# ==========================================
+LOG_SIZE=$(stat -c%s "/var/log/xray/access.log" 2>/dev/null || echo 0)
+if [[ $LOG_SIZE -gt 41943040 ]]; then # 40MB
+    > /var/log/xray/access.log
+    > /var/log/xray/error.log
+fi

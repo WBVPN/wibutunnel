@@ -1,0 +1,236 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - algojo-wibu (v4.0 Kurumi)
+# [MAJOR] Deteksi IP-sharing LIVE via socket table (ss) + grace period 120s
+# ==========================================
+# Xray official hanya melog event "accepted" (tidak ada "closed"), sehingga
+# deteksi IP-sharing berbasis log menebak saja. Upgrade ini membaca koneksi
+# ESTABLISHED langsung dari socket table:
+#   1. ss -> IP client yang sedang online di HAProxy :443/:80 (IP asli)
+#   2. access.log -> pasangan user<->IP (PROXY protocol mengirim IP asli)
+#   3. Irisan keduanya = user<->IP yang online SAAT INI, bukan tebakan.
+# 4. GRACE PERIOD 120s: IP handover (pindah WiFi/sinyal) membuat IP lama &
+#    IP baru overlap sebentar. Lock hanya jika multi-IP bertahan > 120 detik,
+#    sehingga user jujur tidak kena lock palsu.
+source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
+load_bot_conf
+DB_IP="/etc/wibutunnel/limit_ip.db"
+DB_LOCK="/etc/wibutunnel/locked_users.db"
+LOCK_CONF="/etc/wibutunnel/lock.conf"
+
+LOCK_DURATION=15
+if [ -f "$LOCK_CONF" ]; then source "$LOCK_CONF"; fi
+[[ ! -f "$DB_IP" ]] && exit 0
+
+NOW=$(date +%s)
+GRACE="${WIBU_GRACE_PERIOD:-120}"
+IP_STATE="/etc/wibutunnel/tmp/ip_seen.db"
+mkdir -p /etc/wibutunnel/tmp; touch "$IP_STATE"
+
+# ==========================================
+# Ambil pasangan user <-> IP yang online SAAT INI
+# ==========================================
+LOG_WINDOW=$(date -d '10 minutes ago' +'%Y/%m/%d %H:%M:%S')
+LOG_PAIRS=$(awk -v thresh="$LOG_WINDOW" '{
+    if($1 ~ /^[0-9][0-9][0-9][0-9]\/[0-9][0-9]\/[0-9][0-9]$/ && $1" "$2 < thresh) exit
+    if(/accepted/){
+        for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }
+        email=$NF; gsub(/[ \t\r\n]+$/, "", email)
+        if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") print email, ip
+    }
+}' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null | sort -u)
+
+LIVE_IPS=""
+USE_LIVE=0
+if command -v ss >/dev/null 2>&1; then
+    LIVE_IPS=$(ss -tnH state established '( sport = :443 or sport = :80 )' 2>/dev/null \
+        | awk '{print $4}' | sed 's/:[0-9]*$//' | grep -v '^127\.' | sort -u)
+    [[ -n "$LIVE_IPS" ]] && USE_LIVE=1
+fi
+
+if [[ "$USE_LIVE" == "1" && -n "$LOG_PAIRS" ]]; then
+    # Irisan: user<->IP yang IP-nya benar-benar online sekarang
+    ONLINE_PAIRS=$(printf '%s\n' "$LOG_PAIRS" | awk -v live="$LIVE_IPS" '
+        BEGIN { n=split(live, L, "\n"); for(i=1;i<=n;i++) if(L[i]!="") seen[L[i]]=1 }
+        ($2 in seen) { print }')
+    # [FIX H12] Di belakang CDN/PROXY protocol, `ss` hanya lihat IP edge CDN
+    # sedangkan log berisi IP client asli -> irisan pasti kosong -> fitur
+    # IP-sharing lock mati total diam-diam. Fallback ke window log 3 menit.
+    if [[ -z "$ONLINE_PAIRS" && -n "$LOG_PAIRS" ]]; then
+        ONLINE_PAIRS="$LOG_PAIRS"
+    fi
+else
+    # Fallback: pakai window log 3 menit (deteksi lama)
+    ONLINE_PAIRS=$(awk -v thresh="$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')" '{
+        if($1 ~ /^[0-9][0-9][0-9][0-9]\/[0-9][0-9]\/[0-9][0-9]$/ && $1" "$2 < thresh) exit
+        if(/accepted/){
+            for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }
+            email=$NF; gsub(/[ \t\r\n]+$/, "", email)
+            if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") print email, ip
+        }
+    }' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null | sort -u)
+fi
+
+# ==========================================
+# State: catat kapan pertama kali IP ini terlihat online (untuk grace period)
+# Format: user:ip:first_seen_epoch
+# Pair yang tidak online sekarang di-prune (sudah disconnect).
+# ==========================================
+STATE_TMP=$(mktemp /etc/wibutunnel/tmp/ip_state.XXXXXX)
+if [[ -n "$ONLINE_PAIRS" ]]; then
+    printf '%s\n' "$ONLINE_PAIRS" | while read -r u ip; do
+        [[ -z "$u" || -z "$ip" ]] && continue
+        ts=$(awk -F: -v u="$u" -v i="$ip" '$1==u && $2==i{print $3; exit}' "$IP_STATE")
+        [[ -z "$ts" ]] && ts="$NOW"
+        printf '%s:%s:%s\n' "$u" "$ip" "$ts" >> "$STATE_TMP"
+    done
+fi
+mv "$STATE_TMP" "$IP_STATE" 2>/dev/null
+
+# ==========================================
+# Hitung jumlah IP per user & tentukan pelanggar (dengan grace period)
+# ==========================================
+declare -A IP_COUNT IP_OLDEST
+if [[ -n "$ONLINE_PAIRS" ]]; then
+    while read -r u ip; do
+        [[ -z "$u" || -z "$ip" ]] && continue
+        IP_COUNT["$u"]=$(( ${IP_COUNT["$u"]:-0} + 1 ))
+        ts=$(awk -F: -v u="$u" -v i="$ip" '$1==u && $2==i{print $3; exit}' "$IP_STATE")
+        [[ -z "$ts" ]] && ts="$NOW"
+        # [FIX CRITICAL] Track OLDEST timestamp (first seen) for grace period
+        if [[ -z "${IP_OLDEST[$u]}" || "$ts" -lt "${IP_OLDEST[$u]}" ]]; then
+            IP_OLDEST["$u"]="$ts"
+        fi
+    done <<< "$ONLINE_PAIRS"
+fi
+
+USERS_TO_LOCK=()
+for email in "${!IP_COUNT[@]}"; do
+    max_ip=$(db_lookup "$email" "$DB_IP" | cut -d: -f2)
+    [[ "$max_ip" == "0" || -z "$max_ip" ]] && continue
+    # [FIX M-A3] max_ip non-numerik (DB_IP korup) -> error aritmatika
+    # # menghentikan for -> sisa user tak dicek -> IP-limit bypass diam-diam.
+    [[ "$max_ip" =~ ^[0-9]+$ ]] || continue
+    (( ${IP_COUNT["$email"]} > max_ip )) || continue
+
+    # [FIX CRITICAL] Grace period: NOW - oldest_timestamp >= GRACE
+    # (oldest = first seen, duration multi-IP active)
+    overlap=$(( NOW - ${IP_OLDEST["$email"]:-$NOW} ))
+    (( overlap >= GRACE )) || continue
+
+    if ! db_has "$email" "$DB_LOCK"; then
+        proto="UNKNOWN"
+        db_has "$email" /etc/xray/vless_exp.conf && proto="VLESS"
+        db_has "$email" /etc/xray/vmess_exp.conf && proto="VMESS"
+        db_has "$email" /etc/xray/trojan_exp.conf && proto="TROJAN"
+
+        now=$(date +%s)
+        unlock_time=$((now + (LOCK_DURATION * 60)))
+        lock_db_append "${email}:${now}:${unlock_time}:IP_LIMIT" "$DB_LOCK"
+
+        USERS_TO_LOCK+=("$email")
+
+        (
+            # Get protocol
+            if db_has "$email" /etc/xray/vless_exp.conf; then
+                PROTO="VLESS"
+            elif db_has "$email" /etc/xray/vmess_exp.conf; then
+                PROTO="VMESS"
+            elif db_has "$email" /etc/xray/trojan_exp.conf; then
+                PROTO="TROJAN"
+            else
+                PROTO="UNKNOWN"
+            fi
+            
+            DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+            IP_VPS="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+            ISP=$(get_isp 2>/dev/null || echo "Unknown")
+            UNLOCK_TIME=$(date -d "@$unlock_time" '+%H:%M WIB')
+            
+            # Extract login history
+            LOGIN_HISTORY=$(awk -v u="$email" '
+            /accepted/ {
+                if ($NF == u) {
+                    time_only = substr($2, 1, 8)
+                    for(i=1;i<=NF;i++) {
+                        if($i=="accepted") {
+                            ip=$(i-1)
+                            sub(/^(tcp|udp):/, "", ip)
+                            sub(/:[0-9]+$/,"", ip)
+                            break
+                        }
+                    }
+                    print time_only, ip
+                }
+            }' <(tail -1000 /var/log/xray/access.log 2>/dev/null) | sort -u | tail -10 | awk '{print "☆ "$1" | "$2}')
+            
+            PESAN="═══ 🔒 AUTO LOCK ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> ${PROTO}
+<b>User   :</b> <code>${email}</code>
+<b>Reason :</b> Multiple devices (${IP_COUNT["$email"]} > ${max_ip})
+<b>Unlock :</b> ${UNLOCK_TIME}
+
+<b>Login History:</b>
+${LOGIN_HISTORY}
+══════════════"
+            tg_curl -X POST sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
+        ) &
+    fi
+done
+
+# ==========================================
+# SSH TUNNEL: limit IP (multi-login) untuk akun dropbear
+# ==========================================
+# Untuk SSH, "limit IP" = batas sesi simultan. Hitung sesi aktif per user;
+# bila melampaui batas, kunci sementara (sama seperti xray IP-limit).
+while read -r ssh_user; do
+    [[ -z "$ssh_user" || "$ssh_user" == *"dummy"* ]] && continue
+    max_ip=$(db_lookup "$ssh_user" "$DB_IP" | cut -d: -f2)
+    [[ "$max_ip" == "0" || -z "$max_ip" ]] && continue
+    db_has "$ssh_user" "$DB_LOCK" && continue
+
+    sess_count=$(ssh_session_count "$ssh_user")
+    # [FIX M-A2] DB_IP non-numerik -> "integer expression expected" ->
+    # # rc!=0 -> && continue tak jalan -> user di-pkill+lock meski sesi sedikit.
+    # # Field bukan angka (data rusak) -> anggap tanpa limit, jangan kunci.
+    [[ "$max_ip" =~ ^[0-9]+$ ]] || continue
+    [[ "$sess_count" -le "$max_ip" ]] && continue
+
+    now=$(date +%s)
+    unlock_time=$((now + (LOCK_DURATION * 60)))
+    lock_db_append "${ssh_user}:${now}:${unlock_time}:IP_LIMIT" "$DB_LOCK"
+    pkill -u "$ssh_user" 2>/dev/null
+
+    USERS_TO_LOCK+=("$ssh_user")
+    (
+        DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+        IP_VPS="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+        ISP=$(get_isp 2>/dev/null || echo "Unknown")
+        UNLOCK_TIME=$(date -d "@$unlock_time" '+%H:%M WIB')
+        
+        # SSH sessions (no login history for SSH from access.log)
+        PESAN="═══ 🔒 AUTO LOCK ═══
+<b>ISP    :</b> ${ISP}
+<b>Domain :</b> <code>${DOMAIN}</code>
+<b>Type   :</b> SSH
+<b>User   :</b> <code>${ssh_user}</code>
+<b>Reason :</b> Multiple sessions (${sess_count} > ${max_ip})
+<b>Unlock :</b> ${UNLOCK_TIME}
+══════════════"
+        tg_curl -X POST sendMessage --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN}" >/dev/null 2>&1
+    ) &
+done < <(ssh_list_users)
+
+if [[ ${#USERS_TO_LOCK[@]} -gt 0 ]]; then
+    jq_args=()
+    for usr in "${USERS_TO_LOCK[@]}"; do
+        jq_args+=("$usr")
+    done
+    if safe_jq_edit_args --argjson users "$(printf '%s\n' "${jq_args[@]}" | jq -R . | jq -s .)" '(.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) |= (. + $users | unique)'; then
+        systemctl restart xray >/dev/null 2>&1
+    else
+        echo "[ERROR] algojo-wibu: gagal mengedit config xray" >&2
+    fi
+fi

@@ -1,0 +1,12 @@
+# Mock License File for Testing
+# Format: IP | Name | Expiry (or LIFETIME)
+
+127.0.0.1 | ci-test-local | LIFETIME
+0.0.0.0 | ci-test-any | LIFETIME
+10.0.0.1 | ci-test-internal | LIFETIME
+::1 | ci-test-ipv6 | LIFETIME
+
+# Test various license formats
+192.168.1.100 | test-standard | 2099-12-31
+192.168.1.101 | test-expired | 2020-01-01
+192.168.1.102 | test-lifetime | LIFETIME
