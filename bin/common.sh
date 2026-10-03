@@ -204,8 +204,6 @@ license_expired() {
     
     # Validate date format strictly (YYYY-MM-DD only)
     if [[ ! "$exp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-        echo -e "${RED}[!] ERROR: Invalid license date format: $exp${NC}" >&2
-        echo -e "${RED}[!] Expected format: YYYY-MM-DD${NC}" >&2
         return 1  # Treat invalid as expired (fail-safe)
     fi
     
