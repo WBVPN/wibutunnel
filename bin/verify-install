@@ -124,7 +124,7 @@ echo ""
 # Check HAProxy backends (no more ws-stunnel:10015)
 echo -e "${CYAN}[5/5] Checking HAProxy Backend Configuration...${NC}"
 
-if grep -q "ws-stunnel.*10015" /etc/haproxy/haproxy.cfg 2>/dev/null; then
+if grep -v "^#" /etc/haproxy/haproxy.cfg 2>/dev/null | grep -q "ws-stunnel.*10015" 2>/dev/null; then
     echo -e "  ${RED}❌ OLD CONFIG: Still using ws-stunnel port 10015${NC}"
     echo -e "     ${YELLOW}Run setup.sh to update HAProxy config${NC}"
     ((ERRORS++))
