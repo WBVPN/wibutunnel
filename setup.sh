@@ -1698,6 +1698,14 @@ else
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 fi
 
+
+# [POST-INSTALL] Run verification before reboot
+if [[ -x /usr/local/bin/verify-install ]]; then
+    echo ''
+    echo -e '\e[1;36mRunning post-install verification...\e[0m'
+    /usr/local/bin/verify-install || echo -e '\e[1;33mVerification warnings detected\e[0m'
+fi
+
 if [[ "${WIBU_NO_REBOOT:-0}" == "1" ]]; then
     echo -e "\e[33m[!] WIBU_NO_REBOOT=1 -> reboot dilewati. Semua layanan sudah direstart di atas.\e[0m"
     echo -e "\e[33m    Disarankan reboot manual di waktu luang untuk menerapkan tuning sepenuhnya.\e[0m"
@@ -1706,9 +1714,3 @@ fi
 sleep 8
 reboot
 
-# [POST-INSTALL] Run verification
-if [[ -x /usr/local/bin/verify-install ]]; then
-    echo ''
-    echo -e '\e[1;36mRunning post-install verification...\e[0m'
-    /usr/local/bin/verify-install || echo -e '\e[1;33mVerification warnings detected\e[0m'
-fi
