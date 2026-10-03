@@ -59,10 +59,6 @@ check_trial_limit() {
     mkdir -p "$(dirname "$trial_db")"
     touch "$trial_db"
     
-    # [FIX] flock untuk prevent TOCTOU race condition
-    exec 200>"${trial_db}.lock"
-    flock -x 200 || { echo "Lock failed"; return 1; }
-    
     # Clean old entries (>24h) atomically
     if [[ -f "$trial_db" ]]; then
         awk -F: -v cutoff="$cutoff_time" '$3 >= cutoff || $0 ~ /^#/' "$trial_db" > "${trial_db}.tmp" 2>/dev/null
@@ -75,12 +71,10 @@ check_trial_limit() {
     trial_count=$(awk -F: -v ip="$caller_ip" '$1==ip' "$trial_db" 2>/dev/null | wc -l)
     
     if [[ "$trial_count" -ge "$max_trials" ]]; then
-        flock -u 200
         echo -e "${RED}[!] Limit trial tercapai. Maksimal ${max_trials} trial per IP per 24 jam.${NC}"
         return 1
     fi
     
-    flock -u 200
     return 0
 }
 
@@ -90,11 +84,7 @@ record_trial() {
     local username="$2"
     local trial_db="/etc/wibutunnel/tmp/trial_limits.db"
     
-    # [FIX] flock untuk atomic record
-    exec 201>"${trial_db}.lock"
-    flock -x 201 || return 1
     echo "${caller_ip}:${username}:$(date +%s)" >> "$trial_db"
-    flock -u 201
 }
 if [[ -z "$MYIP" ]]; then
     echo -e "${RED}[WARNING] Gagal mendapatkan IP publik. Periksa koneksi internet.${NC}" >&2
@@ -213,15 +203,11 @@ license_expired() {
     local today=$(date +%Y-%m-%d)
     
     # Validate date format strictly (YYYY-MM-DD only)
-    # Handle LIFETIME special case
-    if [[ "${exp,,}" == "lifetime" || -z "$exp" ]]; then
-        return 1  # not expired
-    fi
-
-    # Validate date format strictly (YYYY-MM-DD only)
     if [[ ! "$exp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
         return 1  # Treat invalid as expired (fail-safe)
     fi
+    
+    # String comparison works for ISO dates
     if [[ "$exp" < "$today" ]]; then
         return 0  # expired
     else
@@ -256,9 +242,8 @@ check_license() {
                     rm -f "$CACHE_FILE"
                     clear
                     echo -e "${LINE}\n                 ${RED}LISENSI KADALUARSA!${NC}\n${LINE}"
-                    echo -e " ${CYAN}Client     : ${WHITE}${c_name}${NC}"
-                    echo -e " ${CYAN}Berlaku s/d: ${RED}${c_exp}${NC}\n${LINE}"
-                    echo -e " ${YELLOW}Perpanjang lisensi Anda untuk lanjut menggunakan script.${NC}\n${LINE}"
+                    echo -e " Client     : ${WHITE}${c_name}${NC}"
+                    echo -e " Expired On : ${RED}${c_exp}${NC}\n${LINE}"
                     exit 1
                 fi
                 export CLIENT_NAME="$c_name"
@@ -307,14 +292,13 @@ check_license() {
         rm -f "$CACHE_FILE"
         clear
         echo -e "${LINE}\n                 ${RED}LISENSI KADALUARSA!${NC}\n${LINE}"
-        echo -e " ${CYAN}Client     : ${WHITE}${CLIENT_NAME}${NC}"
-        echo -e " ${CYAN}Berlaku s/d: ${RED}${EXP_DATE}${NC}\n${LINE}"
-        echo -e " ${YELLOW}Perpanjang lisensi Anda untuk lanjut menggunakan script.${NC}\n${LINE}"
+        echo -e " Client     : ${WHITE}${CLIENT_NAME}${NC}"
+        echo -e " Expired On : ${RED}${EXP_DATE}${NC}\n${LINE}"
         exit 1
     fi
 
-    # Simpan ke Cache dengan Format Baru
-    echo "VALID|${CLIENT_NAME}|${EXP_DATE}" > "$CACHE_FILE"
+    export CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}')
+    export EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}')
     return 0
 }
 
@@ -401,24 +385,34 @@ ssh_get_pass() {
 # hitung sesi dropbear aktif per user (pgrep lebih akurat daripada utmp)
 ssh_session_count() {
     local user="$1" count=0
-    # [FIX] Count actual dropbear processes owned by user (log parsing unreliable)
-    count=$(pgrep -u "$user" dropbear 2>/dev/null | wc -l)
+    # Get dropbear PIDs for this user from recent auth logs (last 60 min)
+    while read -r pid; do
+        [[ -n "$pid" && -d "/proc/$pid" ]] && ((count++))
+    done < <(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
+        grep "Password auth succeeded for '${user}'" | \
+        awk '{print $6}' | sed 's/[][]//g' | sort -u)
     printf '%s' "$count"
 }
 
 # daftar IP sumber dari koneksi dropbear milik user (via HAProxy active connections)
 ssh_active_ips() {
-    local user="$1" out=""
-    # [FIX] Detect all dropbear connections (HAProxy + direct ports 143/109/2222)
-    local uid; uid=$(id -u "$user" 2>/dev/null) || return 0
+    local user="$1" out="" has_session=""
+    # Check if user has active dropbear session (get most recent auth)
+    has_session=$(journalctl -u dropbear --since "60 minutes ago" --no-pager 2>/dev/null | \
+        grep "Password auth succeeded for '${user}'" | \
+        awk '{print $6}' | sed 's/[][]//g' | tail -1)
     
-    # Get IPs from all established dropbear connections owned by this user
+    # Verify PID still exists
+    [[ -n "$has_session" && -d "/proc/$has_session" ]] || return 0
+    
+    # For active sessions, get all client IPs from HAProxy SSL connections
+    # (HAProxy only logs on close, so use ss for live sessions)
     while read -r line; do
         out+="${line} "
     done < <(ss -tnp 2>/dev/null | \
-        grep "dropbear" | \
+        grep "haproxy" | \
+        grep ":443" | \
         grep ESTAB | \
-        grep "uid=$uid" | \
         awk '{print $5}' | \
         sed 's/:[0-9]*$//' | \
         grep -vE '^(127\.0\.0\.1|::1)$' | \
@@ -436,10 +430,6 @@ add_ssh_user() {
     ssh_user_exists "$user" && { echo "user $user sudah ada"; return 1; }
 
     useradd -m -s "$SSH_SHELL" -G "$SSH_GROUP" "$user" >/dev/null 2>&1 || { echo "gagal useradd"; return 1; }
-    # [SECURITY FIX] Reject password dengan newline untuk prevent chpasswd injection
-    if [[ "$pass" =~ $'\n'|$'\r' ]]; then
-        userdel "$user" >/dev/null 2>&1; echo "password tidak boleh mengandung newline"; return 1
-    fi
     if ! printf '%s:%s\n' "$user" "$pass" | chpasswd 2>/dev/null; then
         userdel "$user" >/dev/null 2>&1; echo "gagal set password"; return 1
     fi
@@ -694,15 +684,4 @@ tg_curl() {
     curl -s -K - "${xpost[@]}" "$@" <<TGCONF 2>/dev/null
 url = "https://api.telegram.org/bot${BOT_TOKEN}/${method}"
 TGCONF
-}
-
-# [FIX CRITICAL] Atomic lock DB write dengan flock
-# Usage: lock_db_append "user:now:unlock:reason" "$DB_LOCK"
-lock_db_append() {
-    local content="$1" db_file="$2"
-    local lock_file="${db_file}.lock"
-    exec 203>"$lock_file"
-    flock -x 203 || return 1
-    echo "$content" >> "$db_file"
-    flock -u 203
 }
