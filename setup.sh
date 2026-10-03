@@ -118,7 +118,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # [FIX M-S7] Cek konflik port DI AWAL, sebelum modifikasi sistem apapun.
 # # Sebelumnya dicek di tengah (setelah certbot, config xray, haproxy di-stop)
 # # -> exit 1 meninggalkan VPS setengah jalan (service lawan sudah dimatikan).
-# [FIX M4] Service wibu sendiri (xray/haproxy/dropbear/ws-stunnel) masih
+# [FIX M4] Service wibu sendiri (xray/haproxy/dropbear) masih
 # # running saat reinstall -> memegang port 80/443/143/10015 -> cek konflik
 # # menolak reinstall yang sah. Stop dulu; akan dikonfigurasi ulang nanti.
 systemctl stop xray haproxy dropbear 2>/dev/null
@@ -1215,9 +1215,9 @@ fi
 cp /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.backup
 
 # =========================================================
-# SSH TUNNEL STACK (Dropbear 2019.78 + ws-stunnel + badvpn-udpgw)
+# SSH TUNNEL STACK (Dropbear 2019.78 + badvpn-udpgw)
 # =========================================================
-echo -e "\e[1;36m[+] Memasang SSH Tunnel Stack (Dropbear 2019.78 + ws-stunnel + udpgw)...\e[0m"
+echo -e "\e[1;36m[+] Memasang SSH Tunnel Stack (Dropbear 2019.78 + udpgw)...\e[0m"
 
 # [FIX] Deteksi script/bash ATAU ELF binary tanpa menelan null byte.
 # "head -n 1 <elf>" memuntahkan null byte -> bash warning + grep selalu gagal,
@@ -1230,7 +1230,6 @@ wibu_file_valid() {
     [[ "$m" == 23212f* || "$m" == 7f454c46 ]]
 }
 
-# ws-stunnel & installer SSH diunduh dari repo (source of truth)
 download_ssh_tool() {
     local path="$1" name="$2"
     local src="${WIBU_LOCAL_REPO:-}/${path}"
@@ -1263,11 +1262,9 @@ download_ssh_tool() {
     fi
 }
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
-download_ssh_tool "bin/ws-stunnel" "ws-stunnel"
 download_ssh_tool "bin/ssh-tunnel-install" "ssh-tunnel-install"
 
 # Jalankan installer stack SSH (idempoten: compile dropbear, keys, systemd,
-# ws-stunnel, udpgw, ip_forward + NAT, dan melepas port 80/443 dari layanan lain)
 echo -e "\e[1;36m[*] Installing SSH tunnel support (Dropbear)...\e[0m"
 if [ -x /usr/local/bin/ssh-tunnel-install ]; then
     if ! bash /usr/local/bin/ssh-tunnel-install; then
@@ -1521,9 +1518,8 @@ LREOF
 cat <<EOF > /usr/local/bin/watchdog.sh
 #!/bin/bash
 # [FIX] watchdog sebelumnya hanya cover xray+haproxy. Kalau dropbear atau
-# ws-stunnel mati, akun SSH offline selamanya tanpa auto-recovery (user
 # komplain duluan sebelum admin sadar). Sekarang semua service inti dipantau.
-for unit in xray haproxy dropbear ws-stunnel wibu-daemon; do
+for unit in xray haproxy dropbear wibu-daemon; do
     systemctl is-active --quiet "$unit" 2>/dev/null || systemctl restart "$unit" 2>/dev/null
 done
 EOF
@@ -1683,7 +1679,6 @@ haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1 && echo -e "HAProxy Confi
 ss -tlnp | grep -q ":10085" && echo -e "Xray API (10085)    : \e[32m[OK]\e[0m" || echo -e "Xray API (10085)    : \e[33m[WARNING]\e[0m"
 systemctl is-active --quiet wibu-daemon && echo -e "Algojo Daemon       : \e[32m[OK]\e[0m" || echo -e "Algojo Daemon       : \e[31m[FAIL]\e[0m"
 systemctl is-active --quiet dropbear && echo -e "Dropbear SSH        : \e[32m[OK]\e[0m" || echo -e "Dropbear SSH        : \e[33m[WARNING]\e[0m"
-systemctl is-active --quiet ws-stunnel && echo -e "ws-stunnel (WS)     : \e[32m[OK]\e[0m" || echo -e "ws-stunnel (WS)     : \e[33m[WARNING]\e[0m"
 ss -tlnp | grep -q ":143" && echo -e "SSH Port 143        : \e[32m[OK]\e[0m" || echo -e "SSH Port 143        : \e[33m[WARNING]\e[0m"
 # REMOVED: ss -tlnp | grep -q ":10015" && echo -e "ws-stunnel 10015    : \e[32m[OK]\e[0m" || echo -e "ws-stunnel 10015    : \e[33m[WARNING]\e[0m"
 

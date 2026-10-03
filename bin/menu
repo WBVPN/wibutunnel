@@ -47,7 +47,7 @@ svc_status() {
     local nm="$1" unit="$2" st
     
     # Special handling for WS - check actual Xray WS ports instead of service
-    if [[ "$unit" == "ws-stunnel" ]]; then
+    if [[ "$unit" == "xray-ws" ]]; then
         if ss -tlnp 2>/dev/null | grep -q ":10086.*xray"; then
             st="${GREEN}ON${NC}"
         else
@@ -74,7 +74,7 @@ echo -e " ${CYAN}Uptime     :${NC} ${WHITE}${UPTIME}${NC}"
 echo -e " ${CYAN}RAM Use    :${NC} ${WHITE}${RAM_USED} MB / ${RAM_TOTAL} MB${NC}"
 echo -e " ${CYAN}CPU Use    :${NC} ${WHITE}${CPU_USAGE}%${NC}"
 echo -e " ${CYAN}Service    :${NC} [ ${SERVER_ST} ]"
-echo -e " $(svc_status HAProxy haproxy) ${WHITE}•${NC} $(svc_status Xray xray) ${WHITE}•${NC} $(svc_status Dropbear dropbear) ${WHITE}•${NC} $(svc_status WS ws-stunnel)"
+echo -e " $(svc_status HAProxy haproxy) ${WHITE}•${NC} $(svc_status Xray xray) ${WHITE}•${NC} $(svc_status Dropbear dropbear) ${WHITE}•${NC} $(svc_status WS xray-ws)"
 echo -e "${LINE}"
 echo -e " ${BLUE}[1] Menu SSH${NC}"
 echo -e " ${GREEN}[2] Menu VLESS${NC}"
