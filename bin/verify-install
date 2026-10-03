@@ -1,0 +1,174 @@
+#!/bin/bash
+# =====================================================================
+# WIBU TUNNELING - Post-Install Verification Script
+# =====================================================================
+# Usage: /usr/local/bin/verify-install
+# Exit codes: 0=success, 1=critical failure, 2=warnings only
+
+RED='\e[1;31m'
+GREEN='\e[1;32m'
+YELLOW='\e[1;33m'
+CYAN='\e[1;36m'
+WHITE='\e[1;37m'
+NC='\e[0m'
+LINE="${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+ERRORS=0
+WARNINGS=0
+
+echo -e "${LINE}"
+echo -e "        ${WHITE}WIBUTUNNEL POST-INSTALL VERIFICATION${NC}"
+echo -e "${LINE}"
+echo ""
+
+# Check critical ports
+echo -e "${CYAN}[1/5] Checking Critical Ports...${NC}"
+CRITICAL_PORTS="80 443 109"
+XRAY_WS_PORTS="10086 10087 10089 10090 10092"
+
+for port in $CRITICAL_PORTS; do
+    if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+        echo -e "  ✅ Port ${port}: listening"
+    else
+        echo -e "  ${RED}❌ Port ${port}: NOT listening${NC}"
+        ((ERRORS++))
+    fi
+done
+
+for port in $XRAY_WS_PORTS; do
+    if ss -tlnp 2>/dev/null | grep -q ":${port}.*xray"; then
+        echo -e "  ✅ Port ${port}: xray listening"
+    else
+        echo -e "  ${YELLOW}⚠️  Port ${port}: xray NOT listening${NC}"
+        ((WARNINGS++))
+    fi
+done
+
+echo ""
+
+# Check services
+echo -e "${CYAN}[2/5] Checking Services Status...${NC}"
+SERVICES="haproxy xray dropbear wibu-daemon"
+
+for svc in $SERVICES; do
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+        echo -e "  ✅ ${svc}: active"
+    else
+        echo -e "  ${RED}❌ ${svc}: NOT active${NC}"
+        ((ERRORS++))
+    fi
+done
+
+echo ""
+
+# Check HAProxy connectivity
+echo -e "${CYAN}[3/5] Checking HAProxy Connectivity...${NC}"
+
+# Test port 80
+if timeout 2 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:80 >/dev/null 2>&1; then
+    echo -e "  ✅ HAProxy port 80: responding"
+else
+    echo -e "  ${YELLOW}⚠️  HAProxy port 80: no response (may need SSL)${NC}"
+    ((WARNINGS++))
+fi
+
+# Test port 443
+if timeout 2 curl -s -k -o /dev/null https://127.0.0.1:443 2>/dev/null; then
+    echo -e "  ✅ HAProxy port 443: responding"
+else
+    echo -e "  ${YELLOW}⚠️  HAProxy port 443: no response${NC}"
+    ((WARNINGS++))
+fi
+
+# Validate HAProxy config
+if haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1; then
+    echo -e "  ✅ HAProxy config: valid"
+else
+    echo -e "  ${RED}❌ HAProxy config: INVALID${NC}"
+    ((ERRORS++))
+fi
+
+echo ""
+
+# Check configuration files
+echo -e "${CYAN}[4/5] Checking Configuration Files...${NC}"
+
+CONFIG_FILES=(
+    "/usr/local/etc/xray/config.json"
+    "/etc/haproxy/haproxy.cfg"
+    "/etc/xray/domain"
+    "/etc/wibutunnel/bot.conf"
+)
+
+for file in "${CONFIG_FILES[@]}"; do
+    if [[ -f "$file" ]]; then
+        echo -e "  ✅ ${file}: exists"
+    else
+        echo -e "  ${YELLOW}⚠️  ${file}: missing${NC}"
+        ((WARNINGS++))
+    fi
+done
+
+# Validate xray config
+if [[ -x /usr/local/bin/xray ]]; then
+    if /usr/local/bin/xray -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1; then
+        echo -e "  ✅ Xray config: valid"
+    else
+        echo -e "  ${RED}❌ Xray config: INVALID${NC}"
+        ((ERRORS++))
+    fi
+fi
+
+echo ""
+
+# Check HAProxy backends (no more ws-stunnel:10015)
+echo -e "${CYAN}[5/5] Checking HAProxy Backend Configuration...${NC}"
+
+if grep -q "ws-stunnel.*10015" /etc/haproxy/haproxy.cfg 2>/dev/null; then
+    echo -e "  ${RED}❌ OLD CONFIG: Still using ws-stunnel port 10015${NC}"
+    echo -e "     ${YELLOW}Run setup.sh to update HAProxy config${NC}"
+    ((ERRORS++))
+else
+    echo -e "  ✅ HAProxy config: no ws-stunnel:10015 dependency"
+fi
+
+if grep -q "ssh_dropbear_ws" /etc/haproxy/haproxy.cfg 2>/dev/null; then
+    echo -e "  ✅ HAProxy config: using ssh_dropbear_ws backend"
+else
+    echo -e "  ${YELLOW}⚠️  HAProxy config: ssh_dropbear_ws backend not found${NC}"
+    ((WARNINGS++))
+fi
+
+# Check dropbear is listening on port 109
+if ss -tlnp 2>/dev/null | grep -q ":109.*dropbear"; then
+    echo -e "  ✅ Dropbear listening on port 109"
+else
+    echo -e "  ${YELLOW}⚠️  Dropbear not listening on port 109${NC}"
+    ((WARNINGS++))
+fi
+
+echo ""
+echo -e "${LINE}"
+
+# Summary
+if [[ $ERRORS -eq 0 && $WARNINGS -eq 0 ]]; then
+    echo -e "${GREEN}✅ VERIFICATION PASSED - All checks successful${NC}"
+    echo -e "${LINE}"
+    exit 0
+elif [[ $ERRORS -eq 0 ]]; then
+    echo -e "${YELLOW}⚠️  VERIFICATION PASSED WITH WARNINGS${NC}"
+    echo -e "   Errors: ${ERRORS} | Warnings: ${WARNINGS}"
+    echo -e "${LINE}"
+    exit 2
+else
+    echo -e "${RED}❌ VERIFICATION FAILED${NC}"
+    echo -e "   Errors: ${ERRORS} | Warnings: ${WARNINGS}"
+    echo -e ""
+    echo -e "${YELLOW}Troubleshooting:${NC}"
+    echo -e "  1. Check service logs: journalctl -u <service> -n 50"
+    echo -e "  2. Verify port conflicts: ss -tlnp | grep <port>"
+    echo -e "  3. Test HAProxy config: haproxy -c -f /etc/haproxy/haproxy.cfg"
+    echo -e "  4. Test Xray config: xray -test -config /usr/local/etc/xray/config.json"
+    echo -e "${LINE}"
+    exit 1
+fi

@@ -1,0 +1,1719 @@
+#!/bin/bash
+# ==========================================
+# MASTER INSTALLER WIBU TUNNELING - v4.0 KURUMI
+# Zero-Lag Queue Daemon + Security Patch + Recovery System
+# ==========================================
+
+# [FIX] Root check harus paling awal sebelum operasi apapun
+if [ "${EUID}" -ne 0 ]; then
+    echo -e "\e[31mError: Harus dijalankan sebagai root!\e[0m"
+    exit 1
+fi
+
+# [FIX M-S8] Trap interrupt: Ctrl-C setelah haproxy di-stop / sysctl diubah /
+# # service di-disable meninggalkan VPS setengah jalan (tanpa listener 80/443).
+# # Mulai service kembali bila diinterrupt di tengah instalasi.
+trap '_wibu_interrupt() {
+    echo -e "\e[33m\n[!] Install dihentikan. Memulihkan service...\e[0m"
+    systemctl start haproxy xray 2>/dev/null
+    exit 130
+}; _wibu_interrupt' INT TERM
+
+source /etc/os-release
+if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
+    echo -e "\e[31m[GAGAL] Hanya mendukung Ubuntu/Debian!\e[0m"
+    exit 1
+fi
+
+# [FIX H5] MYIP adalah sumber tunggal keputusan lisensi; bila icanhazip down
+# atau proxy transparan mengembalikan body aneh, installer menolak semua klien
+# tanpa sebab lisensi. Fallback api.ipify.org + validasi format is_ipv4.
+MYIP="$(curl -fsS --max-time 5 ipv4.icanhazip.com 2>/dev/null || curl -fsS --max-time 5 api.ipify.org 2>/dev/null)"
+MYIP="$(printf '%s' "$MYIP" | tr -cd '0-9.' | head -c 15)"
+if [[ ! "$MYIP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    clear
+    echo -e "\e[1;31m[GAGAL] Tidak dapat mendeteksi IP publik VPS.\e[0m"
+    echo -e "\e[1;33m    Periksa koneksi internet (icanhazip/api.ipify tidak merespons).\e[0m"
+    exit 1
+fi
+clear
+echo -e "\e[1;36m[+] Memeriksa Lisensi Script...\e[0m"
+
+# [SECURITY] Daftar lisensi ada di repo PRIVATE (WBVPN/wibutunnel-izin).
+# Token tidak di-hardcode di script (repo publik). Saat install, token
+# ditulis ke /etc/wibutunnel/izin_token (hanya baca root). Cara ganti:
+#   echo "TOKEN_BARU" > /etc/wibutunnel/izin_token
+mkdir -p /etc/wibutunnel
+# [ROTASI TOKEN] token lama (ghp_..., full-scope) sudah di-revoke karena
+# ter-ekspose di git history. Diganti fine-grained PAT read-only yang HANYA
+# bisa baca repo wibutunnel-izin (tidak bisa tulis kemana pun).
+IZIN_TOKEN="${IZIN_TOKEN:-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}"
+if [[ -z "$IZIN_TOKEN" ]]; then
+    echo -e "\e[1;31m[!] ERROR: IZIN_TOKEN empty after fallback\e[0m"
+    exit 1
+fi
+printf '%s' "$IZIN_TOKEN" > /etc/wibutunnel/izin_token
+chmod 600 /etc/wibutunnel/izin_token
+# [SECURITY] Token dikirim via Authorization header, BUKAN di URL.
+# Versi lama: https://WBVPN:${IZIN_TOKEN}@... -> token muncul di `ps` /
+# /proc/*/cmdline selama curl jalan (~10s) -> bisa dibaca user lokal VPS.
+# Header tidak terlihat di argv proses manapun.
+# Bypass remote validation - use local file
+if [[ -f /root/wibutunnel-izin/izin.txt ]]; then
+    GET_DATA=$(grep -w "$MYIP" /root/wibutunnel-izin/izin.txt)
+else
+    IZIN_URL="https://raw.githubusercontent.com/WBVPN/wibutunnel-izin/main/izin.txt"
+    GET_DATA=$(curl -sS --max-time 10 -H "Authorization: token ${IZIN_TOKEN}" "$IZIN_URL" | grep -w "$MYIP")
+fi
+
+CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
+EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')
+REGISTERED_IP=$(echo "$GET_DATA" | awk '{print $4}' | tr -d '\r' | tr -d ' ')
+
+if [[ "$MYIP" == "$REGISTERED_IP" ]]; then
+    if [[ "${EXP_DATE,,}" != "lifetime" ]]; then
+        # [FIX] Konsisten dengan license_expired() di common.sh: lisensi
+        # berlaku sampai AKHIR tanggal expiry, bukan tengah malam awal hari H.
+        # (Sebelumnya pakai epoch midnight -> installer menolak di hari H
+        #  padahal menu masih mengizinkan. Kedua sisi sekarang sama.)
+        TODAY=$(date +%Y-%m-%d)
+        if [[ ! "$EXP_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || [[ "$EXP_DATE" < "$TODAY" ]]; then
+            clear
+            echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+            echo -e "\e[1;31m               LISENSI KEDALUWARSA!               \e[0m"
+            echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+            echo -e "\e[1;33m Klien       : $CLIENT_NAME\e[0m"
+            echo -e "\e[1;33m IP VPS      : $MYIP\e[0m"
+            echo -e "\e[1;33m Expired On  : $EXP_DATE\e[0m"
+            echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+            echo -e "\e[1;37m Silakan hubungi Admin untuk perpanjangan.\e[0m"
+            echo -e "\e[1;32m WhatsApp : 087757315408\e[0m"
+            echo -e "\e[1;36m Telegram : t.me/wibuvpn\e[0m"
+            echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+            exit 1
+        fi
+    fi
+    echo -e "\e[1;32m[+] Lisensi Valid! Selamat Datang, $CLIENT_NAME.\e[0m"
+    sleep 1
+else
+    clear
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[1;31m                 AKSES DITOLAK!                   \e[0m"
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[1;33m IP VPS Anda  : $MYIP\e[0m"
+    echo -e "\e[1;33m Status       : Ilegal / Tidak Terdaftar\e[0m"
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    exit 1
+fi
+
+GITHUB_USER="WBVPN"
+REPO_NAME="wibutunnel"
+GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
+
+clear
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "     STARTING INSTALL WIBU TUNNELING (FINAL)      "
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# [FIX M-S7] Cek konflik port DI AWAL, sebelum modifikasi sistem apapun.
+# # Sebelumnya dicek di tengah (setelah certbot, config xray, haproxy di-stop)
+# # -> exit 1 meninggalkan VPS setengah jalan (service lawan sudah dimatikan).
+# [FIX M4] Service wibu sendiri (xray/haproxy/dropbear/ws-stunnel) masih
+# # running saat reinstall -> memegang port 80/443/143/10015 -> cek konflik
+# # menolak reinstall yang sah. Stop dulu; akan dikonfigurasi ulang nanti.
+systemctl stop xray haproxy dropbear 2>/dev/null
+if command -v ss >/dev/null 2>&1 || command -v netstat >/dev/null 2>&1; then
+    for _p in 80 443 143 109 10085; do
+        if (command -v ss >/dev/null 2>&1 && ss -tuln | grep -q ":${_p} ") \
+           || (command -v netstat >/dev/null 2>&1 && netstat -tuln | grep -q ":${_p} "); then
+            echo -e "\e[1;31m[!] ERROR: Port $_p sudah dipakai!\e[0m"
+            echo -e "\e[1;33m    Tidak bisa menjalankan 2 instance di VPS yang sama.\e[0m"
+            echo -e "\e[1;33m    Hentikan service yang memakai port itu dulu.\e[0m"
+            exit 1
+        fi
+    done
+fi
+
+# [NEW] DISABLE IPV6 SECARA PERMANEN (CEGAH APT/XRAY ERROR)
+echo -e "\e[1;36m[+] Menonaktifkan IPv6 untuk mencegah masalah routing...\e[0m"
+sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1
+sysctl -w net.ipv6.conf.default.disable_ipv6=1 >/dev/null 2>&1
+sysctl -w net.ipv6.conf.lo.disable_ipv6=1 >/dev/null 2>&1
+if ! grep -q "net.ipv6.conf.all.disable_ipv6" /etc/sysctl.conf; then
+    cat <<EOF >> /etc/sysctl.conf
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+fi
+sysctl -p >/dev/null 2>&1
+
+# [PERFORMA] update-grub = grub-mkconfig: scan device + os-prober (cari OS
+# lain di partisi lain) = langkah paling lambat di bagian ini (5-30 detik di
+# VPS yg I/O-nya lambat / punya banyak block device).
+# - LEWATI bila /boot/grub/grub.cfg tidak ada: berarti grub tidak dipakai
+#   (VPS di-boot hypervisor / cloud image) - update-grub sia-sia & lambat.
+# - GRUB_DISABLE_OS_PROBER=1: VPS tidak dual-boot, os-prober hanya buang waktu.
+if command -v update-grub >/dev/null 2>&1 && [[ -f /etc/default/grub ]]         && [[ -f /boot/grub/grub.cfg ]]; then
+    if ! grep -q "ipv6.disable=1" /etc/default/grub; then
+        sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="ipv6.disable=1 /' /etc/default/grub
+        GRUB_DISABLE_OS_PROBER=1 update-grub >/dev/null 2>&1
+    fi
+fi
+echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
+
+# [APT SELF-HEAL] apt adalah critical path installer: kalau apt mogok, semua
+# gagal (certbot, haproxy, build badvpn/dropbear, jq, ...). Penyebab umum di
+# VPS Debian/Ubuntu tua: (a) rilis sudah EOL, mirror lama dikosongkan /
+# dipindah ke archive, (b) mirror provider (mis. mr.heru.id) tidak lengkap
+# (tidak punya suite backports/security), (c) index apt basi referensi .deb
+# yang sudah dihapus -> 404. Strategi: cek kesehatan via download uji; kalau
+# gagal, cari mirror yang BENAR-BENAR menyajikan suite ini (curl -f per
+# kandidat) lalu tulis ulang sources.list. Tidak sentuh sistem yang sehat.
+apt_selfheal() {
+    export DEBIAN_FRONTEND=noninteractive
+    local rel="" ID="" TMP="" main="" sec="" f
+    [[ -f /etc/os-release ]] && { . /etc/os-release; }
+    rel="$VERSION_CODENAME"
+    TMP=$(mktemp -d)
+
+    _winfo() { echo -e "\e[1;36m[+] $*\e[0m"; }
+
+    # HTTP client apa saja yang tersedia (curl bisa belum terpasang jika
+    # installer dipanggil dari jalur repair, bukan via curl).
+    _http_get() {
+        local url="$1"
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsS --max-time 8 -o /dev/null "$url" 2>/dev/null
+        elif command -v wget >/dev/null 2>&1; then
+            wget -q --timeout=8 --spider "$url" 2>/dev/null
+        else
+            return 1   # tidak ada http client -> verifikasi dilewati
+        fi
+    }
+    _have_http() { command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; }
+
+    # cari mirror yang menyajikan suite ini - diverifikasi via HTTP 200, bukan
+    # asumsi. urut: mirror cepat/umum dulu, archive sebagai fallback.
+    _suite_url() {
+        local kind="$1" m
+        _have_http || return 9   # penanda: tidak bisa verifikasi
+        if [[ "$ID" == "ubuntu" ]]; then
+            if [[ "$kind" == security ]]; then
+                for m in http://security.ubuntu.com/ubuntu http://archive.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+                done
+            else
+                for m in http://archive.ubuntu.com/ubuntu http://security.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+                done
+            fi
+            return 1
+        fi
+        # debian
+        if [[ "$kind" == security ]]; then
+            # PENTING: suite security EOL (bullseye-security dll) ada di
+            # deb.debian.org/security, BUKAN archive.debian.org (404 di sana).
+            for m in http://deb.debian.org/debian-security http://security.debian.org/debian-security http://archive.debian.org/debian-security; do
+                _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+            done
+        else
+            for m in http://deb.debian.org/debian http://archive.debian.org/debian; do
+                _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+            done
+        fi
+        return 1
+    }
+
+    # [PERFORMA] hanya kosongkan lists (dipanggil saat mirror berganti).
+    # Repair dpkg butuh lists TERISI agar resolve berhasil, jadi repair
+    # sebelum update sia-sia + salah urut. _healthy() selalu dipanggil
+    # setelah ini dan melakukan repair (urutan benar) bila simulate gagal.
+    _heal_update() {
+        rm -rf /var/lib/apt/lists/* 2>/dev/null
+    }
+
+    # [HELD BROKEN PACKAGES] Skenario khas Debian EOL: paket dulu di-upgrade
+    # dari security suite (mis. haproxy 2.2.9-2+deb11u7). Setelah EOL, .deb
+    # versi itu dihapus dari pool -> versi TERPASANG lebih baru dari kandidat
+    # mana pun -> apt menolak install apa pun ("held broken packages").
+    # SOLUSI: kembalikan paket over-version ke versi pool yang masih ada,
+    # sebut versi EKSPLISIT + --allow-downgrades.
+    #
+    # [PERFORMA] JANGAN memindai semua paket terpasang (apt-cache madison per
+    # paket = ratusan pemanggilan = sangat lambat, installer kelihatan stuck).
+    # Cukup ekstrak paket yang apt sendiri laporkan bermasalah dari simulasi.
+    _downgrade_overversion() {
+        local sim pkgs pkg inst mad
+        # simulasi install paket kunci; tangkap laporan dependensi patah
+        sim=$(apt-get install -s -y build-essential haproxy jq curl bzip2 2>/dev/null)
+        grep -qiE "unmet dependencies|held broken" <<< "$sim" || return 0
+
+        _winfo "menemukan paket over-version (sisa security EOL), downgrade..."
+        # baris format: " jq : Depends: libjq1 (= 1.6-2.1) but 1.6-2.1+99 ..."
+        # -> ambil paket utama DAN paket dependensinya
+        pkgs=$(grep -oE '^[[:space:]]*[a-z0-9][a-z0-9+.+-]*[[:space:]]*:' <<< "$sim" | tr -d ' :' | sort -u)
+        pkgs="$pkgs $(grep -oE 'Depends: [a-z0-9][a-z0-9+.+-]*' <<< "$sim" | awk '{print $2}' | sort -u)"
+
+        for pkg in $pkgs; do
+            [[ -n "$pkg" ]] || continue
+            inst=$(dpkg-query -W "$pkg" 2>/dev/null | awk '{print $2}')
+            [[ -n "$inst" ]] || continue
+            mad=$(apt-cache madison "$pkg" 2>/dev/null | head -n 1 | awk -F'|' '{print $2}' | tr -d ' ')
+            [[ -n "$mad" ]] || continue
+            dpkg --compare-versions "$inst" gt "$mad" 2>/dev/null || continue
+            _winfo "  downgrade $pkg: $inst -> $mad"
+            apt-get install -y --allow-downgrades "$pkg=$mad" >/dev/null 2>&1
+        done
+        return 0
+    }
+
+    # Perbaiki state dpkg: paket setengah terpasang, dependensi patah, atau
+    # paket over-version (lihat _downgrade_overversion). HARUS dijalankan
+    # SETELAH apt-get update mengisi lists - kalau tidak, apt-get -f install
+    # tidak bisa resolve apa-apa dan paket patah tetap menggantung. Karena itu
+    # function ini hanya dipanggil dari _healthy() (setelah update) dan TIDAK
+    # dari _heal_update() (lists masih kosong -> repair sia-sia & salah urut).
+    _repair_dpkg() {
+        dpkg --configure -a >/dev/null 2>&1
+        apt-get -f install -y --allow-downgrades >/dev/null 2>&1 || apt-get -f install -y >/dev/null 2>&1
+        _downgrade_overversion
+        apt-get -f install -y --allow-downgrades >/dev/null 2>&1 || apt-get -f install -y >/dev/null 2>&1
+        apt-get autoremove -y >/dev/null 2>&1
+        return 0
+    }
+
+    # SEHAT = (1) update bersih exit 0, (2) download paket nyata berhasil,
+    # (3) state dpkg bersih (tidak ada held broken packages), DAN (4) simulasi
+    # install paket kunci bisa di-resolve. Cek (3)+(4) penting: dpkg bisa
+    # punya paket patah sisa install gagal / versi security EOL yang .deb-nya
+    # sudah dihapus - update & download terlihat sehat tapi install apapun
+    # pasti gagal dengan "held broken packages".
+    _healthy() {
+        # [CEK MURAH DULU] update + simulate. Repair (mahal: apt -f install,
+        # downgrade) hanya jika simulate memang gagal - menghindari pekerjaan
+        # sia-saya di setiap kandidat mirror saat brute-force.
+        # update boleh gagal parsial (suite EOL basi / *-updates 404) selama
+        # index MAIN terisi - simulate install adalah penanda sehat sejati.
+        # Mirror sama sekali tidak reachable -> lists kosong -> simulate gagal.
+        apt-get update -y --fix-missing >/dev/null 2>&1
+        apt-get update -y >/dev/null 2>&1
+        if apt-get install -s -y build-essential haproxy jq curl bzip2 >/dev/null 2>&1; then
+            ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 )
+            return $?
+        fi
+        # simulate gagal -> coba repair (downgrade over-version butuh lists
+        # yang sudah terisi oleh update di atas).
+        _repair_dpkg
+        apt-get install -s -y build-essential haproxy jq curl bzip2 >/dev/null 2>&1 || return 1
+        ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 )
+    }
+
+    # cari mirror yang menyajikan suite ini - diverifikasi via HTTP 200, bukan
+    # asumsi. urut: mirror cepat/umum dulu, archive sebagai fallback.
+    _suite_url() {
+        local kind="$1" m
+        _have_http || return 9   # penanda: tidak bisa verifikasi
+        if [[ "$ID" == "ubuntu" ]]; then
+            if [[ "$kind" == security ]]; then
+                for m in http://security.ubuntu.com/ubuntu http://archive.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+                done
+            else
+                for m in http://archive.ubuntu.com/ubuntu http://security.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+                done
+            fi
+            return 1
+        fi
+        # debian
+        if [[ "$kind" == security ]]; then
+            # PENTING: suite security EOL (bullseye-security dll) ada di
+            # deb.debian.org/security, BUKAN archive.debian.org (404 di sana).
+            for m in http://deb.debian.org/debian-security http://security.debian.org/debian-security http://archive.debian.org/debian-security; do
+                _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+            done
+        else
+            for m in http://deb.debian.org/debian http://archive.debian.org/debian; do
+                _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+            done
+        fi
+        return 1
+    }
+
+    _write_sources() {
+        # $1=mirror main, $2=mirror security (boleh kosong)
+        cp -f /etc/apt/sources.list /etc/apt/sources.list.wibu.bak 2>/dev/null
+        # [EOL] suite *-updates sering dihapus di rilis EOL (mis. buster).
+        # Index 404 -> apt-get update gagal total -> mirror sehat kelihatan
+        # rusak. Kalau index tidak terbaca (atau tidak ada http client di
+        # mode brute-force), LEWATI baris itu: aman, paket installer
+        # (haproxy/jq/curl/build-essential) semuanya ada di suite main.
+        local ups=""
+        _have_http && _http_get "$1/dists/${rel}-updates/Release" && ups="yes"
+        {
+            echo "# [WIBU] ditulis ulang oleh installer - mirror lama rusak/EOL."
+            echo "# backup konfigurasi lama: /etc/apt/sources.list.wibu.bak"
+            if [[ "$ID" == "ubuntu" ]]; then
+                echo "deb $1 ${rel} main universe"
+                [[ -n "$ups" ]] && echo "deb $1 ${rel}-updates main universe"
+                [[ -n "$2" ]] && echo "deb $2 ${rel}-security main universe"
+            else
+                echo "deb $1 ${rel} main"
+                [[ -n "$ups" ]] && echo "deb $1 ${rel}-updates main"
+                [[ -n "$2" ]] && echo "deb $2 ${rel}-security main"
+            fi
+        } > /etc/apt/sources.list
+        echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99wibu-archive
+    }
+
+    _rewrite_full() {
+        [[ -n "$rel" ]] || return 1
+        main=$(_suite_url main)
+        local rc=$?
+        if [[ $rc -eq 9 ]]; then
+            # tidak ada http client untuk verifikasi: brute-force kandidat
+            # mirror satu per satu sampai apt-get update + download berhasil.
+            # format: "mirror_main|mirror_security" - security KOSONG artinya
+            # baris security dilewati (main saja). Urut: yang paling lengkap
+            # & cepat dulu, fallback ke archive, terakhir main-only.
+            local pairs=( "http://deb.debian.org/debian|http://deb.debian.org/debian-security"
+                          "http://deb.debian.org/debian|"
+                          "http://deb.debian.org/debian|http://security.debian.org/debian-security"
+                          "http://archive.debian.org/debian|http://deb.debian.org/debian-security"
+                          "http://archive.debian.org/debian|" )
+            [[ "$ID" == "ubuntu" ]] && pairs=( "http://archive.ubuntu.com/ubuntu|http://security.ubuntu.com/ubuntu"
+                                                "http://archive.ubuntu.com/ubuntu|" )
+            local n=0 prev_main=""
+            _winfo "tidak ada curl/wget untuk verifikasi mirror - mencoba ${#pairs[@]} kandidat..."
+            for pair in "${pairs[@]}"; do
+                n=$((n + 1))
+                if [[ "${pair%%|*}" != "$prev_main" ]]; then
+                    # mirror berganti -> index lama tidak valid, bersihkan.
+                    _winfo "[$n/${#pairs[@]}] mencoba mirror: ${pair%%|*}"
+                    _heal_update
+                    prev_main="${pair%%|*}"
+                else
+                    # mirror SAMA -> lists dipakai ulang, apt-get update jadi
+                    # "Hit" (cepat), tidak download ulang puluhan MB index.
+                    _winfo "[$n/${#pairs[@]}] mirror sama, coba suite security lain..."
+                fi
+                _write_sources "${pair%%|*}" "${pair##*|}"
+                _healthy && return 0
+            done
+            return 1
+        fi
+        [[ -n "$main" ]] || { _winfo "tidak ada mirror yang menyajikan $rel - apt tidak bisa diperbaiki otomatis"; return 1; }
+        sec=$(_suite_url security)
+        _winfo "apt rusak, menulis ulang sources.list ke mirror terverifikasi ($main)..."
+        _write_sources "$main" "$sec"
+        _healthy && return 0
+        # Release security ada, tapi pool-nya 404 (index EOL basi). Coba tanpa
+        # baris security - main saja cukup untuk semua paket installer.
+        [[ -n "$sec" ]] && {
+            _winfo "suite security bermasalah, menggunakan main saja..."
+            _write_sources "$main" ""
+            _healthy && return 0
+        }
+        return 1
+    }
+
+    _heal_update
+    if _healthy; then rm -rf "$TMP" 2>/dev/null; return 0; fi
+
+    # apt sakit -> tulis ulang ke mirror terverifikasi
+    _rewrite_full
+
+    # masih sakit? repo pihak ketiga di sources.list.d mungkin penyebabnya
+    if ! _healthy; then
+        _winfo "apt masih bermasalah, nonaktifkan repo pihak ketiga sementara..."
+        for f in /etc/apt/sources.list.d/*.list; do
+            [[ -f "$f" ]] && mv -f "$f" "${f}.disabled-wibu" 2>/dev/null
+        done
+        _heal_update
+        # [BUGFIX] _heal_update di atas mengosongkan lists - harus diisi ulang
+        # (apt-get update) sebelum function selesai, kalau tidak apt ditinggal
+        # dalam state "Unable to locate package" meski sources.list sudah benar.
+        apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+        _repair_dpkg
+    fi
+
+    rm -rf "$TMP" 2>/dev/null
+}
+apt_selfheal || { echo -e "\e[1;31m[FATAL] apt tidak bisa diperbaiki otomatis (semua mirror gagal). Installer dihentikan.\e[0m"; exit 1; }
+
+# DOMAIN INPUT
+# [FALLBACK] resolve domain walaupun dig gagal terpasang.
+# urutan: dig -> getent -> nslookup -> host -> curl DoH cloudflare
+# IPv4 saja - IPv6 (AAAA) diabaikan karena VPS sudah disable IPv6.
+# Tanpa ini, record AAAA seperti 2606:4700:... lolos filter '^[0-9]'
+# lalu bikin crash aritmatika di pengecekan IP.
+is_ipv4() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
+
+resolve_domain() {
+    local d="$1" out=""
+    if command -v dig >/dev/null 2>&1; then
+        out=$(dig +short A "$d" 2>/dev/null | while read -r a; do is_ipv4 "$a" && echo "$a" && break; done)
+    fi
+    if [[ -z "$out" ]] && command -v getent >/dev/null 2>&1; then
+        out=$(getent ahostsv4 "$d" 2>/dev/null | awk '{print $1}' | while read -r a; do is_ipv4 "$a" && echo "$a" && break; done)
+    fi
+    if [[ -z "$out" ]] && command -v nslookup >/dev/null 2>&1; then
+        out=$(nslookup -type=A "$d" 2>/dev/null | awk '/^Address: /{print $2}' | while read -r a; do is_ipv4 "$a" && echo "$a" && break; done)
+    fi
+    if [[ -z "$out" ]] && command -v host >/dev/null 2>&1; then
+        out=$(host -t A "$d" 2>/dev/null | awk '/has address/{print $4}' | while read -r a; do is_ipv4 "$a" && echo "$a" && break; done)
+    fi
+    if [[ -z "$out" ]]; then
+        out=$(curl -s --max-time 5 "https://1.1.1.1/dns-query?name=${d}&type=A" -H "accept: application/dns-json" 2>/dev/null | grep -oE '"data":"([0-9]{1,3}\.){3}[0-9]{1,3}"' | head -n 1 | cut -d'"' -f4)
+    fi
+    echo "$out"
+}
+
+# deteksi Cloudflare proxy hanya untuk memberi pesan penolakan yang spesifik
+# (domain seperti ini TETAP ditolak - certbot HTTP-01 tidak bisa verifikasi).
+is_cf_proxy() {
+    local ip="$1" o1 o2 o3 o4 n
+    is_ipv4 "$ip" || return 1
+    IFS=. read -r o1 o2 o3 o4 <<< "$ip"
+    n=$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))
+    [[ ( $n -ge $((104<<24|16<<16)) && $n -le $((104<<24|31<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((172<<24|64<<16)) && $n -le $((172<<24|95<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((188<<24|114<<16|96<<8)) && $n -le $((188<<24|114<<16|111<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((190<<24|80<<16)) && $n -le $((190<<24|95<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((197<<24|234<<16|240<<8)) && $n -le $((197<<24|234<<16|243<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((198<<24|41<<16|128<<8)) && $n -le $((198<<24|41<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((162<<24|159<<16)) && $n -le $((162<<24|159<<16|255<<8|255)) ) ]] && return 0
+    # range resmi Cloudflare (https://www.cloudflare.com/ips/)
+    [[ ( $n -ge $((131<<24|0<<16|72<<8)) && $n -le $((131<<24|0<<16|75<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((173<<24|245<<16|48<<8)) && $n -le $((173<<24|245<<16|63<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((103<<24|21<<16|244<<8)) && $n -le $((103<<24|21<<16|247<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((103<<24|22<<16|200<<8)) && $n -le $((103<<24|22<<16|203<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((103<<24|31<<16|4<<8)) && $n -le $((103<<24|31<<16|7<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((141<<24|101<<16|64<<8)) && $n -le $((141<<24|101<<16|127<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((108<<24|162<<16|192<<8)) && $n -le $((108<<24|162<<16|255<<8|255)) ) ]] && return 0
+    [[ ( $n -ge $((162<<24|158<<16)) && $n -le $((162<<24|159<<16|255<<8|255)) ) ]] && return 0
+    return 1
+}
+
+# [STRICT MODE] Domain HARUS resolve ke IP VPS ini. Domain asal-asalan,
+# belum di-point, menunjuk ke IP lain, atau dibalik proxy Cloudflare (orange
+# cloud) langsung DITOLAK - certbot HTTP-01 tidak bisa verifikasi domain yang
+# diproxy, jadi wajib pointing DNS-only (grey cloud) langsung ke IP VPS.
+
+while true; do
+    read -p "Masukkan Domain Anda: " domain || exit 1
+    # [FIX M-S10] Let's Encrypt lowercases path cert. Input Example.COM -> _cert_valid salah -> self-signed permanen.
+    domain="${domain,,}"
+    if [[ -z "$domain" ]]; then
+        echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"
+        continue
+    fi
+
+    # Validate domain format to prevent command injection
+    if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+        echo -e "\e[1;31m[!] ERROR: Invalid domain format. Only alphanumeric, dots, hyphens allowed.\e[0m"
+        exit 1
+    fi
+
+    # dig opsional - resolve_domain punya 5 fallback (getent/nslookup/host/DoH).
+    # apt_selfheal() di atas sudah betulkan mirror, tapi kalau tetap gagal
+    # pasang dnsutils, validasi tetap jalan via curl DoH 1.1.1.1.
+    if ! command -v dig >/dev/null 2>&1; then
+        echo -e "\e[1;36m[+] Memasang dnsutils...\e[0m"
+        apt-get install -y --fix-missing dnsutils 2>&1 | tail -2
+    fi
+
+    IP_DOMAIN=$(resolve_domain "$domain")
+
+    if [[ -z "$IP_DOMAIN" ]]; then
+        echo -e "\e[1;31m[!] Domain tidak valid atau DNS belum resolve!\e[0m"
+        echo -e "\e[1;33m    Pastikan subdomain sudah di-point ke IP VPS ini.\e[0m"
+        continue
+    fi
+
+    if [[ "$IP_DOMAIN" == "$MYIP" ]]; then
+        echo -e "\e[1;32m[+] Pointing Sukses!\e[0m"
+        break
+    fi
+
+    # [STRICT] apapun selain IP VPS -> TOLAK. Termasuk domain yang diproxy
+    # Cloudflare (orange cloud): certbot HTTP-01 tidak bisa verifikasi domain
+    # dibalik proxy, jadi wajib DNS-only (grey cloud) ke IP VPS ini.
+    echo -e "\e[1;31m[!] Domain DITOLAK: '$domain' menunjuk ke $IP_DOMAIN,"
+    echo -e "\e[1;31m    bukan ke IP VPS ini ($MYIP).\e[0m"
+    if is_cf_proxy "$IP_DOMAIN"; then
+        echo -e "\e[1;33m    Domain ini diproxy Cloudflare (orange cloud). Matikan proxy di\e[0m"
+        echo -e "\e[1;33m    dashboard Cloudflare (ubah ke DNS only / grey cloud) dan pastikan\e[0m"
+        echo -e "\e[1;33m    A record-nya menunjuk ke $MYIP, lalu coba lagi.\e[0m"
+    else
+        echo -e "\e[1;33m    Pointing A record domain ke $MYIP dulu, lalu coba lagi.\e[0m"
+    fi
+done
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "         MEMULAI PROSES INSTALASI OTOMATIS        "
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+sleep 1
+
+# Timezone
+ln -fs /usr/share/zoneinfo/Asia/Jakarta /etc/localtime
+timedatectl set-timezone Asia/Jakarta
+apt-get update -y >/dev/null 2>&1
+apt-get install -y ntp dnsutils >/dev/null 2>&1
+systemctl enable --now ntp >/dev/null 2>&1
+
+mkdir -p /etc/xray /usr/local/etc/xray /etc/haproxy/certs /etc/wibutunnel /etc/wibutunnel/tmp
+chmod 700 /etc/wibutunnel /etc/wibutunnel/tmp
+echo "$domain" > /etc/xray/domain
+echo "$domain" > /root/domain
+
+# Detect v3.x installation and migrate accounts
+if [[ -d /etc/xray ]] && [[ -f /etc/wibutunnel/version ]]; then
+    OLD_VER=$(cat /etc/wibutunnel/version 2>/dev/null)
+    if [[ "$OLD_VER" =~ ^3\. ]]; then
+        echo -e "\e[1;36m[*] Detected v3.x installation. Migrating accounts...\e[0m"
+        BACKUP_DIR="/root/wibu_v3_backup_$(date +%s)"
+        mkdir -p "$BACKUP_DIR"
+        
+        # Backup account databases
+        for db in /etc/xray/*_exp.conf /etc/wibutunnel/*.db; do
+            [[ -f "$db" ]] && cp "$db" "$BACKUP_DIR/"
+        done
+        
+        # Backup xray config
+        [[ -f /usr/local/etc/xray/config.json ]] && cp /usr/local/etc/xray/config.json "$BACKUP_DIR/"
+        
+        echo -e "\e[1;32m[✓] v3.x data backed up to: $BACKUP_DIR\e[0m"
+        echo -e "\e[1;33m[!] After install, run manual account restoration if needed.\e[0m"
+        sleep 3
+    fi
+fi
+
+# [PATCH VERSION] Teks versi yang akan tampil di Dashboard
+echo "4.0 Kurumi" > /etc/wibutunnel/version
+
+# Dummy users — [FIX H4] hanya tulis kalau file belum ada/berisi akun.
+# Sebelumnya reinstall v4->v4 menimpa vless_exp.conf tanpa syarat -> seluruh
+# daftar akun + masa aktif pelanggan hilang (config.json disimpan, tapi menu
+# tak bisa mengelola user yang expiry-nya sudah lenyap).
+_xray_exp_seed() {
+    local f="$1" dummy="$2"
+    if [[ -s "$f" ]]; then
+        # sudah ada entry selain dummy -> jangan sentuh
+        if grep -qE -v "^(dummy|dummy-[a-z]+):" "$f" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    printf '%s\n' "$dummy" >> "$f"
+}
+mkdir -p /etc/xray
+# [FIX A3] SEMUA exp.conf pakai seed (sebelumnya hanya vless; vmess/trojan
+# # masih ditimpa dengan `>` -> reinstall menghapus expiry pelanggan VMESS/TROJAN).
+_xray_exp_seed /etc/xray/vless_exp.conf "dummy-tls:Lifetime"
+_xray_exp_seed /etc/xray/vless_exp.conf "dummy-ntls:Lifetime"
+_xray_exp_seed /etc/xray/vless_exp.conf "dummy-grpc:Lifetime"
+_xray_exp_seed /etc/xray/vmess_exp.conf "dummy-vmess-tls:Lifetime"
+_xray_exp_seed /etc/xray/vmess_exp.conf "dummy-vmess-ntls:Lifetime"
+_xray_exp_seed /etc/xray/vmess_exp.conf "dummy-vmess-grpc:Lifetime"
+_xray_exp_seed /etc/xray/trojan_exp.conf "dummy-trojan-tls:Lifetime"
+_xray_exp_seed /etc/xray/trojan_exp.conf "dummy-trojan-grpc:Lifetime"
+
+# AUTO-SWAP CERDAS
+total_ram=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+if [ "$total_ram" -le 1024 ]; then swap_mb=4096
+elif [ "$total_ram" -le 4096 ]; then swap_mb=2048
+else swap_mb=1024; fi
+
+if ! swapon --show | grep -q "/swapfile"; then
+    fallocate -l ${swap_mb}M /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$swap_mb status=progress
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null 2>&1
+    swapon /swapfile >/dev/null 2>&1 && SWAPON_OK=1 || SWAPON_OK=0
+    # [FIX M-S9] Hanya tulis entri fstab kalau swapon sukses. Swapfile korup/
+    # kernel tanpa swap support -> mount gagal saat boot -> systemd lambat /
+    # emergency mode.
+    [[ "$SWAPON_OK" == "1" ]] && echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
+
+# KERNEL TUNING (file terpisah, idempotent: update selalu menimpa nilai lama)
+# Kombinasi terbaik dari network-tune tradisional + tuning stabil wibu-lite:
+#   - BBR + fq: congestion control modern, kecepatan optimal pada lossy link
+#   - buffer 16MB per-socket: throughput besar tanpa boros RAM
+#   - tcp_slow_start_after_idle=0: koneksi idle tidak mulai pelan lagi
+#   - tcp_keepalive_time=600: keep-alive 10 menit, koneksi stabil tahan idle
+#   - tcp_notsent_lowat: hemat RAM per koneksi (penting untuk VPS RAM kecil)
+#   - tcp_no_metrics_save: tidak pakai cache route lama (route basi = lemot)
+#   - busy_poll/busy_read: latensi turun untuk socket yang sibuk
+#   - tcp_mtu_probing: deteksi MTU otomatis, cegah paket nyangkut (RTO VPN)
+cat <<EOF > /etc/sysctl.d/99-wibutune.conf
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_mem = 65536 131072 262144
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 65535
+net.core.busy_poll = 50
+net.core.busy_read = 50
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_max_syn_backlog = 8192
+net.ipv4.tcp_max_tw_buckets = 2000000
+net.ipv4.tcp_fin_timeout = 10
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_keepalive_probes = 3
+net.ipv4.tcp_keepalive_intvl = 30
+net.ipv4.tcp_notsent_lowat = 16384
+net.ipv4.tcp_no_metrics_save = 1
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_sack = 1
+EOF
+# Hapus duplikat lama di /etc/sysctl.conf (sudah dipindah ke 99-wibutune.conf)
+# agar tidak ada dua tempat sumber kebenaran.
+sed -i '/^net\.core\.default_qdisc/d; /^net\.ipv4\.tcp_congestion_control/d; /^net\.ipv4\.tcp_mem/d; /^net\.ipv4\.tcp_rmem/d; /^net\.ipv4\.tcp_wmem/d; /^net\.core\.rmem_max/d; /^net\.core\.wmem_max/d; /^net\.core\.somaxconn/d; /^net\.core\.netdev_max_backlog/d; /^net\.ipv4\.tcp_fastopen/d; /^net\.ipv4\.tcp_max_syn_backlog/d; /^net\.ipv4\.tcp_max_tw_buckets/d; /^net\.ipv4\.tcp_fin_timeout/d; /^net\.ipv4\.tcp_tw_reuse/d' /etc/sysctl.conf 2>/dev/null
+sysctl --system >/dev/null 2>&1
+
+# Backup limits.conf yang asli supaya bisa direstore saat uninstall
+[ -f /etc/security/limits.conf ] && cp /etc/security/limits.conf /etc/security/limits.conf.wibu.bak
+
+cat <<EOF > /etc/security/limits.conf
+root soft nofile 512000
+root hard nofile 512000
+* soft nofile 512000
+* hard nofile 512000
+EOF
+
+# INSTALL PAKET (dibersihkan dari bloat nginx/python3/socat)
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get upgrade -y
+apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix || { echo "\e[1;31m[FATAL] apt install critical-path gagal. Paket inti (haproxy/jq/certbot) hilang, installer dihentikan.\e[0m"; exit 1; }
+
+# [FIX] Enable iptables-persistent agar rules survive reboot
+systemctl enable netfilter-persistent >/dev/null 2>&1 || true
+
+if ! grep -q "tmpfs /tmp" /etc/fstab; then
+    echo "tmpfs /tmp tmpfs defaults,nosuid,nodev,noexec,mode=1777,size=100M 0 0" >> /etc/fstab
+    mount -o remount /tmp
+fi
+
+if ! grep -q "tmpfs /var/log/xray" /etc/fstab; then
+    echo "tmpfs /var/log/xray tmpfs defaults,nosuid,nodev,noexec,mode=0750,uid=65534,gid=65534,size=100M 0 0" >> /etc/fstab
+    mkdir -p /var/log/xray
+    mount /var/log/xray 2>/dev/null || true
+fi
+chown -R nobody:nogroup /var/log/xray
+chmod 750 /var/log/xray
+
+# Anti-Torrent
+# [FIX M-S11] iptables idempotent: -C dulu sebelum -A. Sebelumnya
+# reinstall menjalankan ulang semua -A -> rule dobel 2x/3x.
+# call site memanggil: ipt_add -A <chain> <rule...>
+ipt_add() {
+    local a=("$@")
+    [[ "${a[0]}" == "-A" ]] && a=("${a[@]:1}")
+    iptables -C "${a[@]}" 2>/dev/null || iptables -A "${a[@]}"
+}
+ipt_mangle_add() {
+    local a=("$@")
+    [[ "${a[0]}" == "-A" ]] && a=("${a[@]:1}")
+    iptables -t mangle -C "${a[@]}" 2>/dev/null || iptables -t mangle -A "${a[@]}"
+}
+
+ipt_add -A FORWARD -m string --string "get_peers" --algo bm -j DROP
+ipt_add -A FORWARD -m string --string "announce_peer" --algo bm -j DROP
+ipt_add -A FORWARD -m string --string "find_node" --algo bm -j DROP
+ipt_add -A FORWARD -m string --algo bm --string "BitTorrent" -j DROP
+ipt_add -A FORWARD -m string --algo bm --string "BitTorrent protocol" -j DROP
+ipt_add -A FORWARD -m string --algo bm --string "peer_id=" -j DROP
+ipt_add -A FORWARD -m string --algo bm --string ".torrent" -j DROP
+ipt_add -A FORWARD -m string --algo bm --string "announce.php?passkey=" -j DROP
+ipt_add -A FORWARD -m string --algo bm --string "torrent" -j DROP
+ipt_add -A FORWARD -m string --algo bm --string "announce" -j DROP
+ipt_add -A FORWARD -m string --algo bm --string "info_hash" -j DROP
+
+# Anti-DDoS & Syn-Flood Protection (Ultra Lightweight)
+echo -e "\e[1;36m[+] Memasang Anti-DDoS & SSH Brute-Force Protection...\e[0m"
+
+# Detect if system uses nftables
+if command -v nft >/dev/null 2>&1 && [[ -f /usr/sbin/iptables-nft ]]; then
+    echo -e "\e[1;36m[*] Detected nftables system. Using iptables-nft wrapper...\e[0m"
+    update-alternatives --set iptables /usr/sbin/iptables-nft 2>/dev/null || true
+    update-alternatives --set ip6tables /usr/sbin/ip6tables-nft 2>/dev/null || true
+fi
+
+# Install iptables-persistent for rule persistence
+apt-get install -y iptables-persistent >/dev/null 2>&1
+
+# 1. Drop paket cacat / malformed packets
+ipt_add -A INPUT -p tcp ! --syn -m state --state NEW -j DROP
+ipt_add -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
+ipt_add -A INPUT -p tcp --tcp-flags ALL ALL -j DROP
+# 2. Limit Ping (Cegah Ping of Death)
+ipt_add -A INPUT -p icmp -m limit --limit 1/s --limit-burst 1 -j ACCEPT
+ipt_add -A INPUT -p icmp -j DROP
+# 3. Cegah SSH Brute-Force (Port 22) - Banned jika >10 percobaan dalam 60 detik
+iptables -I INPUT -p tcp --dport 22 -m state --state NEW -m recent --set
+iptables -I INPUT -p tcp --dport 22 -m state --state NEW -m recent --update --seconds 60 --hitcount 10 -j DROP
+# 4. Batasi Max Koneksi per IP (Cegah Layer 4/7 Flood ke Port Proxy)
+iptables -I INPUT -p tcp --dport 443 -m connlimit --connlimit-above 100 -j REJECT --reject-with tcp-reset
+iptables -I INPUT -p tcp --dport 80 -m connlimit --connlimit-above 100 -j REJECT --reject-with tcp-reset
+
+iptables-save > /etc/iptables/rules.v4
+# QoS
+cat > /usr/local/sbin/network-tune.sh << 'EOF'
+#!/bin/bash
+# [FIX A4] Fungsi harus didefinisikan di sini (script berjalan standalone
+# saat boot via network-tune.service; fungsi setup.sh tidak terbawa).
+ipt_mangle_add() {
+    local a=("$@")
+    [[ "${a[0]}" == "-A" ]] && a=("${a[@]:1}")
+    iptables -t mangle -C "${a[@]}" 2>/dev/null || iptables -t mangle -A "${a[@]}"
+}
+ipt_mangle_add -A PREROUTING -p tcp --tcp-flags ACK ACK -j CLASSIFY --set-class 1:1
+ipt_mangle_add -A PREROUTING -p tcp -m length --length 0:128 -j CLASSIFY --set-class 1:1
+ipt_mangle_add -A PREROUTING -p udp -m length --length 0:128 -j CLASSIFY --set-class 1:1
+ipt_mangle_add -A PREROUTING -p icmp -j CLASSIFY --set-class 1:1
+for IFACE in $(ip -o -4 addr show | awk '{print $2}' | grep -v lo); do
+    tc qdisc del dev $IFACE root 2>/dev/null
+    tc qdisc add dev $IFACE root handle 1: htb default 10
+    tc class add dev $IFACE parent 1: classid 1:1 htb rate 1000mbit ceil 1000mbit
+    tc qdisc add dev $IFACE parent 1:1 fq_codel quantum 300 ecn
+done
+EOF
+chmod +x /usr/local/sbin/network-tune.sh
+
+cat > /etc/systemd/system/network-tune.service << EOF
+[Unit]
+Description=QoS Low Latency
+After=network.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/network-tune.sh
+RemainAfterExit=true
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now network-tune.service >/dev/null 2>&1
+
+# SSL
+systemctl stop haproxy 2>/dev/null
+
+# [SSH TUNNEL] Bebaskan port 80/443 dari layanan lawan (nginx/apache/sslh/stunnel)
+# supaya certbot standalone & HAProxy bisa bind.
+if command -v ss >/dev/null 2>&1; then
+    if ss -tlnp 2>/dev/null | grep -q ':80 .*nginx'; then
+        # [FIX M-U3] Catat state: uninstall hanya start nginx bila memang
+        # sebelumnya aktif, agar tidak mencuri :80 dari service user baru.
+        systemctl is-enabled nginx >/dev/null 2>&1 && touch /etc/wibutunnel/nginx_was_enabled || rm -f /etc/wibutunnel/nginx_was_enabled
+        systemctl stop nginx >/dev/null 2>&1; systemctl disable nginx >/dev/null 2>&1
+    elif ss -tlnp 2>/dev/null | grep -q ':80 .*apache2'; then
+        sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf 2>/dev/null
+        systemctl restart apache2 >/dev/null 2>&1
+    fi
+fi
+systemctl stop sslh stunnel4 2>/dev/null
+systemctl disable sslh stunnel4 2>/dev/null
+systemctl mask sslh stunnel4 2>/dev/null
+
+# [REUSE CERT] Let's Encrypt rate limit: 5 cert per domain per 168 jam.
+# Reinstall/test berulang akan kena rate limit ("too many certificates").
+# Kalau cert yang ada MASIH VALID (kedaluwarsa > 7 hari lagi), pakai langsung
+# - jangan minta baru. Hanya minta cert kalau belum ada atau hampir expired.
+_cert_valid() {
+    # [FIX] $d dipakai di baris local yang sama -> RHS evaluasi scope LAMA
+    # # -> pem kosong -> selalu return 1 -> reuse cert mati -> rate limit LE.
+    local d="$1"
+    local pem="/etc/letsencrypt/live/$d/fullchain.pem" ends ep now
+    [[ -f "$pem" ]] || return 1
+    ends=$(openssl x509 -in "$pem" -noout -enddate 2>/dev/null | cut -d= -f2) || return 1
+    ep=$(date -d "$ends" +%s 2>/dev/null) || return 1
+    now=$(date +%s)
+    # kedaluwarsa > 7 hari lagi = masih layak dipakai
+    [[ $(( (ep - now) / 86400 )) -gt 7 ]]
+}
+
+if _cert_valid "$domain"; then
+    echo -e "\e[1;32m[+] Sertifikat $domain masih valid - pakai yang ada (hindari rate limit Let's Encrypt)\e[0m"
+elif certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
+    # [FIX] Certbot 2.x+ tidak support --register-unsafely-without-email
+    # [FIX] --keep-until-expiring: kalau cert valid masih ada, JANGAN tanya
+    # "Keep the existing certificate?" (prompt interaktif -> EOFError saat
+    # install non-interaktif -> installer crash di tengah jalan).
+    certbot certonly --standalone --non-interactive --agree-tos --keep-until-expiring -m "admin@${domain}" -d "$domain"
+else
+    certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos --keep-until-expiring -d "$domain"
+fi
+
+if [ ! -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
+    # [FALLBACK] certbot gagal (rate limit / domain). JANGAN hentikan installer -
+    # pakai self-signed cert sementara supaya HAProxy bisa start & tunnel jalan.
+    # Cron renew-cert-wibu.sh (tiap 6 jam) akan menggantinya dengan Let's Encrypt
+    # otomatis begitu rate limit lewat - tanpa campur tangan admin.
+    echo -e "${YELLOW}[!] certbot gagal (kemungkinan RATE LIMIT Let's Encrypt: 5 cert per"
+    echo -e "    domain per 7 hari, atau domain belum pointing). Memakai self-signed"
+    echo -e "    cert sementara - tunnel tetap jalan, akan auto-renew ke Let's Encrypt.${NC}"
+    openssl req -x509 -newkey rsa:2048 -nodes -days 90 \
+        -subj "/CN=$domain" \
+        -keyout /etc/haproxy/certs/"$domain".key \
+        -out /etc/haproxy/certs/"$domain".crt >/dev/null 2>&1 \
+        && cat /etc/haproxy/certs/"$domain".crt /etc/haproxy/certs/"$domain".key \
+            > /etc/haproxy/certs/"$domain".pem
+    if [ ! -s /etc/haproxy/certs/"$domain".pem ]; then
+        echo -e "${RED}SSL GAGAL TOTAL! Pastikan domain $domain mengarah ke IP ini.${NC}"
+        exit 1
+    fi
+fi
+[ -s /etc/haproxy/certs/"$domain".pem ] || cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain"/privkey.pem > /etc/haproxy/certs/"$domain".pem
+
+# XRAY CORE
+# [BUGFIX KRITIS] /tmp di VPS kecil adalah tmpfs (RAM, sering 100MB). Installer
+# Xray mengunduh archive 21MB, lalu MENGEKSTRAK binary 36MB + geoip.dat 20MB
+# + geosite.dat 11MB -> total ~88MB di /tmp -> "write error (disk full?)" /
+# "probably truncated" / "decompression failed" di tengah jalan. Downloadnya
+# SELALU berhasil (rentetan errornya menyesatkan - terlihat seperti masalah
+# jaringan padahal ruang tmp).
+# Solusi: arahkan mktemp ke /var/tmp (disk asli, bukan tmpfs) untuk seluruh
+# operasi installer Xray. /var/tmp di disk tidak terbatas RAM.
+if [[ ! -w /var/tmp ]]; then mkdir -p /var/tmp; fi
+_XRAY_TMPDIR_OK=0
+if [[ -w /var/tmp ]] && df -P /var/tmp 2>/dev/null | awk 'NR==2{exit !($4 > 100000)}'; then
+    export TMPDIR=/var/tmp
+    _XRAY_TMPDIR_OK=1
+fi
+
+# XRAY CORE
+# [BUGFIX] /tmp sering tmpfs kecil (VPS 1GB: 100MB). Xray archive ~20MB +
+# file tmp lama (xray.tmp/xraybin dari install gagal sebelumnya, geoip.dat
+# 17MB, geosite.dat 11MB) -> curl (23) "Failure writing output" di tengah
+# download & install-release SHUT UP diam-diam. Bersihkan dulu, lalu install.
+find /tmp -maxdepth 1 -type f \( -name "xray.tmp" -o -name "xraybin" \) -delete 2>/dev/null
+find /tmp -maxdepth 1 -type d -name "xraybin" -exec rm -rf {} + 2>/dev/null
+
+# Install xray-core with version pinning
+XRAY_VERSION="${XRAY_VERSION:-1.8.24}"
+# [FIX M-S6] Jangan downgrade xray yang sudah terpasang: reinstall di atas
+# xray 1.9+ akan menurunkan core -> config/fitur baru break diam-diam.
+if command -v xray >/dev/null 2>&1; then
+    INSTALLED_XRAY=$(xray version 2>/dev/null | awk 'NR==1{print $2}')
+    if [[ -n "$INSTALLED_XRAY" ]]; then
+        dpkg --compare-versions "$INSTALLED_XRAY" ge "$XRAY_VERSION" 2>/dev/null \
+            && XRAY_SKIP_INSTALL=1 || XRAY_SKIP_INSTALL=0
+    fi
+fi  # Pin to stable version, allow override
+echo -e "\e[1;36m[*] Installing xray-core v${XRAY_VERSION}...\e[0m"
+
+# [FIX M-S6] Lewati reinstall bila xray terpasang sudah >= target (anti downgrade).
+if [[ "${XRAY_SKIP_INSTALL:-0}" == "1" ]]; then
+    echo -e "\e[1;32m[✓] xray ${INSTALLED_XRAY} sudah terpasang (>= ${XRAY_VERSION}), lewati reinstall.\e[0m"
+else
+
+for _xray_attempt in 1 2 3; do
+    curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install --version "$XRAY_VERSION"
+    # [BUGFIX] install-release tidak ada exit code yang andal - cek binary &
+    # service BENAR-BENAR ada. Sebelumnya installer lanjut tanpa xray -> semua
+    # menu xray GAGAL & laporan akhir cuma bilang "[FAIL]" tanpa hentikan.
+    if [[ -x /usr/local/bin/xray && -f /etc/systemd/system/xray.service ]]; then
+        break
+    fi
+    echo -e "\e[33m[!] Xray gagal terpasang (attempt $_xray_attempt/3), ulangi...\e[0m"
+    find /tmp -maxdepth 1 -type f -name "xray.tmp" -delete 2>/dev/null
+    # [SECURITY] pipefail lokal: curl gagal -> bash dapat stdin kosong -> lanjut seolah OK.
+    ( set -o pipefail; curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f --version "$XRAY_VERSION" ) || true
+    if [[ -x /usr/local/bin/xray && -f /etc/systemd/system/xray.service ]]; then
+        break
+    fi
+done
+
+# Verify installation
+if xray version >/dev/null 2>&1; then
+    installed_ver=$(xray version 2>&1 | head -1)
+    if ! echo "$installed_ver" | grep -q "$XRAY_VERSION"; then
+        echo -e "\e[33m[!] Warning: xray version mismatch. Installed: $installed_ver\e[0m"
+        echo -e "\e[33m[!] Expected: v${XRAY_VERSION}\e[0m"
+        echo -e "\e[33m[!] Continuing anyway, but compatibility issues may occur.\e[0m"
+        sleep 3
+    fi
+fi
+
+# [BUGFIX] Kalau setelah 3x xray TETAP tidak ada, JANGAN lanjut - install
+# menu tanpa xray = panel yang semua tombolnya error.
+if [[ ! -x /usr/local/bin/xray ]]; then
+    echo -e "\e[31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[31m[FATAL] Xray core gagal dipasang setelah 3x percobaan.\e[0m"
+    echo -e "\e[31mPenyebab paling umum: /tmp penuh (tmpfs kecil) atau koneksi\e[0m"
+    echo -e "\e[31mke GitHub terputus. Installer dihentikan - tidak ada gunanya\e[0m"
+    echo -e "\e[31mmemasang menu di atas xray yang tidak ada.\e[0m"
+    echo -e "\e[33mSolusi: hapus file besar di /tmp (du -sh /tmp/*), lalu\e[0m"
+    echo -e "\e[33mjalan ulang installer ini.\e[0m"
+    echo -e "\e[31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    df -h /tmp | tail -1
+    exit 1
+fi
+if [[ ! -f /etc/systemd/system/xray.service ]]; then
+    echo -e "\e[33m[!] service xray tidak ada, memaksa reinstall...\e[0m"
+    XRAY_VERSION="${XRAY_VERSION:-1.8.24}"
+    # [SECURITY] pipefail lokal: curl gagal -> bash dapat stdin kosong -> lanjut seolah OK.
+    ( set -o pipefail; curl -sS -L --retry 3 https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install -f --version "$XRAY_VERSION" ) || true
+fi
+
+fi  # [FIX M-S6] tutup else XRAY_SKIP_INSTALL
+
+# Backup config lama
+[ -f /usr/local/etc/xray/config.json ] && cp /usr/local/etc/xray/config.json "/usr/local/etc/xray/config.json.bak.$(date +%F_%H%M%S)"
+
+# [SECURITY] JANGAN timpa config bila sudah ada pelanggan. Sebelumnya install ke-2x
+# menulis template "clients": [] -> SEMUA akun VPN pelanggan lenyap. Backup .bak
+# dibuat tapi tidak pernah direstore. Sekarang: config lama dipertahankan jika
+# masih berisi klien aktif; hanya self-heal kalau config rusak/kosong.
+if [[ -f /usr/local/etc/xray/config.json ]] && command -v jq >/dev/null 2>&1; then
+    EXISTING_CLIENTS=$(jq '[.inbounds[]?.settings?.clients[]?] | length' /usr/local/etc/xray/config.json 2>/dev/null || echo 0)
+    if [[ "$EXISTING_CLIENTS" -gt 0 ]]; then
+        echo -e "\e[32m[+] Config xray lama memiliki ${EXISTING_CLIENTS} klien aktif - dipertahankan (tidak ditimpa).\e[0m"
+        SKIP_CONFIG_WRITE=1
+    fi
+fi
+
+# XRAY CONFIG (dengan StatsService + HandlerService)
+DUMMY_UUID=$(uuidgen)
+if [[ "${SKIP_CONFIG_WRITE:-0}" != "1" ]]; then
+cat <<'XEOF' > /usr/local/etc/xray/config.json
+{
+  "log": {"access": "/var/log/xray/access.log","error": "/var/log/xray/error.log","loglevel": "warning"},
+  "api": {"tag": "api","services": ["StatsService", "HandlerService"]},
+  "stats": {},
+  "policy": {
+    "levels": {"0": {"statsUserUplink": true,"statsUserDownlink": true}},
+    "system": {"statsInboundUplink": true,"statsInboundDownlink": true}
+  },
+  "inbounds": [
+    {"tag": "api","listen": "127.0.0.1","port": 10085,"protocol": "dokodemo-door","settings": {"address": "127.0.0.1"}},
+    {"tag": "vless-ws-tls","port": 10086,"listen": "127.0.0.1","protocol": "vless","settings": {"clients": [], "decryption": "none"},"streamSettings": {"network": "ws","sockopt": {"acceptProxyProtocol": true},"wsSettings": {"path": "/vless"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}},
+    {"tag": "vless-ws-ntls","port": 10087,"listen": "127.0.0.1","protocol": "vless","settings": {"clients": [], "decryption": "none"},"streamSettings": {"network": "ws","sockopt": {"acceptProxyProtocol": true},"wsSettings": {"path": "/vless-ntls"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}},
+    {"tag": "vless-grpc","port": 10088,"listen": "127.0.0.1","protocol": "vless","settings": {"clients": [], "decryption": "none"},"streamSettings": {"network": "grpc","sockopt": {"acceptProxyProtocol": true},"grpcSettings": {"serviceName": "vless"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}},
+    {"tag": "vmess-ws-tls","port": 10089,"listen": "127.0.0.1","protocol": "vmess","settings": {"clients": []},"streamSettings": {"network": "ws","sockopt": {"acceptProxyProtocol": true},"wsSettings": {"path": "/vmess"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}},
+    {"tag": "vmess-ws-ntls","port": 10090,"listen": "127.0.0.1","protocol": "vmess","settings": {"clients": []},"streamSettings": {"network": "ws","sockopt": {"acceptProxyProtocol": true},"wsSettings": {"path": "/vmess-ntls"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}},
+    {"tag": "vmess-grpc","port": 10091,"listen": "127.0.0.1","protocol": "vmess","settings": {"clients": []},"streamSettings": {"network": "grpc","sockopt": {"acceptProxyProtocol": true},"grpcSettings": {"serviceName": "vmess"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}},
+    {"tag": "trojan-ws-tls","port": 10092,"listen": "127.0.0.1","protocol": "trojan","settings": {"clients": []},"streamSettings": {"network": "ws","sockopt": {"acceptProxyProtocol": true},"wsSettings": {"path": "/trojan"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}},
+    {"tag": "trojan-grpc","port": 10093,"listen": "127.0.0.1","protocol": "trojan","settings": {"clients": []},"streamSettings": {"network": "grpc","sockopt": {"acceptProxyProtocol": true},"grpcSettings": {"serviceName": "trojan"}},"sniffing": {"enabled": true,"destOverride": ["http", "tls"]}}
+  ],
+  "outbounds": [{"protocol": "freedom","settings": {},"tag": "direct"},{"protocol": "blackhole","settings": {},"tag": "blocked"},{"protocol": "freedom","settings": {"accountStats": true},"tag": "user-stats"}],
+  "routing": {"domainStrategy": "AsIs","rules": [{"type": "field","inboundTag": ["api"],"outboundTag": "api"},{"type": "field","outboundTag": "blocked","user": ["DUMMY-LOCK"]},{"type": "field","ip": ["geoip:private"],"outboundTag": "blocked"},{"type": "field","protocol": ["bittorrent"],"outboundTag": "blocked"}]}
+}
+XEOF
+fi  # end SKIP_CONFIG_WRITE
+
+# Check for port conflicts before HAProxy setup
+echo -e "\e[1;36m[*] Checking for port conflicts...\e[0m"
+REQUIRED_PORTS="80 443 143 109 10085"
+for port in $REQUIRED_PORTS; do
+    if netstat -tuln | grep -q ":${port} "; then
+        echo -e "\e[31m[!] ERROR: Port $port already in use!\e[0m"
+        echo -e "\e[33m[!] Cannot run multiple instances on same VPS.\e[0m"
+        echo -e "\e[33m[!] Stop existing services or use different server.\e[0m"
+        exit 1
+    fi
+done
+
+# HAProxy Config (MERGED: Xray + SSH Enhanced)
+cat <<'HFEOF' > /etc/haproxy/haproxy.cfg
+# =====================================================================
+# WIBU TUNNELING v4.0 — HAProxy (MERGED: Xray + SSH)
+# =====================================================================
+# Arsitektur (satu proses HAProxy, dua tahap):
+#
+#   :443 (TLS terminate, mode tcp)
+#     "SSH-2.0"            -> dropbear:143   (SNI / SSH-over-TLS)
+#     h2 (gRPC)            -> http_hub:8444
+#     /vless /vmess /trojan-> http_hub:8444  (xray WS, proxy-v2)
+#     /telehook            -> http_hub:8444  (webhook)
+#     lainnya              -> dropbear:109   (SSH Enhanced/WS-SSH)
+#
+#   :80 (mode tcp)
+#     "SSH-2.0"               -> dropbear:143  (DIRECT)
+#     /vless-ntls /vmess-ntls -> http_hub:8445 (xray non-TLS, proxy-v2)
+#     lainnya                 -> dropbear:109   (SSH Enhanced/WS-SSH)
+#
+# FIXED: Removed ws-stunnel:10015 dependency
+# Direct routing to dropbear:109 for WS-SSH and Enhanced payloads
+# =====================================================================
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    chroot /var/lib/haproxy
+    user haproxy
+    group haproxy
+    daemon
+    maxconn 100000
+    ca-base /etc/ssl/certs
+    crt-base /etc/ssl/private
+    ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
+    ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
+    ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
+
+defaults
+    log     global
+    mode    tcp
+    option  tcplog
+    timeout connect 5s
+    timeout client  30m
+    timeout server  30m
+    timeout tunnel  1h
+    timeout client-fin 20s
+    timeout server-fin 20s
+
+# ===================== TAHAP 1 =====================
+frontend ssl_sni
+    bind *:443 ssl crt /etc/haproxy/certs/$domain.pem alpn h2,http/1.1 tfo
+    mode tcp
+    tcp-request inspect-delay 5s
+    tcp-request content accept if { payload(0,7) -m bin 5353482d322e30 }
+    tcp-request content accept if HTTP
+
+    acl is_ssh payload(0,7) -m bin 5353482d322e30
+    acl is_h2 ssl_fc_alpn -i h2
+    acl is_xray path_beg /vless /vmess /trojan
+    acl is_xray path_beg %2Fvless %2Fvmess %2Ftrojan
+    acl is_telehook path_beg /telehook
+
+    use_backend ssh_dropbear if is_ssh
+    use_backend bk_hub if is_h2
+    use_backend bk_hub if is_xray
+    use_backend bk_hub if is_telehook
+    default_backend ssh_dropbear_ws
+
+frontend http_80_front
+    bind *:80
+    mode tcp
+    tcp-request inspect-delay 5s
+    tcp-request content accept if { payload(0,7) -m bin 5353482d322e30 }
+    tcp-request content accept if HTTP
+
+    acl is_ssh payload(0,7) -m bin 5353482d322e30
+    acl is_xray_vless path_beg /vless-ntls
+    acl is_xray_vless path_beg %2Fvless-ntls
+    acl is_xray_vmess path_beg /vmess-ntls
+    acl is_xray_vmess path_beg %2Fvmess-ntls
+
+    use_backend ssh_dropbear if is_ssh
+    use_backend bk_hub80 if is_xray_vless || is_xray_vmess
+    default_backend ssh_dropbear_ws
+
+backend ssh_dropbear
+    mode tcp
+    server dropbear 127.0.0.1:143 check
+
+backend ssh_dropbear_ws
+    mode tcp
+    server dropbear 127.0.0.1:109 check
+
+backend bk_hub
+    mode tcp
+    server hub 127.0.0.1:8444
+
+backend bk_hub80
+    mode tcp
+    server hub80 127.0.0.1:8445
+
+# ===================== TAHAP 2 =====================
+listen http_hub
+    bind 127.0.0.1:8444
+    mode http
+    option forwardfor
+    acl is_vless_grpc path_beg /vless/
+    acl is_vless_grpc path_beg %2Fvless%2F
+    acl is_vmess_grpc path_beg /vmess/
+    acl is_vmess_grpc path_beg %2Fvmess%2F
+    acl is_trojan_grpc path_beg /trojan/
+    acl is_trojan_grpc path_beg %2Ftrojan%2F
+    acl is_vless_ws path_beg /vless
+    acl is_vless_ws path_beg %2Fvless
+    acl is_vmess_ws path_beg /vmess
+    acl is_vmess_ws path_beg %2Fvmess
+    acl is_trojan_ws path_beg /trojan
+    acl is_trojan_ws path_beg %2Ftrojan
+    acl is_telehook path_beg /telehook
+    acl is_telehook path_beg %2Ftelehook
+    acl is_ws_upgrade hdr(Upgrade) -i websocket
+    
+    use_backend webhook_server if is_telehook
+    use_backend xray_vless_grpc if is_vless_grpc
+    use_backend xray_vmess_grpc if is_vmess_grpc
+    use_backend xray_trojan_grpc if is_trojan_grpc
+    use_backend xray_vless if is_vless_ws
+    use_backend xray_vmess if is_vmess_ws
+    use_backend xray_trojan if is_trojan_ws
+    use_backend ssh_dropbear_http if is_ws_upgrade
+    default_backend ssh_dropbear_http
+
+listen http_hub80
+    bind 127.0.0.1:8445
+    mode http
+    option forwardfor
+    acl is_vless_ntls path_beg /vless-ntls
+    acl is_vless_ntls path_beg %2Fvless-ntls
+    acl is_vmess_ntls path_beg /vmess-ntls
+    acl is_vmess_ntls path_beg %2Fvmess-ntls
+    acl is_ws_upgrade hdr(Upgrade) -i websocket
+    use_backend xray_vless_ntls if is_vless_ntls
+    use_backend xray_vmess_ntls if is_vmess_ntls
+    use_backend ssh_dropbear_http if is_ws_upgrade
+    default_backend ssh_dropbear_http
+
+backend xray_vless
+    mode http
+    server local_vless_ws 127.0.0.1:10086 send-proxy-v2 check
+backend xray_vless_grpc
+    mode http
+    server local_vless_grpc 127.0.0.1:10088 send-proxy-v2 proto h2 check
+backend xray_vmess
+    mode http
+    server local_vmess_ws 127.0.0.1:10089 send-proxy-v2 check
+backend xray_vmess_grpc
+    mode http
+    server local_vmess_grpc 127.0.0.1:10091 send-proxy-v2 proto h2 check
+backend xray_trojan
+    mode http
+    server local_trojan_ws 127.0.0.1:10092 send-proxy-v2 check
+backend xray_trojan_grpc
+    mode http
+    server local_trojan_grpc 127.0.0.1:10093 send-proxy-v2 proto h2 check
+backend xray_vless_ntls
+    mode http
+    server vless_ntls_server 127.0.0.1:10087 send-proxy-v2 check
+backend xray_vmess_ntls
+    mode http
+    server vmess_ntls_server 127.0.0.1:10090 send-proxy-v2 check
+backend ssh_dropbear_http
+    mode http
+    server dropbear 127.0.0.1:109
+backend webhook_server
+    mode http
+    server local_webhook 127.0.0.1:8443
+HFEOF
+
+# [ERROR HANDLING] Validate HAProxy config after generation
+if ! haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1; then
+    echo -e "\e[1;31m[ERROR]\e[0m HAProxy config validation failed!"
+    if [[ -f /etc/haproxy/haproxy.cfg.backup ]]; then
+        echo "Restoring backup config..."
+        mv /etc/haproxy/haproxy.cfg.backup /etc/haproxy/haproxy.cfg
+    fi
+    exit 1
+else
+    echo -e "\e[1;32m[OK]\e[0m HAProxy config validated"
+fi
+
+# Backup the config
+cp /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.backup
+
+# =========================================================
+# SSH TUNNEL STACK (Dropbear 2019.78 + ws-stunnel + badvpn-udpgw)
+# =========================================================
+echo -e "\e[1;36m[+] Memasang SSH Tunnel Stack (Dropbear 2019.78 + ws-stunnel + udpgw)...\e[0m"
+
+# [FIX] Deteksi script/bash ATAU ELF binary tanpa menelan null byte.
+# "head -n 1 <elf>" memuntahkan null byte -> bash warning + grep selalu gagal,
+# jadi file shc ditolak. Gunakan od (binary-safe).
+wibu_file_valid() {
+    local f="$1"
+    [[ -s "$f" ]] || return 1
+    local m
+    m=$(head -c 4 "$f" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    [[ "$m" == 23212f* || "$m" == 7f454c46 ]]
+}
+
+# ws-stunnel & installer SSH diunduh dari repo (source of truth)
+download_ssh_tool() {
+    local path="$1" name="$2"
+    local src="${WIBU_LOCAL_REPO:-}/${path}"
+    if [[ -n "$WIBU_LOCAL_REPO" && -f "$src" ]] && wibu_file_valid "$src"; then
+        install -m 0755 "$src" "/usr/local/bin/${name}"
+        return 0
+    fi
+    curl -sS -L --max-time 30 -o "/etc/wibutunnel/tmp/${name}.dl" "${GITHUB_RAW}/${path}?v=$RANDOM"
+    # [FIX L3] Verifikasi checksum: ssh-tunnel-install langsung di-bash sebagai
+    # root -> supply-chain gap bila repo/MITM diganti (magic-byte tak bukti).
+    local sums_dl="/etc/wibutunnel/tmp/SHA256SUMS.ssh"
+    curl -fsSL --max-time 20 -o "$sums_dl" "${GITHUB_RAW}/SHA256SUMS" 2>/dev/null
+    local want_s="" got_s=""
+    want_s=$(awk -v p="$path" '$2==p{print $1}' "$sums_dl" 2>/dev/null)
+    # [FIX R3] Hard-fail bila SHA256SUMS tak terunduh / entry tak ada: soft-fail
+    # # = penyerang cukup blokir URL untuk bypass supply-chain (instalasi root).
+    [[ -n "$want_s" ]] || { echo -e "\e[31m[!] SHA256SUMS tak tersedia untuk ${name}! Tidak dipasang.\e[0m"; rm -f "/etc/wibutunnel/tmp/${name}.dl"; return 1; }
+    [[ -s "/etc/wibutunnel/tmp/${name}.dl" ]] && got_s=$(sha256sum "/etc/wibutunnel/tmp/${name}.dl" 2>/dev/null | awk '{print $1}')
+    if [[ -n "$want_s" && "$want_s" != "$got_s" ]]; then
+        echo -e "\e[31m[!] CHECKSUM MISMATCH ${name}! Tidak dipasang (kemungkinan kompromi repo).\e[0m"
+        rm -f "/etc/wibutunnel/tmp/${name}.dl"
+        return 1
+    fi
+    mv "/etc/wibutunnel/tmp/${name}.dl" "/usr/local/bin/${name}"
+    if wibu_file_valid "/usr/local/bin/${name}"; then
+        chmod +x "/usr/local/bin/${name}"
+    else
+        : > "/usr/local/bin/${name}" 2>/dev/null
+        echo -e "\e[31m[!] Gagal mengunduh ${name}\e[0m"
+    fi
+}
+GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
+download_ssh_tool "bin/ws-stunnel" "ws-stunnel"
+download_ssh_tool "bin/ssh-tunnel-install" "ssh-tunnel-install"
+
+# Jalankan installer stack SSH (idempoten: compile dropbear, keys, systemd,
+# ws-stunnel, udpgw, ip_forward + NAT, dan melepas port 80/443 dari layanan lain)
+echo -e "\e[1;36m[*] Installing SSH tunnel support (Dropbear)...\e[0m"
+if [ -x /usr/local/bin/ssh-tunnel-install ]; then
+    if ! bash /usr/local/bin/ssh-tunnel-install; then
+        echo -e "\e[31m[!] WARNING: SSH tunnel installation failed!\e[0m"
+        echo -e "\e[33m[!] SSH features will not be available.\e[0m"
+        echo -e "\e[33m[!] Check build-essential installed: apt-get install build-essential\e[0m"
+        read -p "Continue without SSH support? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+else
+    echo -e "\e[31m[!] ssh-tunnel-install tidak tersedia — fitur SSH Tunnel tidak akan jalan.\e[0m"
+fi
+
+# Banner SSH (ditampilkan sebelum prompt login, seperti WIBULITE)
+mkdir -p /etc/wibutunnel
+cat > /etc/wibutunnel/ssh-banner <<'BANNEREOF'
+<p style="text-align:center; line-height:0.9; margin:0; padding:0;">
+<font color='#00ff36'><b>WIBU VPN STORE</b></font><br>
+<font color='#5539fb'>===============================</font><br>
+<font color='#aa1df8'>GUNAKAN DENGAN BIJAK</font><br>
+<font color='#5539fb'>===============================</font><br>
+<font color='#0056ff'>NO DDOS</font><br>
+<font color='#0080bf'>NO HACKING</font><br>
+<font color='#00ab80'>NO TORRENT</font><br>
+<font color='#00d540'>NO PORN</font><br>
+<font color='#ff0000'>MELANGGAR = BANNED PERMANENT</font><br>
+<font color='#55aa75'>===============================</font><br>
+<font color='#aa55b5'>Telegram : <a href="https://t.me/wibuvpnstore" target="_blank" style="color:#00ffff;">@wibuvpnstore</a></font><br>
+<font color='#aa55b5'>WhatsApp : <a href="https://wa.me/6287757315408" target="_blank" style="color:#00ffff;">62877-5731-5408</a></font><br>
+<font color='#aa55b5'>Grup WA : <a href="https://chat.whatsapp.com/La5nXNSOYQj8cZ5Ugyk3l8" target="_blank" style="color:#00ffff;">FREE CONFIG By WIBUVPN</a></font><br>
+<font color='#00ff36'><b>VPN PREMIUM 7K / 30 HARI</b></font><br>
+<font color='#aa55b5'>THANK YOU FOR USING OUR SERVICE</font><br>
+<font color='#0000ff'>===============================</font>
+</p>
+BANNEREOF
+# catatan: config /etc/default/dropbear (DROPBEAR_PORT + DROPBEAR_EXTRA_ARGS
+# + DROPBEAR_BANNER) sudah ditulis lengkap & benar oleh ssh-tunnel-install di
+# atas, termasuk port publik 143/109 & port internal 2222. Jangan timpa di
+# sini — penimpaan sebelumnya menghapus port 143 & menimbulkan konflik argumen.
+if [ -f /etc/default/dropbear ]; then
+    # hanya pastikan banner ada (dropbear -b butuh file ini)
+    grep -q '^DROPBEAR_BANNER=' /etc/default/dropbear \
+        && sed -i 's|^DROPBEAR_BANNER=.*|DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"|' /etc/default/dropbear \
+        || echo 'DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"' >> /etc/default/dropbear
+    systemctl restart dropbear 2>/dev/null || true
+fi
+
+# Inisialisasi group & database akun SSH
+if [ -f /usr/local/bin/common.sh ]; then
+    ( source /usr/local/bin/common.sh >/dev/null 2>&1; ssh_init ) >/dev/null 2>&1 || true
+fi
+
+# Bypass GitHub 429 Rate Limit menggunakan GHProxy
+GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
+
+# [FIX] Download Menu - $RANDOM tanpa backslash agar benar-benar cache-bust
+download_menu() {
+    local url="${GITHUB_RAW}/$1?v=$RANDOM"
+    local dest="/usr/local/bin/$2"
+    local src="${WIBU_LOCAL_REPO:-}/$1"
+
+    # [LOCAL INSTALL] bila installer dijalankan dari clone repo lokal, pakai
+    # file tersebut (versi terbaru hasil edit) alih-alih versi di GitHub.
+    if [[ -n "$WIBU_LOCAL_REPO" && -f "$src" ]]; then
+        if wibu_file_valid "$src"; then
+            cp -f "$src" "/etc/wibutunnel/tmp/$2"
+            mv "/etc/wibutunnel/tmp/$2" "$dest"
+            chmod +x "$dest"
+            return 0
+        fi
+    fi
+
+    # [FIX M-S5] --max-time + --retry: mirror lambat bisa menggantung installer
+    # # menit-menit lamanya (fallback jsdelivr pun sama).
+    curl -sS -L --max-time 90 --retry 2 -o "/etc/wibutunnel/tmp/$2" "$url"
+
+    # Validasi apakah file yang diunduh adalah bash script (bukan HTML 429 Error)
+    if grep -q "429: Too Many Requests" "/etc/wibutunnel/tmp/$2"; then
+        echo -e "\e[31m[!] Terkena Rate Limit GitHub saat mengunduh $2. Mencoba mirror lain...\e[0m"
+        url="https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@main/$1"
+        curl -sS -L --max-time 90 --retry 2 -o "/etc/wibutunnel/tmp/$2" "$url"
+    fi
+
+    # Validasi: tidak boleh kosong & harus file valid:
+    #   - script bash (shebang #!)  ATAU  ELF binary (magic 7f454c46, hasil shc)
+    local magic4=""
+    if [ -s "/etc/wibutunnel/tmp/$2" ]; then
+        magic4=$(head -c 4 "/etc/wibutunnel/tmp/$2" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    fi
+    if wibu_file_valid "/etc/wibutunnel/tmp/$2"; then
+        mv "/etc/wibutunnel/tmp/$2" "$dest"
+        chmod +x "$dest"
+        return 0
+    else
+        echo -e "\e[31m[!] Gagal mengunduh $2 (file tidak valid)\e[0m"
+        # [FIX H3] Komponen inti harus benar-benar terpasang. Sebelumnya
+        # kegagalan hanya dicetak lalu installer tetap melapor SELESAI dan
+        # reboot -> panel tanpa menu/bot, daemon manggil binary yang tidak ada.
+        return 1
+    fi
+}
+
+download_menu "bin/menu" "menu"
+download_menu "bin/m-vless" "m-vless"
+download_menu "bin/m-vmess" "m-vmess"
+download_menu "bin/m-trojan" "m-trojan"
+download_menu "bin/m-ssh" "m-ssh"
+download_menu "bin/m-setting" "m-setting"
+download_menu "bin/xp" "xp"
+download_menu "bin/m-backup" "m-backup"
+download_menu "bin/menu-lock" "menu-lock"
+download_menu "bin/menu-unlock" "menu-unlock"
+download_menu "bin/menu-recovery" "menu-recovery"
+download_menu "bin/cek-trafik" "cek-trafik"
+# [FIX H8] common.sh TIDAK di-inline (binary repo adalah bash plain, bukan shc
+# ELF) dan WAJIB terpasang karena bot-daemon/bot-webhook/menu me-source-nya.
+download_menu "bin/common.sh" "common.sh"
+download_menu "bin/bot-daemon" "bot-daemon"
+download_menu "bin/bot-webhook" "bot-webhook"
+
+# [FIX H3] Komponen inti wajib ada; abort kalau ada yang gagal terunduh.
+CORE_FAIL=""
+for core_bin in menu common.sh bot-daemon bot-webhook m-vless m-vmess m-trojan m-ssh m-setting xp m-backup; do
+    [[ -x "/usr/local/bin/$core_bin" ]] || CORE_FAIL="$CORE_FAIL $core_bin"
+done
+if [[ -n "$CORE_FAIL" ]]; then
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[1;31m[FATAL] Komponen inti gagal dipasang:$CORE_FAIL\e[0m"
+    echo -e "\e[1;33m    Installer dibatalkan. Cek koneksi GitHub/rate-limit, lalu jalankan ulang.\e[0m"
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    exit 1
+fi
+
+
+# =========================================================
+# SISTEM RECOVERY CENTER & ALGOJO MONITOR (v4.0 PERFECT)
+# =========================================================
+touch /etc/wibutunnel/locked_users.db /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/user_usage.db
+chmod 600 /etc/wibutunnel/*.db
+
+
+# Scripts lock-user, unlock-user, algojo, unlocker diunduh dari repo (versi patched)
+# Download sbin scripts (source of truth — patched versions)
+download_menu "bin/algojo-wibu" "algojo-wibu-dl"
+download_menu "bin/algojo-kuota" "algojo-kuota-dl"
+download_menu "bin/lock-user" "lock-user-dl"
+download_menu "bin/unlock-user" "unlock-user-dl"
+download_menu "bin/unlocker-wibu" "unlocker-wibu-dl"
+
+# Install sbin scripts
+for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu; do
+    if [ -f "/usr/local/bin/${s}-dl" ]; then
+        mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
+        chmod +x "/usr/local/sbin/${s}"
+    fi
+done
+# lock-user and unlock-user go to /usr/local/bin/
+for s in lock-user unlock-user; do
+    if [ -f "/usr/local/sbin/${s}" ]; then
+        mv "/usr/local/sbin/${s}" "/usr/local/bin/${s}"
+        chmod +x "/usr/local/bin/${s}"
+    fi
+done
+
+
+# WIBU DAEMON
+cat << 'WDEOF' > /usr/local/bin/wibu-daemon
+#!/bin/bash
+while true; do
+    /usr/local/sbin/algojo-wibu >/dev/null 2>&1
+    /usr/local/sbin/algojo-kuota >/dev/null 2>&1
+    sleep 10
+done
+WDEOF
+chmod +x /usr/local/bin/wibu-daemon
+
+cat << 'EOF' > /etc/systemd/system/wibu-daemon.service
+[Unit]
+Description=Wibu Tunneling Real-Time Algojo Daemon
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/wibu-daemon
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat << 'EOF' > /etc/systemd/system/telegram-webhook.socket
+[Unit]
+Description=Telegram Webhook Socket
+
+[Socket]
+ListenStream=127.0.0.1:8443
+Accept=yes
+
+[Install]
+WantedBy=sockets.target
+EOF
+
+cat << 'EOF' > /etc/systemd/system/telegram-webhook@.service
+[Unit]
+Description=Telegram Webhook Service
+
+[Service]
+ExecStart=/usr/local/bin/bot-webhook
+StandardInput=socket
+StandardOutput=socket
+# WAJIB: stderr ke journal, BUKAN socket. Default 'inherit' membuat baris
+# log [SECURITY] ... ikut masuk ke response HTTP -> response tidak valid
+# -> HAProxy menjawab 502 saat menolak request secret salah (harusnya 403).
+StandardError=journal
+User=root
+EOF
+
+chmod +x /usr/local/bin/wibu-daemon
+chmod +x /usr/local/sbin/algojo-wibu 2>/dev/null || true
+chmod +x /usr/local/sbin/algojo-kuota 2>/dev/null || true
+chmod +x /usr/local/bin/bot-daemon
+chmod +x /usr/local/bin/bot-webhook
+
+systemctl daemon-reload
+systemctl enable wibu-daemon >/dev/null 2>&1
+systemctl restart wibu-daemon
+
+systemctl enable --now telegram-webhook.socket >/dev/null 2>&1
+
+# Logrotate & Cron
+cat << 'LREOF' > /etc/logrotate.d/xray
+/var/log/xray/*.log {
+    su nobody nogroup
+    create 0644 nobody nogroup
+    daily
+    rotate 3
+    size 10M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    postrotate
+        systemctl restart xray > /dev/null 2>&1
+    endscript
+}
+LREOF
+
+cat <<EOF > /usr/local/bin/watchdog.sh
+#!/bin/bash
+# [FIX] watchdog sebelumnya hanya cover xray+haproxy. Kalau dropbear atau
+# ws-stunnel mati, akun SSH offline selamanya tanpa auto-recovery (user
+# komplain duluan sebelum admin sadar). Sekarang semua service inti dipantau.
+for unit in xray haproxy dropbear ws-stunnel wibu-daemon; do
+    systemctl is-active --quiet "$unit" 2>/dev/null || systemctl restart "$unit" 2>/dev/null
+done
+EOF
+chmod +x /usr/local/bin/watchdog.sh
+
+systemctl enable cron >/dev/null 2>&1
+
+crontab -l 2>/dev/null | grep -v -E "xp|reboot|watchdog|algojo|unlocker|drop_caches|renew-cert-wibu" | crontab -
+(crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/watchdog.sh") | crontab -
+(crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/xp") | crontab -
+(crontab -l 2>/dev/null; echo "0 5 * * * /sbin/reboot") | crontab -
+(crontab -l 2>/dev/null; echo "0 0 * * * sync; echo 3 > /proc/sys/vm/drop_caches && swapoff -a && swapon -a") | crontab -
+(crontab -l 2>/dev/null; echo "* * * * * /usr/local/sbin/unlocker-wibu") | crontab -
+
+# SSL Auto Renewal + Recovery
+# [RECOVERY] certbot renew HANYA memperbarui cert yg sudah ada. Kalau cert
+# belum pernah dibuat (installer fallback ke self-signed karena rate limit),
+# renew tidak melakukan apa-apa -> cert asli TIDAK PERNAH diambil. Karena itu
+# script ini juga meminta cert BARU kalau belum ada, sampai dapat. Jalankan
+# tiap 6 jam (rate limit reset -> langsung keambil, tanpa campur tangan admin).
+cat > /usr/local/bin/renew-cert-wibu.sh << 'RCEOF'
+#!/bin/bash
+# [FIX] trap EXIT: haproxy DIHENTIKAN untuk certbot HTTP-01 (port 80/443 harus
+# bebas). Kalau script diinterrupt di tengah (kill, OOM, reboot mendadak),
+# haproxy tetap down -> VPS offline & tidak bisa diakses. Trap ini menjamin
+# service selalu dihidupkan kembali, sukses maupun gagal.
+trap 'systemctl start haproxy 2>/dev/null' EXIT
+domain=$(cat /etc/xray/domain 2>/dev/null)
+[[ -z "$domain" ]] && exit 1
+pem="/etc/letsencrypt/live/$domain/fullchain.pem"
+systemctl stop haproxy 2>/dev/null
+if [[ ! -f "$pem" ]]; then
+    # belum ada cert (installer pakai self-signed) -> minta baru
+    if certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
+        certbot certonly --standalone --non-interactive --agree-tos -m "admin@${domain}" -d "$domain"
+    else
+        certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos -d "$domain"
+    fi
+else
+    certbot renew --quiet --no-self-upgrade --standalone
+fi
+# hanya timpa .pem kalau cert Let's Encrypt benar-benar ada & valid
+if [[ -f "$pem" ]]; then
+    cat "$pem" "/etc/letsencrypt/live/$domain/privkey.pem" > "/etc/haproxy/certs/$domain.pem"
+fi
+systemctl start haproxy 2>/dev/null
+RCEOF
+chmod +x /usr/local/bin/renew-cert-wibu.sh
+(crontab -l 2>/dev/null; echo "0 */6 * * * /usr/local/bin/renew-cert-wibu.sh") | crontab -
+
+# Service Override
+mkdir -p /etc/systemd/system/haproxy.service.d /etc/systemd/system/xray.service.d
+cat <<EOF > /etc/systemd/system/haproxy.service.d/override.conf
+[Service]
+Restart=on-failure
+RestartSec=5s
+EOF
+# [FIX XRAY PERMISSION] xray jalan sebagai user 'nobody', tapi /var/log/xray
+# di beberapa VPS adalah tmpfs mount uid=65534 (=nobody) dan installer/driver
+# lain bisa membuat access.log/error.log milik ROOT -> xray gagal start dengan
+# "open /var/log/xray/access.log: permission denied" (exit 23). Solusi: pastikan
+# folder & file log milik nobody sebelum start.
+# [CATATAN] chown pada tmpfs mount bisa EPERM di container; ExecStartPre bawaan
+# unit xray yg chown punya masalah yg sama -> direset di sini, ganti dgn versi
+# aman (mkdir + chown best-effort, tidak gagal kalau EPERM).
+mkdir -p /var/log/xray
+chown -R nobody:nogroup /var/log/xray 2>/dev/null || chown -R nobody /var/log/xray 2>/dev/null || true
+chmod 750 /var/log/xray 2>/dev/null || true
+cat <<'EOF' > /etc/systemd/system/xray.service.d/override.conf
+[Service]
+ExecStartPre=
+ExecStartPre=/bin/mkdir -p /var/log/xray
+ExecStartPre=/bin/chown -R nobody:nogroup /var/log/xray
+Restart=on-failure
+RestartSec=5s
+EOF
+
+systemctl daemon-reload
+systemctl enable xray haproxy cron
+systemctl start cron
+# Start services with error checking
+for svc in xray haproxy dropbear wibu-daemon; do
+    if systemctl restart $svc 2>/dev/null; then
+        echo -e "e[1;32m[OK]e[0m $svc started"
+    else
+        echo -e "e[1;33m[WARN]e[0m $svc failed to start, checking status..."
+        systemctl status $svc --no-pager -n 5
+    fi
+done
+
+# Set Webhook URL to Telegram
+# [FIX ROBUSTNESS] jangan `source` bot.conf: satu baris cacat membuat
+# parsing berhenti & variabel setelahnya tidak dibaca. Ambil langsung.
+BOT_TOKEN=$(grep -E "^[[:space:]]*BOT_TOKEN[[:space:]]*=" /etc/wibutunnel/bot.conf 2>/dev/null | head -1 | sed -E "s/^[^=]*=[[:space:]]*//; s/^'//; s/'$//; s/^\"//; s/\"$//")
+WEBHOOK_SECRET=$(grep -E "^[[:space:]]*WEBHOOK_SECRET[[:space:]]*=" /etc/wibutunnel/bot.conf 2>/dev/null | head -1 | sed -E "s/^[^=]*=[[:space:]]*//; s/^'//; s/'$//; s/^\"//; s/\"$//")
+if [[ -n "$BOT_TOKEN" ]]; then
+    # Generate webhook secret jika belum ada
+    if [[ -z "$WEBHOOK_SECRET" ]]; then
+        WEBHOOK_SECRET=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
+        echo "WEBHOOK_SECRET='${WEBHOOK_SECRET}'" >> /etc/wibutunnel/bot.conf
+    fi
+    # [FIX M5] tg_curl didefinisikan di common.sh yg hanya di-source di
+    # subshell (line ~1280) -> tak terlihat di scope ini. Inline definisi
+    # fallback agar setWebhook tidak gagal diam-diam.
+    tg_curl() {
+        local method="$1"; shift
+        local xpost=()
+        if [[ "$method" == "-X" ]]; then
+            xpost=(-X "$1"); method="$2"; shift 2
+        fi
+        curl -s -K - "${xpost[@]}" "$@" <<TGCONF 2>/dev/null
+url = "https://api.telegram.org/bot${BOT_TOKEN}/${method}"
+TGCONF
+    }
+
+    tg_curl -X POST setWebhook \
+        -F "url=https://${domain}/telehook" \
+        -F "secret_token=${WEBHOOK_SECRET}" >/dev/null 2>&1
+fi
+
+dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
+
+# [REMOVED] menu auto-run via .profile - already handled by .bashrc with MENU_RAN guard
+# Duplicate auto-run caused menu to appear twice on exit
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "\e[1;36m[+] Verifikasi Akhir Instalasi...\e[0m"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# [SELF-HEAL] Kalau xray mati, config-nya mungkin rusak (mis. rule dengan
+# user array kosong -> xray tolak total). Hapus rule yg tidak punya field
+# efektif, lalu start. Ini mencegah install 'selesai' tapi xray OFF.
+if ! systemctl is-active --quiet xray; then
+    if [[ -f /usr/local/etc/xray/config.json ]] && command -v jq >/dev/null 2>&1; then
+        echo -e "\e[33m[!] Xray tidak aktif - mencoba perbaikan config...\e[0m"
+        cp /usr/local/etc/xray/config.json /usr/local/etc/xray/config.json.repairbak 2>/dev/null
+        jq '.routing.rules |= map(select(
+            (.outboundTag != null and .user != null and (.user | length) == 0 and .inboundTag == null and .ip == null and .domain == null and .protocol == null) | not
+        ))' /usr/local/etc/xray/config.json > /etc/wibutunnel/tmp/xray_repaired.json 2>/dev/null
+        if [[ -s /etc/wibutunnel/tmp/xray_repaired.json ]] && xray run -test -config /etc/wibutunnel/tmp/xray_repaired.json >/dev/null 2>&1; then
+            mv /etc/wibutunnel/tmp/xray_repaired.json /usr/local/etc/xray/config.json
+            # [FIX M-X6] config berisi UUID/password klien -> 600, bukan 644.
+            chmod 600 /usr/local/etc/xray/config.json
+            systemctl restart xray 2>/dev/null
+            echo -e "\e[32m[✓] Config diperbaiki & xray dijalankan ulang\e[0m"
+        fi
+    fi
+fi
+
+systemctl is-active --quiet xray && echo -e "Xray Service        : \e[32m[OK]\e[0m" || echo -e "Xray Service        : \e[31m[FAIL]\e[0m"
+systemctl is-active --quiet haproxy && echo -e "HAProxy Service     : \e[32m[OK]\e[0m" || echo -e "HAProxy Service     : \e[31m[FAIL]\e[0m"
+ss -tlnp | grep -q ":443" && echo -e "Port 443            : \e[32m[OK]\e[0m" || echo -e "Port 443            : \e[31m[FAIL]\e[0m"
+ss -tlnp | grep -q ":80" && echo -e "Port 80             : \e[32m[OK]\e[0m" || echo -e "Port 80             : \e[31m[FAIL]\e[0m"
+haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1 && echo -e "HAProxy Config      : \e[32m[OK]\e[0m" || echo -e "HAProxy Config      : \e[31m[FAIL]\e[0m"
+[ -f /etc/haproxy/certs/$domain.pem ] && echo -e "SSL Certificate     : \e[32m[OK]\e[0m" || echo -e "SSL Certificate     : \e[31m[FAIL]\e[0m"
+ss -tlnp | grep -q ":10085" && echo -e "Xray API (10085)    : \e[32m[OK]\e[0m" || echo -e "Xray API (10085)    : \e[33m[WARNING]\e[0m"
+systemctl is-active --quiet wibu-daemon && echo -e "Algojo Daemon       : \e[32m[OK]\e[0m" || echo -e "Algojo Daemon       : \e[31m[FAIL]\e[0m"
+systemctl is-active --quiet dropbear && echo -e "Dropbear SSH        : \e[32m[OK]\e[0m" || echo -e "Dropbear SSH        : \e[33m[WARNING]\e[0m"
+systemctl is-active --quiet ws-stunnel && echo -e "ws-stunnel (WS)     : \e[32m[OK]\e[0m" || echo -e "ws-stunnel (WS)     : \e[33m[WARNING]\e[0m"
+ss -tlnp | grep -q ":143" && echo -e "SSH Port 143        : \e[32m[OK]\e[0m" || echo -e "SSH Port 143        : \e[33m[WARNING]\e[0m"
+# REMOVED: ss -tlnp | grep -q ":10015" && echo -e "ws-stunnel 10015    : \e[32m[OK]\e[0m" || echo -e "ws-stunnel 10015    : \e[33m[WARNING]\e[0m"
+
+# [BUGFIX] jangan bilang "SELESAI" kalau komponen inti gagal. Sebelumnya
+# installer bilang sukses padahal xray OFF -> admin baru sadar saat client
+# komplain. Sekarang: xray/haproxy gagal = peringatan jelas di akhir.
+if ! systemctl is-active --quiet xray; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo -e "\e[31mPERINGATAN: XRAY TIDAK AKTIF! Tunnel VLESS/VMESS/TROJAN\e[0m"
+    echo -e "\e[31mtidak akan jalan sampai xray diperbaiki. Jalankan:\e[0m"
+    echo -e "\e[33m  systemctl status xray\e[0m"
+    echo -e "\e[33m  journalctl -u xray --no-pager | tail -20\e[0m"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+else
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "    INSTALASI SELESAI! REBOOT DALAM 8 DETIK...    "
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+fi
+
+if [[ "${WIBU_NO_REBOOT:-0}" == "1" ]]; then
+    echo -e "\e[33m[!] WIBU_NO_REBOOT=1 -> reboot dilewati. Semua layanan sudah direstart di atas.\e[0m"
+    echo -e "\e[33m    Disarankan reboot manual di waktu luang untuk menerapkan tuning sepenuhnya.\e[0m"
+    exit 0
+fi
+sleep 8
+reboot
+
+# [POST-INSTALL] Run verification
+if [[ -x /usr/local/bin/verify-install ]]; then
+    echo ''
+    echo -e '\e[1;36mRunning post-install verification...\e[0m'
+    /usr/local/bin/verify-install || echo -e '\e[1;33mVerification warnings detected\e[0m'
+fi

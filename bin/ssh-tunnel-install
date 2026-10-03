@@ -1,0 +1,788 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - ssh-tunnel-install (v4.0 Kurumi + SSH Enhanced)
+# Installer stack SSH Tunnel: Dropbear 2019.78 + ws-stunnel + badvpn-udpgw
+# + routing SNI/websocket + NAT. Idempoten — aman dijalankan berulang.
+# Dipanggil oleh setup.sh (saat instalasi) dan menu m-ssh [99] (re-install).
+# ==========================================
+set -uo pipefail
+
+RED='\e[1;31m'; GREEN='\e[1;32m'; CYAN='\e[1;36m'; YELLOW='\e[1;33m'
+WHITE='\e[1;37m'; NC='\e[0m'
+LINE="${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
+err()  { echo -e "${RED}[ERROR]${NC} $*"; }
+info() { echo -e "${CYAN}[..]${NC} $*"; }
+
+# [APT SELF-HEAL] Debian EOL (bullseye/buster): repo security.debian.org
+# dikosongkan -> apt-get install apapun 404, build dropbear/badvpn gagal.
+# Deteksi & arahkan ke archive.debian.org + bersihkan list basi.
+# 3 lapis cek: (1) fetch Release gagal, (2) download paket gagal,
+# (3) fallback semua mirror debian ke deb.debian.org.
+apt_selfheal() {
+    export DEBIAN_FRONTEND=noninteractive
+    local rel="" ID="" TMP="" main="" sec="" f
+    [[ -f /etc/os-release ]] && { . /etc/os-release; }
+    rel="$VERSION_CODENAME"
+    TMP=$(mktemp -d)
+
+    _winfo() { info "$*"; }
+
+    # HTTP client apa saja yang tersedia (curl bisa belum terpasang jika
+    # installer dipanggil dari jalur repair, bukan via curl).
+    _http_get() {
+        local url="$1"
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsS --max-time 8 -o /dev/null "$url" 2>/dev/null
+        elif command -v wget >/dev/null 2>&1; then
+            wget -q --timeout=8 --spider "$url" 2>/dev/null
+        else
+            return 1   # tidak ada http client -> verifikasi dilewati
+        fi
+    }
+    _have_http() { command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; }
+
+    # cari mirror yang menyajikan suite ini - diverifikasi via HTTP 200, bukan
+    # asumsi. urut: mirror cepat/umum dulu, archive sebagai fallback.
+    _suite_url() {
+        local kind="$1" m
+        _have_http || return 9   # penanda: tidak bisa verifikasi
+        if [[ "$ID" == "ubuntu" ]]; then
+            if [[ "$kind" == security ]]; then
+                for m in http://security.ubuntu.com/ubuntu http://archive.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+                done
+            else
+                for m in http://archive.ubuntu.com/ubuntu http://security.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+                done
+            fi
+            return 1
+        fi
+        # debian
+        if [[ "$kind" == security ]]; then
+            # PENTING: suite security EOL (bullseye-security dll) ada di
+            # deb.debian.org/security, BUKAN archive.debian.org (404 di sana).
+            for m in http://deb.debian.org/debian-security http://security.debian.org/debian-security http://archive.debian.org/debian-security; do
+                _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+            done
+        else
+            for m in http://deb.debian.org/debian http://archive.debian.org/debian; do
+                _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+            done
+        fi
+        return 1
+    }
+
+    # [PERFORMA] hanya kosongkan lists (dipanggil saat mirror berganti).
+    # Repair dpkg butuh lists TERISI agar resolve berhasil, jadi repair
+    # sebelum update sia-sia + salah urut. _healthy() selalu dipanggil
+    # setelah ini dan melakukan repair (urutan benar) bila simulate gagal.
+    _heal_update() {
+        rm -rf /var/lib/apt/lists/* 2>/dev/null
+    }
+
+    # [HELD BROKEN PACKAGES] Skenario khas Debian EOL: paket dulu di-upgrade
+    # dari security suite (mis. haproxy 2.2.9-2+deb11u7). Setelah EOL, .deb
+    # versi itu dihapus dari pool -> versi TERPASANG lebih baru dari kandidat
+    # mana pun -> apt menolak install apa pun ("held broken packages").
+    # SOLUSI: kembalikan paket over-version ke versi pool yang masih ada,
+    # sebut versi EKSPLISIT + --allow-downgrades.
+    #
+    # [PERFORMA] JANGAN memindai semua paket terpasang (apt-cache madison per
+    # paket = ratusan pemanggilan = sangat lambat, installer kelihatan stuck).
+    # Cukup ekstrak paket yang apt sendiri laporkan bermasalah dari simulasi.
+    _downgrade_overversion() {
+        local sim pkgs pkg inst mad
+        # simulasi install paket kunci; tangkap laporan dependensi patah
+        sim=$(apt-get install -s -y build-essential haproxy jq curl bzip2 2>/dev/null)
+        grep -qiE "unmet dependencies|held broken" <<< "$sim" || return 0
+
+        _winfo "menemukan paket over-version (sisa security EOL), downgrade..."
+        # baris format: " jq : Depends: libjq1 (= 1.6-2.1) but 1.6-2.1+99 ..."
+        # -> ambil paket utama DAN paket dependensinya
+        pkgs=$(grep -oE '^[[:space:]]*[a-z0-9][a-z0-9+.+-]*[[:space:]]*:' <<< "$sim" | tr -d ' :' | sort -u)
+        pkgs="$pkgs $(grep -oE 'Depends: [a-z0-9][a-z0-9+.+-]*' <<< "$sim" | awk '{print $2}' | sort -u)"
+
+        for pkg in $pkgs; do
+            [[ -n "$pkg" ]] || continue
+            inst=$(dpkg-query -W "$pkg" 2>/dev/null | awk '{print $2}')
+            [[ -n "$inst" ]] || continue
+            mad=$(apt-cache madison "$pkg" 2>/dev/null | head -n 1 | awk -F'|' '{print $2}' | tr -d ' ')
+            [[ -n "$mad" ]] || continue
+            dpkg --compare-versions "$inst" gt "$mad" 2>/dev/null || continue
+            _winfo "  downgrade $pkg: $inst -> $mad"
+            # [FIX M-T2] Jangan pernah downgrade lib inti: libc6/libssl/libpam/
+        # # systemd downgrade ke versi EOL merusak SSH/dropbear/systemd di VPS
+        # # produksi (fix-apt jadi bencana).
+        case "$pkg" in
+            libc6*|libssl*|libpam*|systemd*|libgnutls*|zlib1g*) continue ;;
+        esac
+        apt-get install -y --allow-downgrades "$pkg=$mad" >/dev/null 2>&1
+        done
+        return 0
+    }
+
+    # Perbaiki state dpkg: paket setengah terpasang, dependensi patah, atau
+    # paket over-version (lihat _downgrade_overversion). HARUS dijalankan
+    # SETELAH apt-get update mengisi lists - kalau tidak, apt-get -f install
+    # tidak bisa resolve apa-apa dan paket patah tetap menggantung. Karena itu
+    # function ini hanya dipanggil dari _healthy() (setelah update) dan TIDAK
+    # dari _heal_update() (lists masih kosong -> repair sia-sia & salah urut).
+    _repair_dpkg() {
+        dpkg --configure -a >/dev/null 2>&1
+        apt-get -f install -y --allow-downgrades >/dev/null 2>&1 || apt-get -f install -y >/dev/null 2>&1
+        _downgrade_overversion
+        apt-get -f install -y --allow-downgrades >/dev/null 2>&1 || apt-get -f install -y >/dev/null 2>&1
+        apt-get autoremove -y >/dev/null 2>&1
+        return 0
+    }
+
+    # SEHAT = (1) update bersih exit 0, (2) download paket nyata berhasil,
+    # (3) state dpkg bersih (tidak ada held broken packages), DAN (4) simulasi
+    # install paket kunci bisa di-resolve. Cek (3)+(4) penting: dpkg bisa
+    # punya paket patah sisa install gagal / versi security EOL yang .deb-nya
+    # sudah dihapus - update & download terlihat sehat tapi install apapun
+    # pasti gagal dengan "held broken packages".
+    _healthy() {
+        # [CEK MURAH DULU] update + simulate. Repair (mahal: apt -f install,
+        # downgrade) hanya jika simulate memang gagal - menghindari pekerjaan
+        # sia-saya di setiap kandidat mirror saat brute-force.
+        # update boleh gagal parsial (suite EOL basi / *-updates 404) selama
+        # index MAIN terisi - simulate install adalah penanda sehat sejati.
+        # Mirror sama sekali tidak reachable -> lists kosong -> simulate gagal.
+        apt-get update -y --fix-missing >/dev/null 2>&1
+        apt-get update -y >/dev/null 2>&1
+        if apt-get install -s -y build-essential haproxy jq curl bzip2 >/dev/null 2>&1; then
+            ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 )
+            return $?
+        fi
+        # simulate gagal -> coba repair (downgrade over-version butuh lists
+        # yang sudah terisi oleh update di atas).
+        _repair_dpkg
+        apt-get install -s -y build-essential haproxy jq curl bzip2 >/dev/null 2>&1 || return 1
+        ( cd "$TMP" && apt-get download haproxy >/dev/null 2>&1 )
+    }
+
+    # cari mirror yang menyajikan suite ini - diverifikasi via HTTP 200, bukan
+    # asumsi. urut: mirror cepat/umum dulu, archive sebagai fallback.
+    _suite_url() {
+        local kind="$1" m
+        _have_http || return 9   # penanda: tidak bisa verifikasi
+        if [[ "$ID" == "ubuntu" ]]; then
+            if [[ "$kind" == security ]]; then
+                for m in http://security.ubuntu.com/ubuntu http://archive.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+                done
+            else
+                for m in http://archive.ubuntu.com/ubuntu http://security.ubuntu.com/ubuntu; do
+                    _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+                done
+            fi
+            return 1
+        fi
+        # debian
+        if [[ "$kind" == security ]]; then
+            # PENTING: suite security EOL (bullseye-security dll) ada di
+            # deb.debian.org/security, BUKAN archive.debian.org (404 di sana).
+            for m in http://deb.debian.org/debian-security http://security.debian.org/debian-security http://archive.debian.org/debian-security; do
+                _http_get "$m/dists/${rel}-security/Release" && { echo "$m"; return 0; }
+            done
+        else
+            for m in http://deb.debian.org/debian http://archive.debian.org/debian; do
+                _http_get "$m/dists/${rel}/Release" && { echo "$m"; return 0; }
+            done
+        fi
+        return 1
+    }
+
+    _write_sources() {
+        # $1=mirror main, $2=mirror security (boleh kosong)
+        cp -f /etc/apt/sources.list /etc/apt/sources.list.wibu.bak 2>/dev/null
+        # [EOL] suite *-updates sering dihapus di rilis EOL (mis. buster).
+        # Index 404 -> apt-get update gagal total -> mirror sehat kelihatan
+        # rusak. Kalau index tidak terbaca (atau tidak ada http client di
+        # mode brute-force), LEWATI baris itu: aman, paket installer
+        # (haproxy/jq/curl/build-essential) semuanya ada di suite main.
+        local ups=""
+        _have_http && _http_get "$1/dists/${rel}-updates/Release" && ups="yes"
+        {
+            echo "# [WIBU] ditulis ulang oleh installer - mirror lama rusak/EOL."
+            echo "# backup konfigurasi lama: /etc/apt/sources.list.wibu.bak"
+            if [[ "$ID" == "ubuntu" ]]; then
+                echo "deb $1 ${rel} main universe"
+                [[ -n "$ups" ]] && echo "deb $1 ${rel}-updates main universe"
+                [[ -n "$2" ]] && echo "deb $2 ${rel}-security main universe"
+            else
+                echo "deb $1 ${rel} main"
+                [[ -n "$ups" ]] && echo "deb $1 ${rel}-updates main"
+                [[ -n "$2" ]] && echo "deb $2 ${rel}-security main"
+            fi
+        } > /etc/apt/sources.list
+        echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99wibu-archive
+    }
+
+    _rewrite_full() {
+        [[ -n "$rel" ]] || return 1
+        main=$(_suite_url main)
+        local rc=$?
+        if [[ $rc -eq 9 ]]; then
+            # tidak ada http client untuk verifikasi: brute-force kandidat
+            # mirror satu per satu sampai apt-get update + download berhasil.
+            # format: "mirror_main|mirror_security" - security KOSONG artinya
+            # baris security dilewati (main saja). Urut: yang paling lengkap
+            # & cepat dulu, fallback ke archive, terakhir main-only.
+            local pairs=( "http://deb.debian.org/debian|http://deb.debian.org/debian-security"
+                          "http://deb.debian.org/debian|"
+                          "http://deb.debian.org/debian|http://security.debian.org/debian-security"
+                          "http://archive.debian.org/debian|http://deb.debian.org/debian-security"
+                          "http://archive.debian.org/debian|" )
+            [[ "$ID" == "ubuntu" ]] && pairs=( "http://archive.ubuntu.com/ubuntu|http://security.ubuntu.com/ubuntu"
+                                                "http://archive.ubuntu.com/ubuntu|" )
+            local n=0 prev_main=""
+            _winfo "tidak ada curl/wget untuk verifikasi mirror - mencoba ${#pairs[@]} kandidat..."
+            for pair in "${pairs[@]}"; do
+                n=$((n + 1))
+                if [[ "${pair%%|*}" != "$prev_main" ]]; then
+                    # mirror berganti -> index lama tidak valid, bersihkan.
+                    _winfo "[$n/${#pairs[@]}] mencoba mirror: ${pair%%|*}"
+                    _heal_update
+                    prev_main="${pair%%|*}"
+                else
+                    # mirror SAMA -> lists dipakai ulang, apt-get update jadi
+                    # "Hit" (cepat), tidak download ulang puluhan MB index.
+                    _winfo "[$n/${#pairs[@]}] mirror sama, coba suite security lain..."
+                fi
+                _write_sources "${pair%%|*}" "${pair##*|}"
+                _healthy && return 0
+            done
+            return 1
+        fi
+        [[ -n "$main" ]] || { _winfo "tidak ada mirror yang menyajikan $rel - apt tidak bisa diperbaiki otomatis"; return 1; }
+        sec=$(_suite_url security)
+        _winfo "apt rusak, menulis ulang sources.list ke mirror terverifikasi ($main)..."
+        _write_sources "$main" "$sec"
+        _healthy && return 0
+        # Release security ada, tapi pool-nya 404 (index EOL basi). Coba tanpa
+        # baris security - main saja cukup untuk semua paket installer.
+        [[ -n "$sec" ]] && {
+            _winfo "suite security bermasalah, menggunakan main saja..."
+            _write_sources "$main" ""
+            _healthy && return 0
+        }
+        return 1
+    }
+
+    # [FIX M-T1] Hanya jalankan _heal_update (rm lists + download ulang puluhan
+    # MB) bila apt BENAR-BENAR sakit. Sebelumnya selalu dijalankan tanpa syarat
+    # -> setiap installer lambat & apt sempat dalam state kosong.
+    if _healthy; then rm -rf "$TMP" 2>/dev/null; return 0; fi
+
+    _heal_update
+    if _healthy; then rm -rf "$TMP" 2>/dev/null; return 0; fi
+
+    # apt sakit -> tulis ulang ke mirror terverifikasi
+    _rewrite_full
+
+    # masih sakit? repo pihak ketiga di sources.list.d mungkin penyebabnya
+    if ! _healthy; then
+        _winfo "apt masih bermasalah, nonaktifkan repo pihak ketiga sementara..."
+        for f in /etc/apt/sources.list.d/*.list; do
+            [[ -f "$f" ]] && mv -f "$f" "${f}.disabled-wibu" 2>/dev/null
+        done
+        _heal_update
+        # [BUGFIX] _heal_update di atas mengosongkan lists - harus diisi ulang
+        # (apt-get update) sebelum function selesai, kalau tidak apt ditinggal
+        # dalam state "Unable to locate package" meski sources.list sudah benar.
+        apt-get update -y --fix-missing >/dev/null 2>&1 || apt-get update -y >/dev/null 2>&1
+        _repair_dpkg
+    fi
+
+    rm -rf "$TMP" 2>/dev/null
+}
+
+# ---------- konfigurasi ----------
+DB_VER="2019.78"
+DB_SRC="/usr/local/src"
+DB_TARBALL="${DB_SRC}/dropbear-${DB_VER}.tar.bz2"
+DB_MIRRORS=(
+    "https://matt.ucc.asn.au/dropbear/releases/dropbear-${DB_VER}.tar.bz2"
+    "https://dropbear.nl/mirror/releases/dropbear-${DB_VER}.tar.bz2"
+)
+DB_PORTS=(143 109)            # port tunneling publik (raw SSH)
+DB_TLS_PORT=2222              # port internal (jalur SNI/TLS via HAProxy)
+WS_TUNNEL_PORT=10015          # ws-stunnel listen
+UDPGW_PORTS=(7100 7200 7300 7400 7500 7600)
+UDPGW_SRC="${UDPGW_SRC:-/usr/local/src/badvpn-src}"
+REPO_RAW="https://raw.githubusercontent.com/WBVPN/wibutunnel/main"
+
+[[ $EUID -ne 0 ]] && { err "harus dijalankan sebagai root"; exit 1; }
+
+export DEBIAN_FRONTEND=noninteractive
+
+# ==========================================
+# 1. DROPBEAR 2019.78 (compile dari source)
+# ==========================================
+build_dropbear() {
+    # catatan: dropbear -V menulis ke stderr
+    if /usr/sbin/dropbear -V 2>&1 | grep -q "$DB_VER"; then
+        ok "dropbear $DB_VER sudah terpasang"; return 0
+    fi
+
+    info "memasang build dependencies..."
+    apt-get update -qq >/dev/null 2>&1
+    # apt-get install bisa gagal karena "held broken packages" (sisa install
+    # dari repo EOL / dpkg setengah jalan). Coba repair lalu retry.
+    local DB_DEPS="gcc make build-essential zlib1g-dev libpam0g-dev bzip2"
+    if ! apt-get install -y -qq $DB_DEPS >/dev/null 2>&1; then
+        info "install deps gagal, memperbaiki state apt (held broken packages)..."
+        dpkg --configure -a >/dev/null 2>&1
+        apt-get -f install -y --allow-downgrades >/dev/null 2>&1             || apt-get -f install -y >/dev/null 2>&1
+        apt-get install -y -qq --allow-downgrades $DB_DEPS >/dev/null 2>&1             || apt-get install -y -qq $DB_DEPS >/dev/null 2>&1
+    fi
+
+    # unduh source bila tidak ada
+    if [[ ! -f "$DB_TARBALL" ]]; then
+        info "mengunduh source dropbear $DB_VER..."
+        for m in "${DB_MIRRORS[@]}"; do
+            curl -fsSL --max-time 120 -o "$DB_TARBALL" "$m" && break
+        done
+        [[ -s "$DB_TARBALL" ]] || { err "gagal mengunduh source dropbear"; return 1; }
+        # [FIX] Verifikasi checksum: source ini di-compile jadi binary setuid-root.
+        # # Magic-byte bukan bukti keaslian (mirror kompromi / MITM = RCE root).
+        local db_want="525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4"
+        local db_got; db_got=$(sha256sum "$DB_TARBALL" 2>/dev/null | awk '{print $1}')
+        if [[ "$db_got" != "$db_want" ]]; then
+            err "CHECKSUM MISMATCH source dropbear! Dihapus (kemungkinan kompromi mirror)."
+            rm -f "$DB_TARBALL"; return 1
+        fi
+        # validasi: harus arsip bzip2
+        if ! file "$DB_TARBALL" 2>/dev/null | grep -qi "bzip2\|tar"; then
+            err "source dropbear yang diunduh tidak valid (bukan tar.bz2)"; return 1
+        fi
+    fi
+
+    local build="${DB_SRC}/dropbear-${DB_VER}"
+    info "compile dropbear $DB_VER (ini membutuhkan beberapa menit)..."
+    rm -rf "$build" 2>/dev/null
+    tar -xjf "$DB_TARBALL" -C "$DB_SRC" || { err "gagal ekstrak source"; return 1; }
+    ( cd "$build" && ./configure --disable-zlib --enable-pam >/dev/null 2>&1 \
+        && make -j"$(nproc)" >/dev/null 2>&1 \
+        && make install >/dev/null 2>&1 ) || { err "compile dropbear gagal"; return 1; }
+
+    # timpa binary paket (2020.x) dengan hasil compile; cadangkan dulu
+    [[ -x /usr/sbin/dropbear && ! -f /usr/sbin/dropbear.orig ]] && \
+        cp -a /usr/sbin/dropbear /usr/sbin/dropbear.orig 2>/dev/null
+    install -m 0755 /usr/local/sbin/dropbear /usr/sbin/dropbear 2>/dev/null || \
+        cp -f /usr/local/sbin/dropbear /usr/sbin/dropbear
+    # dropbearkey juga diinstall ke /usr/sbin (config_dropbear memakainya;
+    # make install default menaruhnya di /usr/local/sbin)
+    install -m 0755 /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey 2>/dev/null || \
+        cp -f /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey 2>/dev/null || true
+    # [FIX] dropbear -V menulis ke stderr (lihat komentar di atas) - jangan
+    # dibuang dengan 2>/dev/null, kalau tidak grep selalu dapat string kosong,
+    # ok() tidak pernah dipanggil, dan function return non-zero -> installer
+    # salah melaporkan "gagal dipasang" walau dropbear sebenarnya OK.
+    /usr/sbin/dropbear -V 2>&1 | grep -q "$DB_VER" && ok "dropbear $DB_VER di-compile & dipasang"
+    return 0
+}
+
+config_dropbear() {
+    install -d -m 0755 /etc/dropbear
+
+    # host key WAJIB untuk dropbear jalan. Dropbear hanya bisa membaca format
+    # key-nya SENDIRI (biner) -- BUKAN PEM/OpenSSH. Kunci OpenSSH biasa atau
+    # bahkan "ssh-keygen -m PEM" akan membuat dropbear exit:
+    # "Early exit: String too long" saat loading host key. Rantai pembuatan:
+    #   1. dropbearkey            (format asli dropbear, paling utama)
+    #   2. ssh-keygen -m PEM      (PEM tradisional rsa/ecdsa) lalu
+    #      dropbearconvert        (ubah ke format dropbear) -- butuh keduanya,
+    #      ed25519 tidak punya representasi PEM jadi dilewati
+    local KEYGEN="" CONVERT=""
+    KEYGEN="$(command -v dropbearkey 2>/dev/null)"
+    # 'make install' dropbear menaruh tool di /usr/local/bin, bukan /usr/local/sbin
+    local k
+    [[ -n "$KEYGEN" ]] || for k in /usr/local/bin/dropbearkey \
+            /usr/local/sbin/dropbearkey /usr/sbin/dropbearkey; do
+        [[ -x "$k" ]] && KEYGEN="$k" && break
+    done
+    CONVERT="$(command -v dropbearconvert 2>/dev/null)"
+    [[ -n "$CONVERT" ]] || for k in /usr/local/bin/dropbearconvert \
+            /usr/local/sbin/dropbearconvert /usr/sbin/dropbearconvert; do
+        [[ -x "$k" ]] && CONVERT="$k" && break
+    done
+
+    local t made=0
+    if [[ -n "$KEYGEN" ]]; then
+        # rsa, dss, ecdsa = 3 tipe yg diload dropbear secara default
+        # (MAX_HOSTKEYS=3). ed25519 tidak diload default -> tidak dibuat.
+        for t in rsa dss ecdsa; do
+            [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] && { made=1; continue; }
+            "$KEYGEN" -t "$t" -f "/etc/dropbear/dropbear_${t}_host_key" >/dev/null 2>&1 \
+                && made=1
+        done
+    elif [[ -n "$CONVERT" ]] && command -v ssh-keygen >/dev/null 2>&1; then
+        # tidak ada dropbearkey: buat PEM tradisional lalu konversi.
+        # hanya rsa & ecdsa (ed25519/dss tidak ada bentuk PEM tradisional).
+        local tmp; tmp="$(mktemp -d)"
+        for t in rsa dss ecdsa; do
+            [[ -f "/etc/dropbear/dropbear_${t}_host_key" ]] && { made=1; continue; }
+            ssh-keygen -q -m PEM -t "$t" -N "" -f "$tmp/${t}" >/dev/null 2>&1 || continue
+            "$CONVERT" openssh dropbear "$tmp/${t}" "/etc/dropbear/dropbear_${t}_host_key" \
+                >/dev/null 2>&1 && made=1
+        done
+        rm -rf "$tmp"
+    fi
+
+    if [[ $made -eq 0 ]]; then
+        err "gagal membuat host key dropbear (butuh dropbearkey, atau"
+        err "ssh-keygen + dropbearconvert)"; return 1
+    fi
+    chmod 0600 /etc/dropbear/dropbear_*_host_key 2>/dev/null
+
+    # VALIDASI: start dropbear di port sampah (tanpa -r = load key default,
+    # persis seperti systemd). 'timeout' membunuh setelah 2 detik -> exit 124
+    # berarti dropbear masih hidup = host key bagus. Exit lain = key rusak /
+    # format salah, dan dropbear akan menulis pesan samar ("String too long",
+    # "Too many hostkeys") -- tanpa cek ini errornya nyaris mustahil ditebak.
+    local vport=22999
+    local vout; vout="$(timeout 2 /usr/sbin/dropbear -F -E -p 127.0.0.1:${vport} 2>&1)"
+    local vrc=$?
+    if [[ $vrc -ne 124 ]]; then
+        err "host key dropbear tidak bisa dibaca dropbear (rc=$vrc):"
+        printf '%s\n' "$vout" | grep -m3 "Early exit" | while IFS= read -r l; do err "  $l"; done
+        err "  perbaikan: rm -f /etc/dropbear/dropbear_*_host_key lalu jalankan"
+        err "  ulang installer (host key akan dibuat ulang dengan format benar)"
+        return 1
+    fi
+
+    local extra="-W 32768 -w -g -K 60 -I 300"
+    local p; for p in "${DB_PORTS[@]:1}"; do extra="$extra -p $p"; done
+    extra="$extra -p 127.0.0.1:${DB_TLS_PORT}"
+    # Pertahankan banner SSH kalau admin sudah men-set-nya (menu [10] Edit
+    # Banner SSH menambah '-b /etc/wibutunnel/ssh-banner' ke file ini).
+    # Tanpa ini, re-run installer/repair menulis ulang file & banner hilang.
+    local BANNER_FILE="/etc/wibutunnel/ssh-banner"
+    if [[ -f "$BANNER_FILE" ]] && ! grep -q -- "-b ${BANNER_FILE}" <<<"$extra"; then
+        local old_banner=""
+        old_banner="$(grep -o -- "-b ${BANNER_FILE}" /etc/default/dropbear 2>/dev/null | head -1)"
+        [[ -n "$old_banner" ]] && extra="$extra $old_banner"
+    fi
+
+    cat > /etc/default/dropbear <<CFG
+NO_START=0
+# Port tunneling publik (raw SSH) + port internal untuk jalur SNI/TLS via HAProxy
+DROPBEAR_PORT=${DB_PORTS[0]}
+DROPBEAR_EXTRA_ARGS="$extra"
+DROPBEAR_BANNER=""
+CFG
+
+    cat > /etc/systemd/system/dropbear.service <<UNIT
+[Unit]
+Description=Dropbear ${DB_VER} Enhanced (SSH Tunneling)
+After=network.target
+[Service]
+EnvironmentFile=-/etc/default/dropbear
+ExecStart=/usr/sbin/dropbear -F -E -p \${DROPBEAR_PORT} \$DROPBEAR_EXTRA_ARGS
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+    # pastikan openssh (admin, port 22) tidak diganggu
+    systemctl daemon-reload
+    systemctl enable dropbear >/dev/null 2>&1
+    systemctl restart dropbear && ok "dropbear jalan di ${DB_PORTS[*]} + 127.0.0.1:${DB_TLS_PORT}"
+}
+
+# ==========================================
+# 2. WS-STUNNEL (websocket -> raw TCP -> dropbear)
+# ==========================================
+install_ws_stunnel() {
+    command -v python3 >/dev/null || apt-get install -y -qq python3 >/dev/null 2>&1
+    if [[ ! -x /usr/local/bin/ws-stunnel ]]; then
+        info "mengunduh ws-stunnel..."
+        # [FIX H14] Download + verifikasi checksum sebelum chmod +x root.
+        # Sebelumnya hanya cek `[[ -x ]]` setelah unduh — ELF apapun yang
+        # valid (termasuk trojan kalau repo/MITM diganti) langsung jalan root.
+        local wst_tmp="/etc/wibutunnel/tmp/ws-stunnel.dl"
+        mkdir -p /etc/wibutunnel/tmp
+        curl -fsSL --max-time 30 -o "$wst_tmp" "${REPO_RAW}/bin/ws-stunnel" || { err "gagal unduh ws-stunnel"; return 1; }
+        local sums_tmp="/etc/wibutunnel/tmp/SHA256SUMS.ssh"
+        local wst_ok=0
+        if curl -fsSL --max-time 20 -o "$sums_tmp" "${REPO_RAW}/SHA256SUMS" 2>/dev/null; then
+            local expected actual
+            expected=$(awk '$2 == "bin/ws-stunnel" {print $1}' "$sums_tmp" 2>/dev/null)
+            actual=$(sha256sum "$wst_tmp" 2>/dev/null | awk '{print $1}')
+            if [[ -n "$expected" && "$expected" == "$actual" ]]; then
+                wst_ok=1
+            else
+                err "CHECKSUM MISMATCH ws-stunnel! Tidak dipasang (kemungkinan kompromi repo)."
+                rm -f "$wst_tmp"
+                return 1
+            fi
+        else
+            # [FIX] Hard-fail, konsisten dgn build_dropbear: soft-fail berarti
+            # # penyerang cukup blokir URL SHA256SUMS untuk bypass supply-chain.
+            err "SHA256SUMS tidak bisa diunduh — ws-stunnel TIDAK dipasang (verifikasi wajib)."
+            rm -f "$wst_tmp"
+            return 1
+        fi
+        if [[ "$wst_ok" == "1" ]]; then
+            mv "$wst_tmp" /usr/local/bin/ws-stunnel \
+                && chmod +x /usr/local/bin/ws-stunnel
+        fi
+    fi
+    [[ -x /usr/local/bin/ws-stunnel ]] || { err "ws-stunnel tidak berhasil dipasang"; return 1; }
+
+    cat > /etc/systemd/system/ws-stunnel.service <<UNIT
+[Unit]
+Description=ws-stunnel (websocket -> raw TCP -> dropbear:109)
+After=network.target
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ws-stunnel -b 127.0.0.1 -p ${WS_TUNNEL_PORT}
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload
+    systemctl enable ws-stunnel >/dev/null 2>&1
+    systemctl restart ws-stunnel && ok "ws-stunnel: 127.0.0.1:${WS_TUNNEL_PORT} -> dropbear:109"
+}
+
+# ==========================================
+# 3. BADVPN-UDPGW (UDP gateway untuk game/DNS/QUIC)
+# ==========================================
+build_udpgw() {
+    if [[ -x /usr/sbin/badvpn-udpgw ]] && /usr/sbin/badvpn-udpgw --version 2>/dev/null | grep -qi "udpgw"; then
+        ok "badvpn-udpgw sudah terpasang"; return 0
+    fi
+
+    # WAJIB pasang build deps sendiri. Jangan andalkan build_dropbear() --
+    # kalau dropbear sudah terpasang, fungsi itu kembali lebih awal dan
+    # gcc/make/cmake tidak pernah di-install -> build pasti gagal.
+    local LOG="/var/log/wibutunnel-udpgw-build.log"
+    install -d -m 0755 "$(dirname "$LOG")"
+    info "memasang build dependencies badvpn..."
+    apt-get update -qq >"$LOG" 2>&1
+    # repair dulu kalau apt punya held broken packages, lalu retry
+    if ! apt-get install -y -qq build-essential cmake git >>"$LOG" 2>&1; then
+        info "deps badvpn gagal, memperbaiki state apt..." >>"$LOG" 2>&1
+        dpkg --configure -a >>"$LOG" 2>&1
+        apt-get -f install -y --allow-downgrades >>"$LOG" 2>&1 || apt-get -f install -y >>"$LOG" 2>&1
+        apt-get install -y -qq --allow-downgrades build-essential cmake git >>"$LOG" 2>&1 \
+            || apt-get install -y -qq build-essential cmake git >>"$LOG" 2>&1
+    fi
+
+    # pastikan benar-benar ada; apt bisa saja diam-diam gagal (repo bermasalah,
+    # apt lock, dns). Kalau ada yg hilang, sebutkan satu per satu.
+    local miss=()
+    command -v gcc   >/dev/null 2>&1 || miss+=("gcc/build-essential")
+    command -v make  >/dev/null 2>&1 || miss+=("make")
+    command -v cmake >/dev/null 2>&1 || miss+=("cmake")
+    command -v git   >/dev/null 2>&1 || miss+=("git")
+    if [[ ${#miss[@]} -gt 0 ]]; then
+        err "build dependencies tidak tersedia: ${miss[*]}"
+        err "apt gagal memasangnya. 20 baris terakhir log:"
+        tail -n 20 "$LOG" 2>/dev/null | while IFS= read -r l; do err "  $l"; done
+        err "coba manual (urut):"
+        err "  dpkg --configure -a && apt-get -f install -y --allow-downgrades"
+        err "  apt-get update && apt-get install -y build-essential cmake git"
+        return 1
+    fi
+
+    # clone source bila belum ada. HATI-HATI: sisa clone/run sebelumnya bisa
+    # meninggalkan folder tanpa CMakeLists.txt -> 'git clone' ke folder tidak
+    # kosong akan gagal ("already exists and is not an empty directory").
+    # Buang dulu sisa yg tidak valid.
+    if [[ -d "$UDPGW_SRC" && ! -f "$UDPGW_SRC/CMakeLists.txt" ]]; then
+        info "membersihkan sisa source badvpn yg rusak..."
+        rm -rf "$UDPGW_SRC"
+    fi
+    if [[ ! -f "$UDPGW_SRC/CMakeLists.txt" ]]; then
+        info "mengunduh source badvpn..."
+        # cara utama: git. Beberapa VPS memblokir akses git ke github.com
+        # (TLS/proxy) walau koneksi HTTP biasa fine -> gunakan tarball via
+        # curl sebagai cadangan (route yg sama dgn installer ini).
+        git clone --depth 1 https://github.com/ambrop72/badvpn "$UDPGW_SRC" >>"$LOG" 2>&1             || curl -fsSL --max-time 120 -o /tmp/badvpn-src.tar.gz                 https://codeload.github.com/ambrop72/badvpn/tar.gz/refs/heads/master >>"$LOG" 2>&1             || { err "gagal mengunduh source badvpn (git & tarball gagal) (UDPGW dilewati)";
+                 tail -n 10 "$LOG" 2>/dev/null | while IFS= read -r l; do err "  $l"; done; return 1; }
+        # kalau yg berhasil curl: ekstrak tarball ke UDPGW_SRC
+        if [[ ! -f "$UDPGW_SRC/CMakeLists.txt" && -s /tmp/badvpn-src.tar.gz ]]; then
+            mkdir -p "$UDPGW_SRC"
+            tar xzf /tmp/badvpn-src.tar.gz -C "$UDPGW_SRC" --strip-components=1 >>"$LOG" 2>&1                 || { err "gagal ekstrak tarball badvpn"; return 1; }
+        fi
+        [[ -f "$UDPGW_SRC/CMakeLists.txt" ]] || {
+            err "source badvpn tidak valid setelah unduhan"; return 1; }
+    fi
+
+    # Kita hanya butuh badvpn-udpgw. Konfigurasi default membangun juga
+    # server/client/ncd, yg menarik find_package(OpenSSL/NSPR/NSS REQUIRED)
+    # -> VPS tanpa libssl-dev/nspr/nss dev akan gagal di configure ("Could
+    # NOT find PkgConfig"/"OpenSSL"). Matikan semua, hidupkan udpgw saja.
+    local CFG_FLAGS="-DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1"
+    # Build dir lama bisa ter-cache flag lama (BUILD_SERVER ON). Cek marker:
+    # bila flag berubah, buang cache cmake-nya.
+    local MARK="${UDPGW_SRC}/.wibu_cfg"
+    # HATI-HATI: cache cmake lama (BUILD_SERVER ON) tidak akan ditimpa oleh
+    # option() baru -> find_package(OpenSSL) tetap dipanggil -> gagal. Build
+    # dir harus dibuang bila marker tidak ada/berbeda (termasuk cache warisan
+    # dari installer versi lama).
+    if [[ -d "${UDPGW_SRC}/build" && "$(cat "$MARK" 2>/dev/null)" != "$CFG_FLAGS" ]]; then
+        info "menghapus cache cmake lama (flag konfigurasi berubah)..."
+        rm -rf "${UDPGW_SRC}/build"
+    fi
+
+    # output build disimpan ke log -- kalau gagal, penyebabnya bisa dilihat
+    # (sebelumnya semua output dibuang ke /dev/null jadi tidak terdebug)
+    if ( mkdir -p "${UDPGW_SRC}/build" && cd "${UDPGW_SRC}/build" \
+        && cmake .. $CFG_FLAGS >>"$LOG" 2>&1 \
+        && make badvpn-udpgw -j"$(nproc)" >>"$LOG" 2>&1 )
+    then
+        install -m 0755 "${UDPGW_SRC}/build/udpgw/badvpn-udpgw" /usr/sbin/badvpn-udpgw \
+            && printf '%s' "$CFG_FLAGS" >"$MARK" \
+            && ok "badvpn-udpgw di-compile & dipasang"
+        # [FIX M-T4] Bersihkan artifacts build (50-150MB limbah disk per build)
+        # # dan tarball sementara.
+        rm -rf "${UDPGW_SRC}/build" /tmp/badvpn-src.tar.gz 2>/dev/null
+    else
+        err "build badvpn-udpgw gagal (lihat $LOG)"
+        err "--- 20 baris terakhir log ---"
+        tail -n 20 "$LOG" 2>/dev/null | while IFS= read -r l; do err "  $l"; done
+        return 1
+    fi
+}
+
+install_udpgw_units() {
+    [[ -x /usr/sbin/badvpn-udpgw ]] || return 1
+    cat > /etc/systemd/system/badvpn-udpgw@.service <<'UNIT'
+[Unit]
+Description=badvpn-udpgw UDP gateway (port %i)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+ExecStart=/usr/sbin/badvpn-udpgw --listen-addr 127.0.0.1:%i --max-clients 1000 --client-socket-sndbuf 0
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload
+    local p failed=0
+    for p in "${UDPGW_PORTS[@]}"; do
+        systemctl enable --now "badvpn-udpgw@${p}.service" >/dev/null 2>&1 \
+            || { failed=1; }
+    done
+    [[ $failed -eq 0 ]] && ok "udpgw aktif di 127.0.0.1:${UDPGW_PORTS[*]}"
+}
+
+# ==========================================
+# 4. ROUTING: ip_forward + NAT + lepas port 80/443 dari layanan lawan
+# ==========================================
+enable_routing() {
+    local IFACE; IFACE="$(ip route get 1.1.1.1 2>/dev/null | awk '/dev/{print $5}' | head -1)"
+    [[ -n "$IFACE" ]] || IFACE=eth0
+
+    cat > /etc/sysctl.d/99-wibutunnel-tunnel.conf <<SYS
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+SYS
+    sysctl --system >/dev/null 2>&1
+
+    # NAT supaya klien tunnel bisa keluar ke internet
+    iptables -t nat -C POSTROUTING -o "$IFACE" -j MASQUERADE 2>/dev/null \
+        || iptables -t nat -A POSTROUTING -o "$IFACE" -j MASQUERADE
+    iptables -C FORWARD -i "$IFACE" -o "$IFACE" -j ACCEPT 2>/dev/null \
+        || iptables -A FORWARD -i "$IFACE" -o "$IFACE" -j ACCEPT
+    # simpan aturan (best-effort: jangan gagalkan keseluruhan hanya karena ini)
+    mkdir -p /etc/iptables 2>/dev/null
+    netfilter-persistent save >/dev/null 2>&1 || iptables-save > /etc/iptables/rules.v4 2>/dev/null
+    ok "ip_forward + NAT aktif (via $IFACE)"
+    return 0
+}
+
+free_ports() {
+    # HAProxy wajib punya 80 & 443. Matikan pemegang lawan bila ada.
+    local changed=0
+    if ss -tlnp 2>/dev/null | grep -q ':80 .*nginx'; then
+        info "nginx memegang port 80 -> dinonaktifkan (HAProxy yang akan merouting websocket 80)"
+        # [FIX] Tulis marker: free_ports jalan mandiri (menu [99]) tanpa
+        # # setup.sh -> uninstall.sh tak me-restore nginx tanpa marker ini.
+        systemctl is-enabled nginx >/dev/null 2>&1 && mkdir -p /etc/wibutunnel && touch /etc/wibutunnel/nginx_was_enabled
+        systemctl stop nginx >/dev/null 2>&1; systemctl disable nginx >/dev/null 2>&1; changed=1
+    fi
+    if ss -tlnp 2>/dev/null | grep -q ':80 .*apache2'; then
+        info "apache memegang port 80 -> dipindah ke 8080"
+        grep -q '^Listen 8080' /etc/apache2/ports.conf 2>/dev/null || sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf
+        systemctl restart apache2 >/dev/null 2>&1; changed=1
+    fi
+    # arsitektur lawan (sslh / stunnel4) jangan ambil alih 443
+    systemctl stop sslh stunnel4 2>/dev/null
+    systemctl disable sslh stunnel4 2>/dev/null
+    systemctl mask sslh stunnel4 2>/dev/null
+    [[ $changed -eq 1 ]] && sleep 1
+    return 0
+}
+
+# ==========================================
+# 5. Inisialisasi group & DB akun SSH (via common.sh bila ada)
+# ==========================================
+init_ssh_accounting() {
+    if [[ -f /usr/local/bin/common.sh ]]; then
+        # common.sh mengecek lisensi pada source -> pakai subshell yang dibungkam
+        ( source /usr/local/bin/common.sh >/dev/null 2>&1; ssh_init ) >/dev/null 2>&1 \
+            && ok "group & database akun SSH siap" && return 0
+    fi
+    # fallback tanpa common.sh
+    getent group ssh_tunnel >/dev/null 2>&1 || groupadd --system ssh_tunnel >/dev/null 2>&1
+    mkdir -p /etc/xray /etc/wibutunnel
+    touch /etc/xray/ssh_exp.conf /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db \
+          /etc/wibutunnel/locked_users.db /etc/wibutunnel/ssh_pass.db
+    chmod 600 /etc/wibutunnel/*.db 2>/dev/null
+    ok "group & database akun SSH siap (fallback)"
+}
+
+# ==========================================
+# MAIN
+# ==========================================
+echo -e "${LINE}"
+echo -e "        ${WHITE}INSTALL SSH TUNNEL STACK${NC}"
+echo -e "   dropbear 2019.78 + ws-stunnel + badvpn-udpgw"
+echo -e "${LINE}"
+
+# apt adalah critical path: build dropbear & badvpn butuh gcc/make/cmake/
+# bzip2. Kalau apt mogok (repo EOL, held broken packages, mirror tidak
+# lengkap), sembuhkan dulu sebelum build - jika tidak, build pasti gagal
+# dengan pesan samar ("bzip2: Cannot exec", "build dependencies tidak
+# tersedia"). Function ini no-op bila apt sudah sehat (tidak sentuh apa pun).
+apt_selfheal
+
+rc=0
+build_dropbear   || rc=1
+config_dropbear  || rc=1
+install_ws_stunnel || rc=1
+build_udpgw      || rc=1     # UDP gw opsional (boleh gagal)
+install_udpgw_units
+enable_routing   || rc=1
+free_ports
+init_ssh_accounting
+
+echo -e "${LINE}"
+if [[ $rc -eq 0 ]]; then
+    ok "SSH Tunnel Stack siap! Mode: SNI 443 + WS 80/443 + UDP gw"
+else
+    err "beberapa komponen gagal dipasang — periksa log di atas."
+fi
+echo -e "${LINE}"
+exit $rc

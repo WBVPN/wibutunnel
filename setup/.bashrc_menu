@@ -1,0 +1,6 @@
+# Auto-run menu on interactive shell
+if [[ $- == *i* ]] && [[ -z "$MENU_RAN" ]]; then
+    export MENU_RAN=1
+    clear
+    menu
+fi
