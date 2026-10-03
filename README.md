@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-4.0.3%20Kurumi-blue)
+![Version](https://img.shields.io/badge/version-4.1.0%20Kurumi-blue)
 ![License](https://img.shields.io/badge/license-Private-red)
 ![Platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-orange)
 ![Status](https://img.shields.io/badge/status-Production%20Ready-success)
@@ -48,11 +48,10 @@ Internet → HAProxy :443/80
   ├→ [/vless*]           → Xray :10086-10088
   ├→ [/vmess*]           → Xray :10089-10091  
   ├→ [/trojan*]          → Xray :10092-10093
-  ├→ [Websocket Upgrade] → WS-Stunnel :10015
   └→ [default HTTP]      → Apache :8080
 ```
 
-**Stack:** Xray-core 1.8.24+ · HAProxy · Dropbear · Apache2 · Python3 (ws-stunnel) · Bash
+**Stack:** Xray-core 1.8.24+ · HAProxy · Dropbear · Apache2 · Bash
 
 ---
 
@@ -130,7 +129,7 @@ Operasi umum (ada di tiap menu protokol):
 
 ```bash
 # Status semua service
-systemctl is-active xray haproxy dropbear ws-stunnel wibu-daemon
+systemctl is-active xray haproxy dropbear wibu-daemon
 
 # Log xray
 tail -f /var/log/xray/access.log
@@ -261,6 +260,27 @@ Detail cara kerja lisensi & aturan token ada di seksi **🔑 Model Lisensi & Kea
 
 ## 🔄 Changelog
 
+### v4.1.0 Kurumi (Latest) — WebSocket Fixes & Optimization
+
+**BREAKING CHANGES:**
+
+- ❌ **Removed ws-stunnel dependency** - HAProxy routes directly to Dropbear (simpler, faster)
+
+- ✅ Menu WS detection now checks actual Xray ports (10086), not systemd service
+
+- ✅ Added post-install verification script (bin/verify-install)
+
+- ✅ Improved error handling in setup.sh (HAProxy validation, service checks)
+
+- 📦 **ssh-tunnel-install**: only installs Dropbear + badvpn-udpgw (no ws-stunnel)
+
+
+
+**All SSH modes still work 100%** (Direct, TLS, WebSocket, Enhanced Payload)
+
+
+
+
 ### v4.0.3 Kurumi (Latest) — Menu & Bot Fixes
 - 🟢 Fix menu hang: `check_license()` bypass ke file lokal, ga curl GitHub tiap kali
 - 🟢 Fix menu exit loop: ganti `exec menu` jadi `continue` di invalid input
@@ -279,7 +299,7 @@ Detail cara kerja lisensi & aturan token ada di seksi **🔑 Model Lisensi & Kea
 - 🟠 Install ke-2x tak menimpa config bila ada klien aktif (anti hapus akun pelanggan)
 - ✅ README: model lisensi & risiko keamanan didokumentasikan jujur
 
-### v4.0.1 — Performance (hash lookup O(1), protocol map), bugfix ws-stunnel
+### v4.0.1 — Performance (hash lookup O(1), protocol map), optimized routing
 
 ### v4.0 — Rilis awal: multi-protocol, Telegram bot, auto-expiry, quota, IP-sharing detection
 
