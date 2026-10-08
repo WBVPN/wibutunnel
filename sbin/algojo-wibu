@@ -1,0 +1,70 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - algojo-wibu (v4.0 Kurumi)
+# [PATCH] flock via safe_jq_edit, unique tmp path
+# ==========================================
+source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
+# [OPT] Add flock to prevent concurrent runs
+exec 201>/var/lock/algojo.lock
+flock -n 201 || exit 0
+
+load_bot_config  # [FIX] Safe parse instead of source
+DB_IP="/etc/wibutunnel/limit_ip.db"
+DB_LOCK="/etc/wibutunnel/locked_users.db"
+LOCK_CONF="/etc/wibutunnel/lock.conf"
+
+LOCK_DURATION=15
+if [ -f "$LOCK_CONF" ]; then source "$LOCK_CONF"; fi
+[[ ! -f "$DB_IP" ]] && exit 0
+
+# [MATA ELANG V2] Deteksi real IP via Log 3 Menit
+# [FIX] Removed tac - process forward, skip old entries instead of exiting
+THRESH=$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')
+LOGIN_DATA=$(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) next; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; } } } } END { for (e in ips) print e, ips[e] }' /var/log/xray/access.log 2>/dev/null)
+
+USERS_TO_LOCK=()
+while read -r email ip_list; do
+    if [[ -z "$email" || -z "$ip_list" ]]; then continue; fi
+    max_ip=$(grep "^${email}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
+    [[ "$max_ip" == "0" || -z "$max_ip" ]] && continue
+
+    ip_count=$(echo "$ip_list" | wc -w)
+    if [[ $ip_count -gt $max_ip ]]; then
+        if ! grep -q "^${email}:" "$DB_LOCK" 2>/dev/null; then
+            proto="UNKNOWN"
+            grep -q "^${email}:" /etc/xray/vless_exp.conf 2>/dev/null && proto="VLESS"
+            grep -q "^${email}:" /etc/xray/vmess_exp.conf 2>/dev/null && proto="VMESS"
+            grep -q "^${email}:" /etc/xray/trojan_exp.conf 2>/dev/null && proto="TROJAN"
+            
+            now=$(date +%s)
+            unlock_time=$((now + (LOCK_DURATION * 60)))
+            echo "${email}:${now}:${unlock_time}:IP_LIMIT" >> "$DB_LOCK"
+            
+            USERS_TO_LOCK+=("$email")
+            
+            (
+                DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                WAKTU=$(date '+%d %b %Y %H:%M WIB')
+                PESAN="🔒 <b>USER DIKUNCI OTOMATIS</b>
+
+<b>User     :</b> <code>${email}</code>
+<b>Alasan   :</b> Melebihi Limit IP
+<b>Durasi   :</b> ${LOCK_DURATION} menit
+<b>Waktu    :</b> ${WAKTU}
+<b>Domain   :</b> <code>${DOMAIN}</code>
+
+<i>Account akan otomatis dibuka setelah durasi habis.</i>"
+                curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
+            ) &
+        fi
+    fi
+done <<< "$LOGIN_DATA"
+
+if [[ ${#USERS_TO_LOCK[@]} -gt 0 ]]; then
+    jq_args=()
+    for usr in "${USERS_TO_LOCK[@]}"; do
+        jq_args+=("$usr")
+    done
+    safe_jq_edit_args --argjson users "$(printf '%s\n' "${jq_args[@]}" | jq -R . | jq -s .)" '(.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) |= (. + $users | unique)'
+    systemctl restart xray >/dev/null 2>&1
+fi

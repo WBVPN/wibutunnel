@@ -1,0 +1,158 @@
+{
+  "log": {
+    "access": "/var/log/xray/access.log",
+    "error": "/var/log/xray/error.log",
+    "loglevel": "warning"
+  },
+  "api": {
+    "tag": "api",
+    "services": ["StatsService"]
+  },
+  "stats": {},
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true
+    }
+  },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" },
+      "tag": "api"
+    },
+    {
+      "port": 10086,
+      "listen": "127.0.0.1",
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "ws",
+        "sockopt": { "acceptProxyProtocol": true },
+        "wsSettings": { "path": "/vless" }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "port": 10087,
+      "listen": "127.0.0.1",
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "ws",
+        "sockopt": { "acceptProxyProtocol": true },
+        "wsSettings": { "path": "/vless-ntls" }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "port": 10088,
+      "listen": "127.0.0.1",
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": {
+        "network": "grpc",
+        "sockopt": { "acceptProxyProtocol": true },
+        "grpcSettings": { "serviceName": "vless" }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "port": 10089,
+      "listen": "127.0.0.1",
+      "protocol": "vmess",
+      "settings": { "clients": [], "alterId": 0 },
+      "streamSettings": {
+        "network": "ws",
+        "sockopt": { "acceptProxyProtocol": true },
+        "wsSettings": { "path": "/vmess" }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "port": 10090,
+      "listen": "127.0.0.1",
+      "protocol": "vmess",
+      "settings": { "clients": [], "alterId": 0 },
+      "streamSettings": {
+        "network": "ws",
+        "sockopt": { "acceptProxyProtocol": true },
+        "wsSettings": { "path": "/vmess-ntls" }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "port": 10091,
+      "listen": "127.0.0.1",
+      "protocol": "vmess",
+      "settings": { "clients": [], "alterId": 0 },
+      "streamSettings": {
+        "network": "grpc",
+        "sockopt": { "acceptProxyProtocol": true },
+        "grpcSettings": { "serviceName": "vmess" }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "port": 10092,
+      "listen": "127.0.0.1",
+      "protocol": "trojan",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "ws",
+        "sockopt": { "acceptProxyProtocol": true },
+        "wsSettings": { "path": "/trojan" }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    },
+    {
+      "port": 10093,
+      "listen": "127.0.0.1",
+      "protocol": "trojan",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "grpc",
+        "sockopt": { "acceptProxyProtocol": true },
+        "grpcSettings": { "serviceName": "trojan" }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+    }
+  ],
+  "outbounds": [
+    { "protocol": "freedom", "settings": {}, "tag": "direct" },
+    { "protocol": "blackhole", "settings": {}, "tag": "blocked" }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "outboundTag": "blocked",
+        "user": []
+      },
+      {
+        "type": "field",
+        "ip": ["geoip:private"],
+        "outboundTag": "blocked"
+      },
+      {
+        "type": "field",
+        "protocol": ["bittorrent"],
+        "outboundTag": "blocked"
+      }
+    ]
+  }
+}

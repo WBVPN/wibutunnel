@@ -1,0 +1,22 @@
+# Backup files
+*.bak
+*.backup
+*.tmp
+*~
+
+# Review/audit files
+INVENTORY.md
+AGENT_REPORTS.md
+CONSOLIDATED_FINDINGS.md
+FIXES_APPLIED.md
+OPTIMIZATIONS_APPLIED.md
+SBIN_REVIEW.md
+
+# Sensitive data
+bot.conf
+*.db
+*.log
+
+# System files
+.DS_Store
+Thumbs.db

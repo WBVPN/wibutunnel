@@ -1,0 +1,79 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - algojo-kuota (v4.0 KURUMI)
+# [PATCH] flock via safe_jq_edit, unique tmp path
+# ==========================================
+source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
+# [OPT] Add flock to prevent concurrent runs
+exec 201>/var/lock/algojo.lock
+flock -n 201 || exit 0
+
+load_bot_config  # [FIX] Safe parse instead of source
+DB_BW="/etc/wibutunnel/limit_bw.db"
+DB_USAGE="/etc/wibutunnel/user_usage.db"
+DB_LOCK="/etc/wibutunnel/locked_users.db"
+
+[[ ! -f "$DB_BW" ]] && exit 0
+touch "$DB_USAGE"
+
+xray api statsquery --server=127.0.0.1:10085 2>/dev/null | jq -r '.stat[]? | "\(.name) \(.value)"' | grep 'downlink' | grep -v 'dummy' | grep -v 'api' | awk -F'>>>' '{print $2, $NF}' | awk '{print $1, $NF}' > /etc/wibutunnel/tmp/xray_quota_raw.txt
+
+awk '
+FNR==NR { curr[$1] = $2; next }
+{
+    if ($1 in curr) {
+        c = curr[$1]
+        delta = (c < $3) ? c : (c - $3)
+        $2 += delta
+        $3 = c
+        seen[$1] = 1
+    }
+    print $1 ":" $2 ":" $3
+}
+END {
+    for (u in curr) {
+        if (!seen[u]) print u ":" curr[u] ":" curr[u]
+    }
+}' /etc/wibutunnel/tmp/xray_quota_raw.txt FS=":" OFS=":" "$DB_USAGE" > /etc/wibutunnel/tmp/db_usage.tmp && mv /etc/wibutunnel/tmp/db_usage.tmp "$DB_USAGE"
+
+USERS_TO_LOCK=()
+while read -r line; do
+    user=$(echo "$line" | cut -d: -f1)
+    limit_gb=$(echo "$line" | cut -d: -f2)
+    [[ "$limit_gb" == "0" || -z "$limit_gb" ]] && continue
+    
+    total_bytes=$(grep "^${user}:" "$DB_USAGE" | cut -d: -f2)
+    [[ -z "$total_bytes" ]] && total_bytes=0
+    usage_gb=$(echo "scale=2; $total_bytes / 1073741824" | bc)
+    
+    if (( $(echo "$usage_gb >= $limit_gb" | bc -l) )); then
+        if ! grep -q "^$user:" "$DB_LOCK"; then
+            proto="UNKNOWN"
+            if grep -q "^${user}:" /etc/xray/vless_exp.conf 2>/dev/null; then proto="VLESS"
+            elif grep -q "^${user}:" /etc/xray/vmess_exp.conf 2>/dev/null; then proto="VMESS"
+            elif grep -q "^${user}:" /etc/xray/trojan_exp.conf 2>/dev/null; then proto="TROJAN"; fi
+            
+            now=$(date +%s)
+            echo "${user}:${now}:0:QUOTA" >> "$DB_LOCK"
+            
+            USERS_TO_LOCK+=("$user")
+            
+            (
+                DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                WAKTU=$(date '+%d %b %Y %H:%M WIB')
+                PESAN="🔒 <b>USER DIKUNCI OTOMATIS</b>\n\n<b>User     :</b> <code>${user}</code>\n<b>Alasan   :</b> Kuota Habis\n<b>Durasi   :</b> Permanen (sampai di-unlock manual)\n<b>Waktu    :</b> ${WAKTU}\n<b>Domain   :</b> <code>${DOMAIN}</code>\n\n<i>Account akan otomatis dibuka jika dilonggarkan limitnya.</i>"
+                curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
+            ) &
+        fi
+    fi
+done < "$DB_BW"
+rm -f /etc/wibutunnel/tmp/xray_quota_raw.txt
+
+if [[ ${#USERS_TO_LOCK[@]} -gt 0 ]]; then
+    jq_args=()
+    for usr in "${USERS_TO_LOCK[@]}"; do
+        jq_args+=("$usr")
+    done
+    safe_jq_edit_args --argjson users "$(printf '%s\n' "${jq_args[@]}" | jq -R . | jq -s .)" '(.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) |= (. + $users | unique)'
+    systemctl restart xray >/dev/null 2>&1
+fi
