@@ -1,372 +1,404 @@
-# Wibutunnel v4.0 - Xray VPN Management System
+# 🚀 Wibutunnel v4.0 - Xray VPN Management System
 
-Multi-protocol VPN tunneling system with Telegram bot integration, user management, and automatic quota enforcement.
+<p align="center">
+  <strong>Multi-protocol VPN tunneling system dengan monitoring otomatis dan quota enforcement</strong>
+</p>
 
-## Features
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#requirements">Requirements</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
 
-- **Multi-Protocol Support**: VLESS, VMess, Trojan
-- **Automatic Enforcement**: IP limit and bandwidth quota enforcement
-- **Telegram Bot Integration**: User management via Telegram commands
-- **Web Management**: Menu-driven interface for server administration
-- **SSL/TLS Support**: Automatic certificate management with Let's Encrypt
-- **User Management**: Add, delete, renew, lock/unlock users
-- **Traffic Monitoring**: Real-time bandwidth tracking and limits
-- **Recovery Tools**: Backup/restore and emergency recovery features
+---
 
-## Requirements
+## ✨ Features
+
+- 🔐 **Multi-Protocol Support**: VLESS, VMess, Trojan
+- 📊 **Automatic Monitoring**: Real-time service health checks
+- 💾 **Quota Management**: Bandwidth limit enforcement per user
+- 🛡️ **IP Enforcement**: Connection limit per user IP
+- 🔄 **Auto-Recovery**: Automatic service restart on failure
+- 📱 **Telegram Bot**: Remote management via Telegram
+- 🌐 **HAProxy Integration**: Load balancing and SSL termination
+- 🔧 **User-Friendly Menu**: Interactive management interface
+
+---
+
+## 📋 Requirements
 
 ### VPS Requirements
 - **OS**: Debian 12 (Bookworm) or Ubuntu 20.04+
-- **RAM**: Minimum 512MB (1GB+ recommended)
+- **RAM**: Minimum 512 MB (1GB+ recommended)
 - **CPU**: 1 core minimum
-- **Storage**: 10GB+ free space
+- **Storage**: 10 GB+ free space
 - **Network**: Public IPv4 address
-- **Root Access**: Required
+- **Access**: Root privileges
 
 ### Domain Requirements
 - Valid domain or subdomain
-- DNS A record pointing to VPS IP
-- Must resolve before installation (checked during setup)
+- DNS A record pointing to your server IP
+- Must resolve before installation
 
-### Network Requirements
-- Ports 80, 443, 109 must be available
-- Outbound internet access (for package downloads)
-- No firewall blocking required ports
+### Required Ports
+| Port | Service | Protocol |
+|------|---------|----------|
+| 80   | HAProxy | HTTP     |
+| 443  | HAProxy | HTTPS    |
+| 109  | Dropbear| SSH      |
 
-## Installation
+---
 
-### Method 1: Automatic Installation (Recommended)
+## 🚀 Installation
 
+### Quick Install (One Command)
 ```bash
-# Download and run installer
-curl -sL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh -o setup.sh
-chmod +x setup.sh
-bash setup.sh
+curl -fsSL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh | bash
 ```
+
+### Manual Installation
+```bash
+wget https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
+chmod +x setup.sh
+./setup.sh
+```
+
+### What Happens During Installation?
+
+The installer automatically:
+
+1. ✅ Checks system requirements and compatibility
+2. 📦 Installs dependencies (xray, haproxy, jq, curl, dos2unix)
+3. ⚙️ Configures core services (xray, haproxy)
+4. 🌐 Sets up domain and generates SSL certificates
+5. 🤖 Configures Telegram bot integration (optional)
+6. 📊 Enables automatic monitoring and enforcement
+7. 🔄 Schedules cron jobs for auto-recovery
+
+**Installation Time**: Approximately 5-10 minutes
 
 **During installation you will be prompted for:**
-1. Domain name (e.g., vpn.yourdomain.com)
-2. Installation will proceed automatically
+- Domain name (e.g., vpn.yourdomain.com)
+- Telegram bot token (optional, can be configured later)
 
-**Installation time:** 5-10 minutes depending on internet speed
+---
 
-### Method 2: Manual Installation
+## ✅ Post-Installation Verification
 
-```bash
-# 1. Clone repository
-git clone https://github.com/WBVPN/wibutunnel.git
-cd wibutunnel
-
-# 2. Run setup script
-bash setup.sh
-```
-
-### Post-Installation
-
-After installation completes:
+After installation completes, verify all services are running:
 
 ```bash
-# Access main menu
-menu
-
 # Check service status
 systemctl status xray haproxy dropbear
 
-# View logs
-tail -f /var/log/xray/access.log
-tail -f /var/log/xray/error.log
-```
-
-## Service Verification
-
-Verify all services are running correctly:
-
-```bash
-# Check services are active
+# Or use individual checks
 systemctl is-active xray      # Should output: active
 systemctl is-active haproxy   # Should output: active
 systemctl is-active dropbear  # Should output: active
+```
 
-# Check ports are listening
+### Verify Ports
+```bash
+# Check if services are listening on required ports
 ss -tulpn | grep -E ':(80|443|109)'
 # Should show haproxy on 80, 443 and dropbear on 109
-
-# Test xray stats API
-curl -s http://127.0.0.1:10085 || echo "Stats API running"
 ```
 
-## Configuration
+---
 
-### Telegram Bot Setup (Optional)
+## 🎯 Access Management Menu
 
-Edit bot configuration after installation:
+Access the interactive management interface:
 
-```bash
-nano /etc/wibutunnel/bot.conf
-```
-
-Add your bot token and chat ID:
-```bash
-BOT_TOKEN="your_bot_token_here"
-CHAT_ID="your_chat_id_here"
-```
-
-Restart bot service:
-```bash
-systemctl restart telegram-webhook
-```
-
-### User Limits Configuration
-
-Edit enforcement limits:
-
-```bash
-# IP limits per user
-nano /etc/wibutunnel/limit_ip.db
-
-# Bandwidth limits per user (in GB)
-nano /etc/wibutunnel/limit_bw.db
-
-# Lock duration
-nano /etc/wibutunnel/lock.conf
-```
-
-## Usage
-
-### Main Menu
-
-Access the main menu:
 ```bash
 menu
 ```
 
-Available options:
-- **VLESS Management** - Add/delete/renew VLESS users
-- **VMess Management** - Add/delete/renew VMess users  
-- **Trojan Management** - Add/delete/renew Trojan users
-- **Settings** - System settings and configuration
-- **Backup/Restore** - Backup and restore configuration
-- **Recovery** - Emergency recovery tools
+**Menu Options:**
+- **[1] Menu VLESS**: Manage VLESS protocol users
+- **[2] Menu VMESS**: Manage VMess protocol users
+- **[3] Menu TROJAN**: Manage Trojan protocol users
+- **[4] Setting Server**: Server configuration and bot setup
+- **[5] Backup & Restore**: Data backup and recovery tools
+- **[0] Exit**: Exit menu system
 
-### User Management
+---
 
-#### Add New User
+## 🔧 Service Management
+
+### Check Service Status
 ```bash
-# Via menu
-menu → Protocol Menu → Add User
+# Check all services
+systemctl status xray haproxy dropbear
 
-# Set username, expiry days, IP limit, bandwidth limit
-```
-
-#### Delete User
-```bash
-menu → Protocol Menu → Delete User
-```
-
-#### Renew User
-```bash
-menu → Protocol Menu → Renew User
-```
-
-#### Check User Info
-```bash
-menu → Protocol Menu → Check User
-```
-
-### Automatic Enforcement
-
-The system automatically enforces limits via cron:
-
-- **IP Limit Enforcement** (algojo-wibu): Runs every 2 minutes
-- **Bandwidth Quota Enforcement** (algojo-kuota): Runs every 5 minutes
-- **Auto Unlock** (unlocker-wibu): Runs every 1 minute
-- **Expiry Check** (xp): Runs every 1 minute
-
-View cron jobs:
-```bash
-crontab -l
-```
-
-## Troubleshooting
-
-### Installation Fails
-
-**Issue**: Xray installation failed
-```bash
-# Check internet connection
-ping -c 3 github.com
-
-# Retry installation
-bash setup.sh
-```
-
-**Issue**: Domain doesn't resolve
-```bash
-# Check DNS propagation
-dig yourdomain.com +short
-
-# Wait 5-10 minutes for DNS propagation
-# Retry installation
-```
-
-**Issue**: Port already in use
-```bash
-# Check what's using ports
-ss -tulpn | grep -E ':(80|443|109)'
-
-# Stop conflicting services
-systemctl stop nginx apache2
-# Then retry installation
-```
-
-### Services Not Starting
-
-**Xray service fails:**
-```bash
-# Check xray config syntax
-xray run --test -c /usr/local/etc/xray/config.json
-
-# Check logs
-journalctl -u xray -n 50
-
-# Restart xray
+# Restart specific service
 systemctl restart xray
-```
-
-**HAProxy fails:**
-```bash
-# Check haproxy config
-haproxy -c -f /etc/haproxy/haproxy.cfg
-
-# Check logs
-journalctl -u haproxy -n 50
-
-# Restart haproxy
 systemctl restart haproxy
 ```
 
-### User Can't Connect
-
-**Check user exists:**
+### View Service Logs
 ```bash
-# Check VLESS users
-cat /etc/xray/vless_exp.conf
+# Xray logs
+journalctl -u xray -f
 
-# Check VMess users
-cat /etc/xray/vmess_exp.conf
+# HAProxy logs
+journalctl -u haproxy -f
 
-# Check Trojan users
-cat /etc/xray/trojan_exp.conf
+# View last 50 lines
+journalctl -u xray -n 50
 ```
 
-**Check user is not locked:**
+### Manual Service Control
 ```bash
-cat /etc/wibutunnel/locked_users.db | grep username
+# Start services
+systemctl start xray
+systemctl start haproxy
+
+# Stop services
+systemctl stop xray
+systemctl stop haproxy
+
+# Enable autostart on boot
+systemctl enable xray
+systemctl enable haproxy
 ```
 
-**Check user not expired:**
+---
+
+## 👥 User Management
+
+### Create New User
+
+Use the interactive menu system:
+
 ```bash
-cat /etc/xray/vless_exp.conf | grep username
-# Check expiry date
+menu
+# Select protocol menu (1/2/3)
+# Choose "Add User" option
+# Enter username, expiry date, IP limit, quota
 ```
 
-### Performance Issues
-
-**High CPU usage:**
+### Delete User
 ```bash
-# Check for log file size
-du -h /var/log/xray/
-
-# Truncate if too large (>100MB)
-> /var/log/xray/access.log
-systemctl restart xray
+menu
+# Select protocol menu (1/2/3)
+# Choose "Delete User" option
+# Select user from list
 ```
 
-**Memory issues:**
+### Renew User
 ```bash
-# Check memory usage
+menu
+# Select protocol menu (1/2/3)
+# Choose "Renew User" option
+# Select user and enter new expiry date
+```
+
+### Lock/Unlock User
+```bash
+menu
+# Select "Setting Server" (option 4)
+# Choose lock/unlock user options
+```
+
+---
+
+## 🔍 Troubleshooting
+
+### Installation Issues
+
+#### Installation Fails
+
+**Check system requirements:**
+```bash
+# Verify OS version
+cat /etc/os-release
+
+# Check available RAM
 free -h
 
-# Restart services
-systemctl restart xray haproxy
+# Check available disk space
+df -h
 ```
 
-## Files and Directories
+**Check internet connectivity:**
+```bash
+ping -c 4 8.8.8.8
+curl -I https://github.com
+```
 
-### Important Paths
+**Check if ports are already in use:**
+```bash
+ss -tulpn | grep -E ':(80|443|109)'
+# Should be empty before installation
+```
 
-**Configuration:**
-- `/usr/local/etc/xray/config.json` - Xray main config
-- `/etc/haproxy/haproxy.cfg` - HAProxy config
-- `/etc/wibutunnel/bot.conf` - Telegram bot config (chmod 600)
+#### Domain Resolution Issues
+```bash
+# Test domain resolution
+dig +short yourdomain.com
 
-**User Data:**
-- `/etc/xray/vless_exp.conf` - VLESS user database
-- `/etc/xray/vmess_exp.conf` - VMess user database
-- `/etc/xray/trojan_exp.conf` - Trojan user database
-- `/etc/wibutunnel/limit_ip.db` - IP limit database
-- `/etc/wibutunnel/limit_bw.db` - Bandwidth limit database
-- `/etc/wibutunnel/locked_users.db` - Locked users database
+# Should return your server IP
+# If not, check your DNS A record
+```
 
-**Logs:**
-- `/var/log/xray/access.log` - Xray access log
-- `/var/log/xray/error.log` - Xray error log
+#### Services Not Starting
 
-**Scripts:**
-- `/usr/local/bin/menu` - Main menu script
-- `/usr/local/bin/m-vless` - VLESS management
-- `/usr/local/bin/m-vmess` - VMess management
-- `/usr/local/bin/m-trojan` - Trojan management
-- `/usr/local/sbin/algojo-wibu` - IP enforcement daemon
-- `/usr/local/sbin/algojo-kuota` - Quota enforcement daemon
-- `/usr/local/sbin/unlocker-wibu` - Auto-unlock daemon
+**Check service logs:**
+```bash
+journalctl -u xray -n 50
+journalctl -u haproxy -n 50
+```
 
-## Uninstallation
+**Common issues:**
+- Port already in use: `ss -tulpn | grep :443`
+- Configuration error: `xray test -config /usr/local/etc/xray/config.json`
+- Permission issues: `ls -la /usr/local/etc/xray/`
+
+**Restart services:**
+```bash
+systemctl restart xray
+systemctl restart haproxy
+systemctl status xray haproxy
+```
+
+#### User Cannot Connect
+
+**Verify user account status:**
+```bash
+menu
+# Check user list in respective protocol menu
+# Verify expiry date hasn't passed
+# Check if user is locked
+```
+
+**Check user configuration:**
+```bash
+# View user config file
+cat /usr/local/etc/xray/vless-tls-[username].json
+# or vmess-tls-[username].json
+# or trojan-tls-[username].json
+```
+
+**Verify network connectivity:**
+```bash
+# Check if xray is listening
+ss -tulpn | grep xray
+
+# Check haproxy status
+systemctl status haproxy
+```
+
+**Test from client side:**
+- Verify correct server address
+- Check client configuration matches server
+- Test with different network (mobile data vs WiFi)
+
+---
+
+## 📁 Files and Directories
+
+### Configuration Files
+```
+/usr/local/etc/xray/
+├── config.json              # Main xray config
+├── bot.conf                 # Telegram bot credentials (chmod 600)
+├── vless-tls-*.json        # VLESS user configs
+├── vmess-tls-*.json        # VMess user configs
+└── trojan-tls-*.json       # Trojan user configs
+```
+
+### Script Locations
+```
+/usr/local/sbin/
+├── algojo-wibu              # IP limit enforcer (runs every 2 min)
+├── algojo-kuota             # Quota enforcer (runs every 5 min)
+├── lock-user                # Lock user account
+├── unlock-user              # Unlock user account
+└── unlocker-wibu            # Auto-unlock expired locks
+```
+
+### Menu Scripts
+```
+/usr/local/bin/
+├── menu                     # Main menu
+├── menu-vless              # VLESS management
+├── menu-vmess              # VMess management
+├── menu-trojan             # Trojan management
+├── m-setting               # Server settings
+└── m-backup                # Backup/restore
+```
+
+### Log Files
+```
+/var/log/
+├── xray/                   # Xray access/error logs
+└── haproxy.log            # HAProxy logs
+```
+
+---
+
+## 🗑️ Uninstallation
+
+To completely remove Wibutunnel from your system:
 
 ```bash
 cd /root/wibutunnel
 bash uninstall.sh
 ```
 
-This will:
-- Stop all services (xray, haproxy, dropbear)
-- Remove installed packages and configs
-- Remove user data and databases
-- Clean up cron jobs
+**This will:**
+- ❌ Stop all services (xray, haproxy, dropbear)
+- 📦 Remove installed packages
+- 🗂️ Delete configuration files
+- ⏰ Remove cron jobs
+- 🧹 Clean up temporary files
 
-## Security Notes
-
-- **Bot credentials**: Stored in `/etc/wibutunnel/bot.conf` with permissions 600 (root-only)
-- **User passwords**: Not stored in plaintext for SSH (use key-based auth recommended)
-- **SSL certificates**: Auto-renewed via certbot every 60 days
-- **API access**: Xray stats API only accessible via localhost (127.0.0.1:10085)
-
-## Updates
-
-Check for updates:
-```bash
-cd /root/wibutunnel
-git pull origin main
-# Review changes before re-running setup
-```
-
-## Support
-
-- **GitHub Issues**: https://github.com/WBVPN/wibutunnel/issues
-- **Documentation**: See docs in repository
-- **Logs**: Check `/var/log/xray/` for debugging
-
-## Credits
-
-- **Xray-core**: https://github.com/XTLS/Xray-core
-- **HAProxy**: http://www.haproxy.org/
-
-## License
-
-See LICENSE file in repository.
+⚠️ **Warning**: This action cannot be undone. Backup your data first.
 
 ---
 
-**Version**: 4.0 Kurumi  
-**Last Updated**: 2026-10-09  
-**Tested On**: Debian 12 (Bookworm)
+## 🔒 Security Notes
+
+- 🔐 Bot credentials stored in `/usr/local/etc/xray/bot.conf` (chmod 600)
+- 🔄 SSL certificates auto-renewed via Let's Encrypt
+- 🛡️ Automatic IP and quota enforcement enabled
+- 📝 Failed login attempts logged for audit
+- 🔑 Use strong passwords for Telegram bot token
+- 🚫 Command injection protection implemented
+
+### Best Practices
+- Change default SSH port (currently 109 for dropbear)
+- Use SSH key authentication instead of passwords
+- Enable UFW firewall (allow only ports 80, 443, 109, 22)
+- Regularly update system: `apt update && apt upgrade`
+- Monitor logs for suspicious activity
+- Backup configurations regularly
+
+---
+
+## 🆘 Support
+
+Need help?
+
+1. 📖 Check the [Troubleshooting](#troubleshooting) section
+2. 📋 Review service logs: `journalctl -u xray -n 50`
+3. 💬 Open an issue on [GitHub](https://github.com/WBVPN/wibutunnel/issues)
+
+---
+
+## 📜 License
+
+This project is licensed under the **MIT License**.
+
+---
+
+<p align="center">
+  Made with ❤️ by WBVPN Team
+</p>
+
+<p align="center">
+  <a href="https://github.com/WBVPN/wibutunnel">⭐ Star us on GitHub</a>
+</p>
