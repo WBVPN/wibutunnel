@@ -1,174 +1,378 @@
+<div align="center">
+
 # 🚀 Wibutunnel v4.0 KURUMI
 
 **Multi-protocol VPN tunneling system dengan Telegram bot integration**
 
+[![GitHub](https://img.shields.io/badge/GitHub-WBVPN-blue?logo=github)](https://github.com/WBVPN/wibutunnel)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![OS](https://img.shields.io/badge/OS-Debian%2012%20|%20Ubuntu%2020.04+-orange.svg)]()
+[![Xray](https://img.shields.io/badge/Powered%20by-Xray--core-blueviolet)](https://github.com/XTLS/Xray-core)
+
 Xray-based VPN management panel yang mudah digunakan, dilengkapi monitoring otomatis, quota enforcement, dan remote control via Telegram bot.
+
+[Features](#-features) • [Installation](#-installation) • [Telegram Bot](#-telegram-bot-setup) • [Troubleshooting](#-troubleshooting) • [Uninstall](#-uninstallation)
+
+</div>
 
 ---
 
 ## ⚡ Quick Start
 
+### Option 1: wget (Recommended)
 ```bash
-# Install (3 menit)
 wget https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
 bash setup.sh
 ```
 
-**Requirements:** Debian 12 / Ubuntu 20.04+, 1GB RAM, Domain pointing ke server IP
+### Option 2: curl
+```bash
+curl -O https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
+bash setup.sh
+```
+
+### Option 3: One-liner (Advanced)
+```bash
+# wget
+wget -qO- https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh | bash
+
+# curl
+curl -sSL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh | bash
+```
+
+> **⏱️ Installation time:** ~3 minutes  
+> **📋 Requirements:** Debian 12 / Ubuntu 20.04+, 1GB RAM, Domain pointing to server IP
 
 ---
 
 ## ✨ Features
 
+<table>
+<tr>
+<td width="50%">
+
 ### 🔐 Multi-Protocol Support
-- **VLESS** - TLS/XTLS, WebSocket, gRPC
-- **VMess** - TLS, WebSocket  
-- **Trojan** - TLS
+- ✅ **VLESS** - TLS/XTLS, WebSocket, gRPC
+- ✅ **VMess** - TLS, WebSocket  
+- ✅ **Trojan** - TLS
+- ✅ Zero-config client templates
+- ✅ QR code generation
 
 ### 🤖 Telegram Bot Integration
-- Create/delete user via chat
-- Check quota & traffic real-time
-- Remote server management
-- Auto-notification system
+- 💬 Create/delete user via chat
+- 📊 Check quota & traffic real-time
+- 🎛️ Remote server management
+- 🔔 Auto-notification system
+- 📤 One-click backup to Telegram
+
+</td>
+<td width="50%">
 
 ### 📊 Smart Management
-- **IP Limit Enforcement** - Max connections per user
-- **Bandwidth Quota** - Auto-lock when quota exceeded
-- **Auto-Unlock** - Scheduled unlock for expired locks
-- **Traffic Monitoring** - Real-time bandwidth tracking
+- 🚦 **IP Limit Enforcement** - Max connections per user
+- 💾 **Bandwidth Quota** - Auto-lock when quota exceeded
+- 🔓 **Auto-Unlock** - Scheduled unlock for expired locks
+- 📈 **Traffic Monitoring** - Real-time bandwidth tracking
+- 🗑️ **Auto-Cleanup** - Remove expired accounts
 
 ### 🛠️ System Features
-- Interactive menu system
-- One-click backup/restore
-- Auto SSL renewal (Let's Encrypt)
-- Service auto-recovery
-- Scheduled auto-reboot
+- 🖥️ Interactive menu system
+- 💾 One-click backup/restore
+- 🔒 Auto SSL renewal (Let's Encrypt)
+- 🔄 Service auto-recovery
+- ⏰ Scheduled auto-reboot
+
+</td>
+</tr>
+</table>
 
 ---
 
 ## 📦 What's Included
 
-| Component | Description |
-|-----------|-------------|
-| **Xray** | Core VPN protocol handler |
-| **HAProxy** | Load balancer + SSL terminator |
-| **Dropbear** | Lightweight SSH server (port 109) |
-| **Telegram Bot** | Remote management interface |
-| **Auto Enforcer** | Quota & IP limit daemon |
+<div align="center">
+
+| Component | Description | Status |
+|-----------|-------------|--------|
+| **Xray-core** | Core VPN protocol handler | ✅ Auto-installed |
+| **HAProxy** | Load balancer + SSL terminator | ✅ Auto-configured |
+| **Dropbear** | Lightweight SSH server (port 109) | ✅ Optional |
+| **Telegram Bot** | Remote management interface | ✅ Optional |
+| **Auto Enforcer** | Quota & IP limit daemon | ✅ Cron scheduled |
+| **Let's Encrypt** | Free SSL certificates | ✅ Auto-renewal |
+
+</div>
 
 ---
 
 ## 🎯 Installation
 
+<details open>
+<summary><b>📋 Pre-Installation Checklist</b></summary>
+
+- ✅ VPS dengan Debian 12 / Ubuntu 20.04+
+- ✅ Minimum 1GB RAM (2GB recommended)
+- ✅ Root access ke server
+- ✅ Domain atau subdomain (DNS sudah pointing ke server IP)
+- ✅ Port 80 dan 443 tidak digunakan service lain
+
+</details>
+
 ### Step 1: Prepare Domain
+
 Point your domain A record to your VPS IP:
+
+```dns
+A    vpn.yourdomain.com    →    123.45.67.89
 ```
-A    aku.yourdomain.com    →    123.45.67.89
+
+**Verify DNS:**
+```bash
+ping vpn.yourdomain.com
+# Should return your VPS IP
 ```
 
 ### Step 2: Run Installer
+
+**Choose your method:**
+
+<table>
+<tr>
+<td width="50%">
+
+**🔹 Method 1: wget (Recommended)**
 ```bash
 wget https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
 bash setup.sh
 ```
 
-**Installation will:**
-1. ✅ Install Xray, HAProxy, Dropbear
-2. ✅ Setup SSL certificate (Let's Encrypt)
-3. ✅ Configure firewall rules
-4. ✅ Setup Telegram bot (optional)
-5. ✅ Create management menu
+</td>
+<td width="50%">
 
-**Duration:** ~3 minutes
+**🔹 Method 2: curl**
+```bash
+curl -O https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
+bash setup.sh
+```
 
-### Step 3: Access Menu
+</td>
+</tr>
+</table>
+
+**One-liner (Advanced):**
+```bash
+# wget version
+wget -qO- https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh | bash
+
+# curl version
+curl -sSL https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh | bash
+```
+
+### Step 3: Installation Process
+
+Installer will automatically:
+
+1. ✅ Update system packages
+2. ✅ Install Xray, HAProxy, Dropbear
+3. ✅ Setup SSL certificate (Let's Encrypt)
+4. ✅ Configure firewall rules
+5. ✅ Setup Telegram bot (if credentials provided)
+6. ✅ Create management menu
+7. ✅ Schedule auto-backup & auto-reboot
+
+> ⏱️ **Duration:** ~3 minutes on 1Gbps connection
+
+### Step 4: Access Menu
+
 ```bash
 menu
 ```
+
+<div align="center">
+
+**🎉 Installation Complete!**
+
+</div>
 
 ---
 
 ## 🖥️ Menu Overview
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-           WIBU TUNNELING v4.0
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<div align="center">
 
-[1] VLESS Management      → Create/delete VLESS users
-[2] VMess Management      → Create/delete VMess users  
-[3] Trojan Management     → Create/delete Trojan users
-[4] User Lock/Unlock      → Manual lock control
-[5] Backup & Restore      → Telegram backup system
-[6] Settings & Monitor    → System configuration
-[7] Traffic Monitor       → Real-time bandwidth stats
-[8] Check Expired Users   → Auto-cleanup expired accounts
 ```
+══════════════════════════════════════════════════
+           WIBU TUNNELING v4.0 KURUMI
+══════════════════════════════════════════════════
+  Bot Telegram : ✅ Aktif (@wibutunnelbot)
+  Auto Reboot  : ✅ 05:00 WIB
+  Auto Backup  : ✅ 03:00 WIB
+══════════════════════════════════════════════════
+
+ [🔵 1] VLESS Management      → Create/delete VLESS users
+ [🔵 2] VMess Management      → Create/delete VMess users  
+ [🔵 3] Trojan Management     → Create/delete Trojan users
+ 
+ [🟡 4] User Lock/Unlock      → Manual lock control
+ [🟡 5] Backup & Restore      → Telegram backup system
+ 
+ [🟢 6] Settings & Monitor    → System configuration
+ [🟢 7] Traffic Monitor       → Real-time bandwidth stats
+ [🟢 8] Check Expired Users   → Auto-cleanup expired accounts
+ 
+ [🔴 0] Exit
+
+══════════════════════════════════════════════════
+```
+
+</div>
 
 ---
 
 ## 📱 Telegram Bot Setup
 
-### Get Bot Token
-1. Chat dengan [@BotFather](https://t.me/BotFather) di Telegram
-2. Kirim `/newbot` dan ikuti instruksi
-3. Save bot token: `123456789:ABCdefGhIjKlmNoPqRsTuVwXyZ`
+<table>
+<tr>
+<td width="33%">
 
-### Get Chat ID
+### 1️⃣ Get Bot Token
+1. Chat dengan [@BotFather](https://t.me/BotFather)
+2. Kirim `/newbot`
+3. Ikuti instruksi
+4. Save token:
+```
+123456789:ABCdefGhi...
+```
+
+</td>
+<td width="33%">
+
+### 2️⃣ Get Chat ID
 1. Chat dengan [@userinfobot](https://t.me/userinfobot)
-2. Bot akan reply dengan ID: `5851934765`
+2. Bot reply dengan ID:
+```
+5851934765
+```
 
-### Configure Bot
+</td>
+<td width="34%">
+
+### 3️⃣ Configure Bot
 ```bash
-menu → [6] Settings → [6] Setup Bot Telegram
-# Input bot token & chat ID
+menu
+↓
+[6] Settings
+↓
+[6] Setup Bot
 ```
+Input token & chat ID
 
-### Bot Commands
-```
-/start       → Show menu
-/create      → Create new user
-/delete      → Delete user
-/check       → Check user quota
-/list        → List all users
-/backup      → Create backup
-/restore     → Restore from backup
-```
+</td>
+</tr>
+</table>
+
+### 🤖 Bot Commands
+
+<div align="center">
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Show main menu |
+| `/create` | Create new user |
+| `/delete` | Delete existing user |
+| `/check` | Check user quota & traffic |
+| `/list` | List all active users |
+| `/backup` | Create backup to Telegram |
+| `/restore` | Restore from backup |
+| `/status` | Show server status |
+
+</div>
+
+> 💡 **Tip:** Bot commands juga bisa diakses via inline buttons untuk kemudahan.
 
 ---
 
 ## 🔧 Common Tasks
 
-### Create User
+<details>
+<summary><b>👤 Create User</b></summary>
+
 ```bash
 menu → [1] VLESS Management → [1] Create User
-# Input: username, days, IP limit, quota (GB)
 ```
 
-### Check Traffic
+**Input required:**
+- Username: `john_doe`
+- Expiry: `30` (days)
+- IP Limit: `2` (max concurrent connections)
+- Quota: `50` (GB)
+
+**Output:** QR code + connection link generated
+
+</details>
+
+<details>
+<summary><b>📊 Check Traffic</b></summary>
+
 ```bash
 menu → [7] Traffic Monitor
-# Real-time: download/upload speed
-# Total: bandwidth since boot
 ```
 
-### Backup to Telegram
+**Shows:**
+- ⚡ Real-time: Download/upload speed
+- 📈 Total: Bandwidth since boot
+- 👥 Per-user: Individual usage stats
+
+</details>
+
+<details>
+<summary><b>💾 Backup to Telegram</b></summary>
+
 ```bash
 menu → [5] Backup & Restore → [1] Backup Manual
-# ZIP file sent to Telegram with File ID
 ```
 
-### Restore from Backup
+**Process:**
+1. Creates encrypted ZIP
+2. Uploads to Telegram chat
+3. Returns File ID for restore
+
+**Included:** Xray configs, user database, bot config, SSL certs
+
+</details>
+
+<details>
+<summary><b>🔄 Restore from Backup</b></summary>
+
 ```bash
 menu → [5] Backup & Restore → [2] Restore Data
-# Input: Telegram File ID / URL / Local path
 ```
 
-### Update Scripts
+**Input options:**
+- 📁 Telegram File ID: `BQACAgUAAxkDAAIDzGrIV...`
+- 🔗 Telegram URL: `https://t.me/c/.../123`
+- 💾 Local path: `/root/backup.zip`
+
+**Auto-rollback on failure**
+
+</details>
+
+<details>
+<summary><b>🔄 Update Scripts</b></summary>
+
 ```bash
 menu → [6] Settings → [5] Update Script (Safe Mode)
-# Pull latest from GitHub, auto-backup old version
 ```
+
+**Process:**
+1. Backup current scripts to `/root/script_backup_*`
+2. Pull latest from GitHub
+3. Verify syntax
+4. Restart services
+
+**Rollback available** if update fails
+
+</details>
 
 ---
 
