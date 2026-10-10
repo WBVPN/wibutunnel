@@ -1,0 +1,18 @@
+[Unit]
+Description=WibuTunnel Telegram Bot (Polling Mode)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/local/bin/bot-telegram-polling
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/telegram-bot.log
+StandardError=append:/var/log/telegram-bot-error.log
+MemoryLimit=100M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
