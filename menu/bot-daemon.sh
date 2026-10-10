@@ -110,6 +110,102 @@ format_online_users() {
     echo -e "$MSG"
 }
 
+
+# Check if username exists in any protocol (cross-protocol uniqueness)
+check_username_exists() {
+    local username="$1"
+    if grep -q "^${username}:" /etc/xray/vless_exp.conf 2>/dev/null || \
+       grep -q "^${username}:" /etc/xray/vmess_exp.conf 2>/dev/null || \
+       grep -q "^${username}:" /etc/xray/trojan_exp.conf 2>/dev/null; then
+        return 0  # exists
+    fi
+    return 1  # available
+}
+
+
+# Manual lock user function
+lock_user_manual() {
+    local proto="$1"
+    local username="$2"
+    
+    # Determine which expiry file to check based on protocol
+    local exp_file=""
+    case "$proto" in
+        VLESS) exp_file="/etc/xray/vless_exp.conf" ;;
+        VMESS) exp_file="/etc/xray/vmess_exp.conf" ;;
+        TROJAN) exp_file="/etc/xray/trojan_exp.conf" ;;
+        *) 
+            send_msg "❌ <b>Protocol tidak valid!</b>"
+            return 1
+            ;;
+    esac
+    
+    # Check if user exists in specified protocol
+    if ! grep -q "^${username}:" "$exp_file" 2>/dev/null; then
+        send_msg "❌ <b>User ${username} tidak ditemukan di protocol ${proto}!</b>" '{"inline_keyboard":[[{"text":"🔙 Back","callback_data":"menu_'${proto,,}'"}]]}'
+        return 1
+    fi
+    
+    # Check if already locked
+    if grep -q "^${username}:" /etc/wibutunnel/locked_users.db 2>/dev/null; then
+        send_msg "⚠️ <b>User ${username} sudah dalam status locked!</b>" '{"inline_keyboard":[[{"text":"🔙 Back","callback_data":"menu_'${proto,,}'"}]]}'
+        return 1
+    fi
+    
+    # Add to locked_users.db with MANUAL_LOCK type (permanent lock: unlock_timestamp=0)
+    local now=$(date +%s)
+    echo "${username}:${now}:0:MANUAL_LOCK" >> /etc/wibutunnel/locked_users.db
+    
+    # Block user in xray routing
+    CONFIG_FILE="/usr/local/etc/xray/config.json"
+    safe_jq_edit_args --arg user "$username" '
+        (.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) += [$user] | 
+        (.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) |= unique
+    '
+    
+    # Restart xray
+    systemctl restart xray >/dev/null 2>&1
+    
+    # Send success notification
+    send_msg "✅ <b>User berhasil di-lock!</b>\n\n👤 Username: <code>${username}</code>\n🔐 Protocol: <b>${proto}</b>\n🔒 Status: <b>MANUAL LOCK</b>\n⏰ Locked at: $(date '+%Y-%m-%d %H:%M:%S')\n\n<i>User tidak akan bisa connect sampai di-unlock manual.</i>" '{"inline_keyboard":[[{"text":"🔙 Back to '${proto}' Menu","callback_data":"menu_'${proto,,}'"}]]}'
+    
+    return 0
+}
+
+
+# Manual unlock user function
+unlock_user_manual() {
+    local proto="$1"
+    local username="$2"
+    
+    # Check if user is locked
+    if ! grep -q "^${username}:" /etc/wibutunnel/locked_users.db 2>/dev/null; then
+        send_msg "⚠️ <b>User ${username} tidak dalam status locked!</b>" '{"inline_keyboard":[[{"text":"🔙 Back","callback_data":"menu_'${proto,,}'"}]]}'
+        return 1
+    fi
+    
+    # Get lock info before removing
+    local lock_info=$(grep "^${username}:" /etc/wibutunnel/locked_users.db | head -1)
+    local lock_type=$(echo "$lock_info" | cut -d: -f4)
+    
+    # Remove from locked_users.db
+    sed -i "/^${username}:/d" /etc/wibutunnel/locked_users.db
+    
+    # Remove from xray routing
+    CONFIG_FILE="/usr/local/etc/xray/config.json"
+    safe_jq_edit_args --arg user "$username" '
+        (.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) -= [$user]
+    '
+    
+    # Restart xray
+    systemctl restart xray >/dev/null 2>&1
+    
+    # Send success notification (bandwidth usage preserved - not reset)
+    send_msg "✅ <b>User berhasil di-unlock!</b>\n\n👤 Username: <code>${username}</code>\n🔐 Protocol: <b>${proto}</b>\n🔓 Status: <b>UNLOCKED</b>\n📊 Previous Lock Type: <b>${lock_type}</b>\n⏰ Unlocked at: $(date '+%Y-%m-%d %H:%M:%S')\n\n<i>User sekarang bisa connect kembali.\nBandwidth usage history tetap tersimpan.</i>" '{"inline_keyboard":[[{"text":"🔙 Back to '${proto}' Menu","callback_data":"menu_'${proto,,}'"}]]}'
+    
+    return 0
+}
+
 create_account() {
     local proto=$1
     local user=$2
@@ -125,18 +221,17 @@ create_account() {
         send_msg "❌ <b>Nama User Salah!</b>\nHanya boleh huruf, angka, dan strip (-)."
         return
     fi
+    
+    # NEW: Check cross-protocol username uniqueness
+    if check_username_exists "$user"; then
+        send_msg "❌ <b>Username ${user} sudah digunakan di protocol lain!</b>\nGunakan username berbeda."
+        return
+    fi
+    
     if jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) != null' "$CONFIG_FILE" >/dev/null 2>&1; then
         send_msg "❌ <b>User '${user}' Sudah Ada!</b>"
         return
     fi
-
-    local uuid=$(uuidgen)
-    local domain=$(cat /etc/xray/domain 2>/dev/null)
-    
-    local exp_date=""
-    local tampil_exp=""
-    
-    local clean_hari="${hari%[hmd]}"
     if [[ -z "${clean_hari//[0-9]/}" && -n "$clean_hari" ]]; then
         if [[ "$hari" == *m ]]; then
             exp_date=$(date -d "+${clean_hari} minutes" +"%Y-%m-%d %H:%M:%S")
@@ -672,6 +767,7 @@ show_proto_menu() {
     kb+='[{"text":"➕ Create","callback_data":"act_create_'"$proto"'"},{"text":"⏱ Trial","callback_data":"act_trial_'"$proto"'"}],'
     kb+='[{"text":"♻️ Renew","callback_data":"act_renew_'"$proto"'"},{"text":"🗑 Delete","callback_data":"act_del_'"$proto"'"}],'
     kb+='[{"text":"🟢 Cek Login","callback_data":"act_login_'"$proto"'"},{"text":"📋 List Akun","callback_data":"act_list_'"$proto"'"}],'
+    kb+='[{"text":"🔒 Lock User","callback_data":"act_lock_'"$proto"'"},{"text":"🔓 Unlock User","callback_data":"act_unlock_'"$proto"'"}],'
     kb+='[{"text":"🎛 Limit & BW","callback_data":"act_limit_'"$proto"'"},{"text":"🔎 Detail Link","callback_data":"act_detail_'"$proto"'"}],'
     kb+='[{"text":"🔙 Back","callback_data":"main_menu"}]'
     kb+=']}'
@@ -733,6 +829,20 @@ if [[ -n "$CB_ID" ]]; then
                     ;;
                 list) list_account "$proto" ;;
                 login) check_login "$proto" ;;
+                lock)
+                    rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
+                    echo "LOCK:${proto}" > "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
+                    text="🔒 <b>LOCK USER [${proto}]</b>\n\nKirim username yang ingin di-lock:\nContoh: <code>budi123</code>"
+                    kb='{"inline_keyboard":[[{"text":"❌ Batal","callback_data":"menu_'${proto,,}'"}]]}'
+                    send_msg "$text" "$kb"
+                    ;;
+                unlock)
+                    rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
+                    echo "UNLOCK:${proto}" > "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
+                    text="🔓 <b>UNLOCK USER [${proto}]</b>\n\nKirim username yang ingin di-unlock:\nContoh: <code>budi123</code>"
+                    kb='{"inline_keyboard":[[{"text":"❌ Batal","callback_data":"menu_'${proto,,}'"}]]}'
+                    send_msg "$text" "$kb"
+                    ;;
                 trafik) 
                     if [[ -s "/etc/wibutunnel/user_usage.db" ]]; then
                         TRF_MSG="📊 <b>TOP 10 PEMAKAIAN QUOTA</b>\n━━━━━━━━━━━━━━━━━━━━\n"
@@ -795,6 +905,25 @@ else
                         else
                             create_account "$proto" "$user" "$hari" "$ip" "$gb"
                         fi
+                        ;;
+                    lock)
+                        user="$TEXT"
+                        # Validate username format
+                        if [[ -z "$user" || -n "${user//[a-zA-Z0-9_-]/}" ]]; then
+                            send_msg "❌ <b>Format username salah!</b>\nHanya huruf, angka, underscore, dan dash." '{"inline_keyboard":[[{"text":"🔙 Back","callback_data":"menu_'${proto,,}'"}]]}'
+                        else
+                            # Call lock function (will implement in next task)
+                            lock_user_manual "$proto" "$user"
+                        fi
+                        ;;
+                    unlock)
+                        user="$TEXT"
+                        # Validate username format  
+                        if [[ -z "$user" || -n "${user//[a-zA-Z0-9_-]/}" ]]; then
+                            send_msg "❌ <b>Format username salah!</b>\nHanya huruf, angka, underscore, dan dash." '{"inline_keyboard":[[{"text":"🔙 Back","callback_data":"menu_'${proto,,}'"}]]}'
+                        else
+                            # Call unlock function (will implement in next task)
+                            unlock_user_manual "$proto" "$user"
                         ;;
                     trial)
                         waktu="$TEXT"
