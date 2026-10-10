@@ -232,6 +232,7 @@ create_account() {
         send_msg "❌ <b>User '${user}' Sudah Ada!</b>"
         return
     fi
+    local clean_hari="${hari%[hmd]}"
     if [[ -z "${clean_hari//[0-9]/}" && -n "$clean_hari" ]]; then
         if [[ "$hari" == *m ]]; then
             exp_date=$(date -d "+${clean_hari} minutes" +"%Y-%m-%d %H:%M:%S")
@@ -247,6 +248,8 @@ create_account() {
         send_msg "❌ <b>Format Waktu Salah!</b>\nGunakan angka untuk hari, atau akhiran 'h' untuk jam, 'm' untuk menit (contoh: 30, 1h, 60m)."
         return
     fi
+    local uuid=$(uuidgen)
+    local domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
     local link1=""
     local link2=""
     local link3=""
@@ -825,7 +828,7 @@ if [[ -n "$CB_ID" ]]; then
             
             case "$action" in
                 trial)
-                    create_account "$proto" "trial-$(tr -dc 'a-z0-9' </dev/urandom | head -c 4)" "1h" "0" "1"
+                    create_account "$proto" "trial-$(tr -dc a-z0-9 </dev/urandom | head -c 4)" "30m" "0" "1"
                     ;;
                 list) list_account "$proto" ;;
                 login) check_login "$proto" ;;
@@ -924,6 +927,7 @@ else
                         else
                             # Call unlock function (will implement in next task)
                             unlock_user_manual "$proto" "$user"
+                        fi
                         ;;
                     trial)
                         waktu="$TEXT"
