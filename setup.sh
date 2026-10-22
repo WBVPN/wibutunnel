@@ -348,6 +348,15 @@ cat <<'XEOF' > /usr/local/etc/xray/config.json
 }
 XEOF
 
+# Stop conflicting web servers
+echo -e "\e[1;36m[+] Menghentikan web server yang konflik dengan HAProxy...\e[0m"
+for svc in nginx apache2; do
+    if systemctl is-active --quiet $svc; then
+        echo -e "\e[1;33m[!] Menghentikan $svc...\e[0m"
+        systemctl stop $svc && systemctl disable $svc
+    fi
+done
+
 # HAProxy Config
 cat <<HFEOF > /etc/haproxy/haproxy.cfg
 global
