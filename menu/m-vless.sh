@@ -387,11 +387,11 @@ renew_user() {
     if [[ ! "$tambahan" =~ ^[0-9]+$ ]] || [ "$tambahan" -le 0 ]; then echo -e "${RED}Error: Angka tidak valid!${NC}"; read -p "Enter..." dummy; return; fi
 
     current_exp=$(grep "^${user}:" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
-    today_sec=$(date +%s)
+    today_sec=$(date -u +%s)
 
     if [[ -n "$current_exp" && ${#current_exp} -eq 10 ]]; then current_exp="${current_exp} $(date +%H:%M:%S)"; fi
     if [ -z "$current_exp" ]; then base_sec=$today_sec
-    else exp_sec=$(date -d "$current_exp" +%s 2>/dev/null); if [ -z "$exp_sec" ] || [ "$today_sec" -gt "$exp_sec" ]; then base_sec=$today_sec; else base_sec=$exp_sec; fi; fi
+    else exp_sec=$(date -u -d "$current_exp" +%s 2>/dev/null); if [ -z "$exp_sec" ] || [ "$today_sec" -gt "$exp_sec" ]; then base_sec=$today_sec; else base_sec=$exp_sec; fi; fi
 
     new_exp=$(date -d "@$(( base_sec + (tambahan * 86400) ))" +"%Y-%m-%d %H:%M:%S")
     safe_sed_delete "$user" "$EXP_FILE"; echo "${user}:${new_exp}" >> "$EXP_FILE"
@@ -470,7 +470,7 @@ lock_unlock_user() {
     user="$SELECTED_USER"
 
     DB_LOCK="/etc/wibutunnel/locked_users.db"
-    now=$(date +%s)
+    now=$(date -u +%s)
 
     if grep -q "^${user}:" "$DB_LOCK" 2>/dev/null; then
         safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))' 

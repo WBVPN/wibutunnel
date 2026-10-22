@@ -15,7 +15,7 @@ reason=$3   # IP_LIMIT atau QUOTA
 
 safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= (. + [$u] | unique)'
 
-now=$(date +%s)
+now=$(date -u +%s)
 if [[ -n "$duration" && "$duration" != "0" ]]; then
     unlock_time=$((now + (duration * 60)))
 else

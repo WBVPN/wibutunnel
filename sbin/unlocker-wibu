@@ -9,7 +9,7 @@ source /etc/wibutunnel/bot.conf 2>/dev/null
 DB="/etc/wibutunnel/locked_users.db"
 [[ ! -f "$DB" ]] && exit 0
 
-now=$(date +%s)
+now=$(date -u +%s)
 
 while read -r line; do
     user=$(echo "$line" | cut -d: -f1)

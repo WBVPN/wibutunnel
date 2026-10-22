@@ -49,7 +49,7 @@ while read -r line; do
             elif grep -q "^${user}:" /etc/xray/vmess_exp.conf 2>/dev/null; then proto="VMESS"
             elif grep -q "^${user}:" /etc/xray/trojan_exp.conf 2>/dev/null; then proto="TROJAN"; fi
             
-            now=$(date +%s)
+            now=$(date -u +%s)
             echo "${user}:${now}:0:QUOTA" >> "$DB_LOCK"
             
             USERS_TO_LOCK+=("$user")

@@ -76,7 +76,7 @@ safe_sed_delete() {
 check_license() {
     local CACHE_FILE="/etc/wibutunnel/tmp/wibu_license.cache"
     local CACHE_TTL=3600
-    local CURRENT_TIME=$(date +%s)
+    local CURRENT_TIME=$(date -u +%s)
 
     # Cek Cache & Ekstrak Data (Format: STATUS|NAMA|EXPIRED)
     if [[ -f "$CACHE_FILE" ]]; then

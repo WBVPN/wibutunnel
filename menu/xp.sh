@@ -19,7 +19,7 @@ VMESS_EXP="/etc/xray/vmess_exp.conf"
 TROJAN_EXP="/etc/xray/trojan_exp.conf"
 
 
-today_sec=$(date +%s)
+today_sec=$(date -u +%s)
 RESTART_NEEDED=false
 NOTIFIED_USERS=" "
 
@@ -49,7 +49,7 @@ process_expired() {
         [[ -z "$exp_date" || "$exp_date" == "Lifetime" || "$user" == *"dummy"* ]] && { NEW_EXP_CONTENT+="${line}\n"; continue; }
 
         if [[ ${#exp_date} -eq 10 ]]; then exp_date="${exp_date} 00:00:00"; fi
-        exp_sec=$(date -d "$exp_date" +%s 2>/dev/null)
+        exp_sec=$(date -u -d "$exp_date" +%s 2>/dev/null)
         [[ -z "$exp_sec" ]] && { NEW_EXP_CONTENT+="${line}\n"; continue; }
 
         # Check if user exists in RAM instead of reading file
@@ -75,7 +75,7 @@ process_expired() {
                     NORMAL_TO_RECOVERY+=("$user")
                     NEW_EXP_CONTENT+="${line}\n"
                     
-                    now=$(date +%s)
+                    now=$(date -u +%s)
                     safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
                     echo "$user:$now:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
                     
