@@ -113,12 +113,14 @@ fi
 echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
 
 # DOMAIN INPUT
-while true; do
-    read -p "Masukkan Domain Anda: " domain
-    if [[ -z "$domain" ]]; then
+domain="${1:-${DOMAIN}}"
+if [[ -z "$domain" ]]; then
+    while true; do
+        read -p "Masukkan Domain Anda: " domain
+        [[ -n "$domain" ]] && break
         echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"
-        continue
-    fi
+    done
+fi
 
     if ! command -v dig >/dev/null 2>&1; then
         apt-get update -y >/dev/null 2>&1
