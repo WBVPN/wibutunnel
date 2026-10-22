@@ -19,8 +19,19 @@ while IFS= read -r line; do
 done
 shopt -u nocasematch
 
+# Constant-time comparison to prevent timing attacks
+compare_constant_time() {
+    local a="$1" b="$2"
+    [[ ${#a} -ne ${#b} ]] && return 1
+    local result=0
+    for ((i=0; i<${#a}; i++)); do
+        [[ "${a:i:1}" != "${b:i:1}" ]] && result=1
+    done
+    return $result
+}
+
 # Validasi secret token jika dikonfigurasi
-if [[ -n "$WEBHOOK_SECRET" && "$SECRET_HEADER" != "$WEBHOOK_SECRET" ]]; then
+if [[ -n "$WEBHOOK_SECRET" ]] && ! compare_constant_time "$SECRET_HEADER" "$WEBHOOK_SECRET"; then
     echo -en "HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n{\"error\":\"unauthorized\"}"
     exit 0
 fi
