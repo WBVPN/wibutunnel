@@ -1,0 +1,35 @@
+# Secrets and credentials
+*.env
+.env
+.env.*
+*.key
+*.pem
+secrets/
+credentials/
+
+# VPN and config files with sensitive data
+*.ovpn
+*.conf.secret
+client-configs/
+wireguard/*.conf
+
+# License/IP whitelist (production data)
+izin.txt
+
+# SSH keys
+id_rsa
+id_ed25519
+*.pub
+
+# Certificates
+*.crt
+*.csr
+
+# Logs that might contain sensitive info
+*.log
+logs/
+
+# Backups
+*.bak
+*.backup
+*~
