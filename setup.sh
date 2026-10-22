@@ -667,8 +667,6 @@ RestartSec=5s
 EOF
 cat <<EOF > /etc/systemd/system/xray.service.d/override.conf
 [Service]
-ExecStartPre=/bin/mkdir -p /var/log/xray
-ExecStartPre=/bin/chown -R nobody:nogroup /var/log/xray
 Restart=on-failure
 RestartSec=5s
 EOF
