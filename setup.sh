@@ -580,34 +580,26 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-cat << 'EOF' > /etc/systemd/system/telegram-webhook.socket
+cat << 'EOF' > /etc/systemd/system/telegram-bot.service
 [Unit]
-Description=Telegram Webhook Socket
-
-[Socket]
-ListenStream=127.0.0.1:8443
-Accept=yes
-
-[Install]
-WantedBy=sockets.target
-EOF
-
-cat << 'EOF' > /etc/systemd/system/telegram-webhook@.service
-[Unit]
-Description=Telegram Webhook Service
+Description=Telegram Bot Polling Daemon
+After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/bot-webhook
-StandardInput=socket
-StandardOutput=socket
+Type=simple
+ExecStart=/usr/local/bin/bot-daemon
+Restart=always
+RestartSec=5
 User=root
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
 chmod +x /usr/local/bin/wibu-daemon
 chmod +x /usr/local/sbin/algojo-wibu 2>/dev/null || true
 chmod +x /usr/local/sbin/algojo-kuota 2>/dev/null || true
 chmod +x /usr/local/bin/bot-daemon
-chmod +x /usr/local/bin/bot-webhook
 
 systemctl daemon-reload
 systemctl enable wibu-daemon || { echo "Failed to enable wibu-daemon"; exit 1; }
@@ -615,7 +607,9 @@ systemctl restart wibu-daemon || { echo "Failed to start wibu-daemon"; exit 1; }
 sleep 2
 systemctl is-active --quiet wibu-daemon || { echo "wibu-daemon failed to start"; systemctl status wibu-daemon; exit 1; }
 
-systemctl enable --now telegram-webhook.socket >/dev/null 2>&1
+systemctl daemon-reload
+systemctl enable telegram-bot.service >/dev/null 2>&1
+systemctl restart telegram-bot.service >/dev/null 2>&1
 
 # Logrotate & Cron
 cat << 'LREOF' > /etc/logrotate.d/xray
