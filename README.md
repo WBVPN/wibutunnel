@@ -63,18 +63,20 @@ Semua operasi edit `config.json` dilindungi file locking (`flock`) — aman dari
 
 ## 🔑 Sistem Lisensi & Registrasi IP
 
-Script ini menggunakan sistem lisensi berbasis IP VPS. Untuk mendaftarkan IP server Anda:
+Script ini menggunakan sistem lisensi berbasis IP VPS. IP yang diizinkan didaftarkan langsung di file `izin.txt` dalam repository.
 
-**Format file `izin.txt`:**
+**Format `izin.txt`:**
 ```
 ### USERNAME EXPIRY_DATE IP_ADDRESS
-### CONTOH1 2027-12-31 203.0.113.45
-### CONTOH2 lifetime 198.51.100.10
+### WBVPN lifetime 103.123.45.67
+### DEMO_USER 2027-12-31 198.51.100.42
 ```
 
-> **Catatan:** File `izin.txt` sudah ada di `.gitignore` untuk keamanan. Gunakan `izin.txt.example` sebagai template.
-
-**Hubungi admin untuk registrasi IP** (lihat bagian Support di bawah).
+**Cara mendaftarkan IP Anda:**
+1. Fork repository ini dan tambahkan IP Anda ke `izin.txt`
+2. Atau hubungi admin untuk registrasi IP (lihat bagian Support di bawah)
+3. Format: `### USERNAME EXPIRY_DATE IP_ADDRESS`
+4. Expiry date: gunakan `lifetime` untuk tanpa batas, atau format `YYYY-MM-DD`
 
 ---
 

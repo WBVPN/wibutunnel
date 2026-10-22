@@ -13,8 +13,7 @@ credentials/
 client-configs/
 wireguard/*.conf
 
-# License/IP whitelist (production data)
-izin.txt
+
 
 # SSH keys
 id_rsa
