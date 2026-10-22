@@ -599,8 +599,10 @@ chmod +x /usr/local/bin/bot-daemon
 chmod +x /usr/local/bin/bot-webhook
 
 systemctl daemon-reload
-systemctl enable wibu-daemon >/dev/null 2>&1
-systemctl restart wibu-daemon
+systemctl enable wibu-daemon || { echo "Failed to enable wibu-daemon"; exit 1; }
+systemctl restart wibu-daemon || { echo "Failed to start wibu-daemon"; exit 1; }
+sleep 2
+systemctl is-active --quiet wibu-daemon || { echo "wibu-daemon failed to start"; systemctl status wibu-daemon; exit 1; }
 
 systemctl enable --now telegram-webhook.socket >/dev/null 2>&1
 
@@ -646,7 +648,9 @@ domain=$(cat /etc/xray/domain 2>/dev/null)
 systemctl stop haproxy
 certbot renew --quiet --no-self-upgrade --standalone
 cat /etc/letsencrypt/live/$domain/fullchain.pem /etc/letsencrypt/live/$domain/privkey.pem > /etc/haproxy/certs/$domain.pem
-systemctl start haproxy
+systemctl start haproxy || { echo "Failed to start haproxy"; exit 1; }
+sleep 2
+systemctl is-active --quiet haproxy || { echo "haproxy failed to start"; systemctl status haproxy; exit 1; }
 RCEOF
 chmod +x /usr/local/bin/renew-cert-wibu.sh
 (crontab -l 2>/dev/null; echo "0 4 * * * /usr/local/bin/renew-cert-wibu.sh") | crontab -
@@ -670,9 +674,12 @@ RestartSec=5s
 EOF
 
 systemctl daemon-reload
-systemctl enable xray haproxy cron
+systemctl enable xray haproxy cron || { echo "Failed to enable services"; exit 1; }
 systemctl start cron
-systemctl restart xray haproxy
+systemctl restart xray haproxy || { echo "Failed to restart services"; exit 1; }
+sleep 2
+systemctl is-active --quiet xray || { echo "xray failed to start"; systemctl status xray; exit 1; }
+systemctl is-active --quiet haproxy || { echo "haproxy failed to start"; systemctl status haproxy; exit 1; }
 
 # Set Webhook URL to Telegram
 source /etc/wibutunnel/bot.conf 2>/dev/null
