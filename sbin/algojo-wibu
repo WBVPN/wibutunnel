@@ -20,16 +20,17 @@ LOGIN_DATA=$(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/
 USERS_TO_LOCK=()
 while read -r email ip_list; do
     if [[ -z "$email" || -z "$ip_list" ]]; then continue; fi
-    max_ip=$(grep "^${email}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
+    email_esc=$(escape_grep "$email")
+    max_ip=$(grep "^${email_esc}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
     [[ "$max_ip" == "0" || -z "$max_ip" ]] && continue
 
     ip_count=$(echo "$ip_list" | wc -w)
     if [[ $ip_count -gt $max_ip ]]; then
-        if ! grep -q "^${email}:" "$DB_LOCK" 2>/dev/null; then
+        if ! grep -q "^${email_esc}:" "$DB_LOCK" 2>/dev/null; then
             proto="UNKNOWN"
-            grep -q "^${email}:" /etc/xray/vless_exp.conf 2>/dev/null && proto="VLESS"
-            grep -q "^${email}:" /etc/xray/vmess_exp.conf 2>/dev/null && proto="VMESS"
-            grep -q "^${email}:" /etc/xray/trojan_exp.conf 2>/dev/null && proto="TROJAN"
+            grep -q "^${email_esc}:" /etc/xray/vless_exp.conf 2>/dev/null && proto="VLESS"
+            grep -q "^${email_esc}:" /etc/xray/vmess_exp.conf 2>/dev/null && proto="VMESS"
+            grep -q "^${email_esc}:" /etc/xray/trojan_exp.conf 2>/dev/null && proto="TROJAN"
             
             now=$(date -u +%s)
             unlock_time=$((now + (LOCK_DURATION * 60)))
