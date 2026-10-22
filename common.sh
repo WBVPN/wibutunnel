@@ -31,13 +31,14 @@ fi
 safe_jq_edit() {
     local filter="$1"
     local src="${XRAY_CONFIG}"
-    local tmp
-    tmp=$(mktemp /etc/wibutunnel/tmp/xray_edit.XXXXXX.json)
     (
-        flock -w 30 200 || { echo "[ERROR] flock timeout on xray config" >&2; rm -f "$tmp"; return 1; }
+        flock -w 30 200 || { echo "[ERROR] flock timeout on xray config" >&2; return 1; }
+        local tmp
+        tmp=$(mktemp /etc/wibutunnel/tmp/xray_edit.XXXXXX.json) || return 1
         if jq "$filter" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             mv "$tmp" "$src"
             chmod 644 "$src"
+            rm -f "$tmp"
         else
             echo "[ERROR] jq edit gagal, config tidak diubah" >&2
             rm -f "$tmp"
@@ -48,13 +49,14 @@ safe_jq_edit() {
 
 safe_jq_edit_args() {
     local src="$XRAY_CONFIG"
-    local tmp
-    tmp=$(mktemp /etc/wibutunnel/tmp/xray_edit.XXXXXX.json)
     (
-        flock -w 30 200 || { echo "[ERROR] flock timeout on xray config" >&2; rm -f "$tmp"; return 1; }
+        flock -w 30 200 || { echo "[ERROR] flock timeout on xray config" >&2; return 1; }
+        local tmp
+        tmp=$(mktemp /etc/wibutunnel/tmp/xray_edit.XXXXXX.json) || return 1
         if jq "$@" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             mv "$tmp" "$src"
             chmod 644 "$src"
+            rm -f "$tmp"
         else
             echo "[ERROR] jq edit gagal, config tidak diubah" >&2
             rm -f "$tmp"
