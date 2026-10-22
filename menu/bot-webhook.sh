@@ -26,7 +26,7 @@ if [[ -n "$WEBHOOK_SECRET" && "$SECRET_HEADER" != "$WEBHOOK_SECRET" ]]; then
 fi
 
 payload=""
-if [[ -n "$CONTENT_LENGTH" ]]; then
+if [[ -n "$CONTENT_LENGTH" ]] && [[ "$CONTENT_LENGTH" =~ ^[0-9]+$ ]] && [[ "$CONTENT_LENGTH" -le 10485760 ]]; then
     payload=$(head -c "$CONTENT_LENGTH")
 fi
 

@@ -112,19 +112,21 @@ format_online_users() {
 
 create_account() {
     local proto=$1
-    local user=$2
+    local raw_user=$2
     local hari=$3
     local limit_ip=${4:-0}
     local limit_bw=${5:-0}
-    
+
+    # Sanitize username - remove dangerous characters, max 32 chars
+    local user=$(echo "$raw_user" | tr -cd 'a-zA-Z0-9._-' | head -c 32)
+    if [[ -z "$user" ]] || [[ "$user" != "$raw_user" ]]; then
+        send_msg "❌ <b>Nama User Salah!</b>\nHanya boleh huruf, angka, underscore, titik, dan strip (-). Max 32 karakter."
+        return
+    fi
+
     # Validation
     if [[ ! "$limit_ip" =~ ^[0-9]+$ ]]; then limit_ip=0; fi
     if [[ ! "$limit_bw" =~ ^[0-9]+$ ]]; then limit_bw=0; fi
-    
-    if [[ -n "${user//[a-zA-Z0-9_-]/}" ]]; then
-        send_msg "❌ <b>Nama User Salah!</b>\nHanya boleh huruf, angka, dan strip (-)."
-        return
-    fi
     if jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) != null' "$CONFIG_FILE" >/dev/null 2>&1; then
         send_msg "❌ <b>User '${user}' Sudah Ada!</b>"
         return
@@ -248,9 +250,15 @@ create_account() {
 }
 
 delete_account() {
-    local user=$1
+    local raw_user=$1
     local proto=$2
-    if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
+    
+    # Sanitize username
+    local user=$(echo "$raw_user" | tr -cd 'a-zA-Z0-9._-' | head -c 32)
+    if [[ -z "$user" ]] || [[ "$user" != "$raw_user" ]]; then
+        send_msg "❌ Username tidak valid!"
+        return
+    fi
     
     if jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) == null' "$CONFIG_FILE" >/dev/null 2>&1; then
         send_msg "❌ <b>Gagal!</b>\nAkun <code>${user}</code> tidak ditemukan di database."
@@ -298,10 +306,16 @@ is_admin() {
 }
 
 renew_account() {
-    local user=$1
+    local raw_user=$1
     local hari=$2
     local proto=$3
-    if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
+    
+    # Sanitize username
+    local user=$(echo "$raw_user" | tr -cd 'a-zA-Z0-9._-' | head -c 32)
+    if [[ -z "$user" ]] || [[ "$user" != "$raw_user" ]]; then
+        send_msg "❌ Username tidak valid!"
+        return
+    fi
     if [[ ! "$hari" =~ ^[0-9]+$ || "$hari" -le 0 ]]; then
         send_msg "❌ <b>Format Hari Salah!</b>\nGunakan angka."
         return
@@ -355,11 +369,17 @@ renew_account() {
 }
 
 change_limit() {
-    local user=$1
+    local raw_user=$1
     local limit_ip=$2
     local limit_bw=$3
     local proto=$4
-    if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
+    
+    # Sanitize username
+    local user=$(echo "$raw_user" | tr -cd 'a-zA-Z0-9._-' | head -c 32)
+    if [[ -z "$user" ]] || [[ "$user" != "$raw_user" ]]; then
+        send_msg "❌ Username tidak valid!"
+        return
+    fi
     
     if [[ ! "$limit_ip" =~ ^[0-9]+$ || ! "$limit_bw" =~ ^[0-9]+$ ]]; then
         send_msg "❌ <b>Format Limit Salah!</b>\nIP dan GB harus berupa angka."
@@ -500,9 +520,15 @@ backup_vps() {
 }
 
 detail_account() {
-    local user=$1
+    local raw_user=$1
     local target_proto=$2
-    if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
+    
+    # Sanitize username
+    local user=$(echo "$raw_user" | tr -cd 'a-zA-Z0-9._-' | head -c 32)
+    if [[ -z "$user" ]] || [[ "$user" != "$raw_user" ]]; then
+        send_msg "❌ Username tidak valid!"
+        return
+    fi
     
     local proto=""
     local uuid=""
@@ -703,6 +729,19 @@ if [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]]; then exit 1; fi
 PAYLOAD=$1
 [[ -z "$PAYLOAD" ]] && exit 0
 
+# Validate command whitelist function
+validate_command() {
+    local cmd="$1"
+    case "$cmd" in
+        /start|/menu|/help)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 CB_ID=$(echo "$PAYLOAD" | jq -r ".callback_query.id // empty")
 if [[ -n "$CB_ID" ]]; then
     SENDER_ID=$(echo "$PAYLOAD" | jq -r ".callback_query.message.chat.id")
@@ -779,6 +818,14 @@ else
         TEXT="${TEXT//$'\r'/}"
         
         if is_admin "$SENDER_ID"; then
+            # Validate command if it starts with /
+            if [[ "$TEXT" =~ ^/ ]]; then
+                if ! validate_command "$TEXT"; then
+                    send_msg "❌ Unknown command. Use /menu to see available options."
+                    exit 0
+                fi
+            fi
+            
             if [[ -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}" && ! "$TEXT" =~ ^/ ]]; then
                 read -r action proto < "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
                 rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
@@ -821,9 +868,18 @@ else
                 esac
             else
                 rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
+                # Command whitelist enforcement
                 case "$TEXT" in
                     /start|/menu)
                         show_main_menu "$SENDER_ID" ""
+                        ;;
+                    /help)
+                        send_msg "🤖 <b>WIBUTUNNEL BOT HELP</b>\n\nGunakan /menu untuk mengakses panel kontrol."
+                        ;;
+                    *)
+                        if [[ "$TEXT" =~ ^/ ]]; then
+                            send_msg "❌ Unknown command. Use /menu to see available options."
+                        fi
                         ;;
                 esac
             fi
