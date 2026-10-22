@@ -18,6 +18,25 @@ Lightweight Xray VPN script for Ubuntu/Debian VPS with automated user management
 apt update && apt install -y wget && wget -qO- https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh | bash
 ```
 
+## IP Registration (License System)
+
+This script uses IP-based license verification. To register your VPS IP:
+
+1. Create `izin.txt` file in the repository root with format:
+   ```
+   ### USERNAME EXPIRY_DATE IP_ADDRESS
+   ```
+
+2. Example:
+   ```
+   ### MYSERVER 2027-12-31 203.0.113.45
+   ### TESTSERVER lifetime 198.51.100.10
+   ```
+
+3. Keep `izin.txt` local only (already in .gitignore for security)
+
+Contact admin for IP registration: [@Iqbalzxc](https://t.me/Iqbalzxc)
+
 ## Security Patches (v4.0)
 
 - **Race condition fix**: All `config.json` access uses `flock` via `safe_jq_edit()`
