@@ -19,10 +19,10 @@ chmod 700 /etc/wibutunnel/tmp
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 XRAY_LOCK="/etc/wibutunnel/tmp/xray_config.lock"
 
-export MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com)
+# Deteksi IP publik (optional, caller harus validasi jika required)
+export MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null)
 if [[ -z "$MYIP" ]]; then
-    echo -e "${RED}[FATAL] Gagal mendapatkan IP publik. Periksa koneksi internet.${NC}" >&2
-    exit 1
+    MYIP=$(curl -sS --max-time 5 ifconfig.me 2>/dev/null)
 fi
 
 # safe_jq_edit: edit xray config.json dengan flock agar tidak race condition
