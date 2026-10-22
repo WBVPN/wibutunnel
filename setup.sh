@@ -450,21 +450,50 @@ GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
 download_menu() {
     local url="${GITHUB_RAW}/$1?v=$RANDOM"
     local dest="/usr/local/bin/$2"
-    curl -sS -L -o "/etc/wibutunnel/tmp/$2" "$url"
+    local tmp_file="/etc/wibutunnel/tmp/$2"
+    local http_code
     
-    # Validasi apakah file yang diunduh adalah bash script (bukan HTML 429 Error)
-    if grep -q "429: Too Many Requests" "/etc/wibutunnel/tmp/$2"; then
+    # Download with HTTP status code
+    http_code=$(curl -sS -L -w '%{http_code}' -o "$tmp_file" "$url")
+    
+    # Retry with mirror if rate limited
+    if [[ "$http_code" == "429" ]]; then
         echo -e "\e[31m[!] Terkena Rate Limit GitHub saat mengunduh $2. Mencoba mirror lain...\e[0m"
         url="https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@main/$1"
-        curl -sS -L -o "/etc/wibutunnel/tmp/$2" "$url"
+        http_code=$(curl -sS -L -w '%{http_code}' -o "$tmp_file" "$url")
     fi
     
-    if [ -s "/etc/wibutunnel/tmp/$2" ]; then
-        mv "/etc/wibutunnel/tmp/$2" "$dest"
-        chmod +x "$dest"
-    else
-        echo -e "\e[31m[!] Gagal mengunduh $2\e[0m"
+    # Validate HTTP status
+    if [[ "$http_code" != "200" ]]; then
+        echo -e "\e[31m[!] Gagal mengunduh $2 (HTTP $http_code)\e[0m"
+        rm -f "$tmp_file"
+        return 1
     fi
+    
+    # Validate file exists and has reasonable size (not empty, not > 10MB)
+    if [[ ! -s "$tmp_file" ]]; then
+        echo -e "\e[31m[!] File $2 kosong\e[0m"
+        rm -f "$tmp_file"
+        return 1
+    fi
+    
+    local file_size=$(stat -c%s "$tmp_file" 2>/dev/null || echo 0)
+    if [[ $file_size -gt 10485760 ]]; then
+        echo -e "\e[31m[!] File $2 terlalu besar ($(($file_size/1024))KB)\e[0m"
+        rm -f "$tmp_file"
+        return 1
+    fi
+    
+    # Validate shebang
+    if ! head -n1 "$tmp_file" | grep -q '^#!/bin/bash'; then
+        echo -e "\e[31m[!] File $2 bukan bash script valid\e[0m"
+        rm -f "$tmp_file"
+        return 1
+    fi
+    
+    mv "$tmp_file" "$dest"
+    chmod +x "$dest"
+    return 0
 }
 
 download_menu "menu/menu.sh" "menu"
