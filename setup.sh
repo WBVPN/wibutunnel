@@ -673,6 +673,10 @@ Restart=on-failure
 RestartSec=5s
 EOF
 
+# Flush all pending writes to disk
+sync
+sleep 1
+
 systemctl daemon-reload
 systemctl enable xray haproxy cron || { echo "Failed to enable services"; exit 1; }
 systemctl start cron
