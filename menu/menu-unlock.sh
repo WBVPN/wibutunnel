@@ -109,7 +109,7 @@ for line in "${locked_list[@]}"; do
     if [[ -z "$proto" ]]; then
         safe_sed_delete "$u" "$DB_LOCK"
         safe_sed_delete "$u" /etc/wibutunnel/user_usage.db
-        safe_jq_edit_args --arg user \"$u\" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))'
+        safe_jq_edit_args --arg user "$u" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))'
         GHOST_FOUND=true
         continue
     fi
@@ -204,7 +204,7 @@ echo "${user}:${bw_baru}" >> /etc/wibutunnel/limit_bw.db
 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
 # UNLOCK DARI XRAY
-safe_jq_edit_args --arg u \"$user\" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
+safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
 safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
 systemctl restart xray >/dev/null 2>&1
 
