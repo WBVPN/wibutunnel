@@ -16,7 +16,28 @@ if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
     exit 1
 fi
 
+# [FIX Bug #1] Deteksi IP publik dengan validasi dan retry
+echo -e "\e[1;36m[+] Mendeteksi IP publik...\e[0m"
 MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com)
+if [[ -z "$MYIP" ]]; then
+    echo -e "\e[1;33m[WARN] Mencoba service alternatif...\e[0m"
+    MYIP=$(curl -sS --max-time 5 ifconfig.me)
+fi
+if [[ -z "$MYIP" ]]; then
+    echo -e "\e[1;33m[WARN] Mencoba service alternatif kedua...\e[0m"
+    MYIP=$(curl -sS --max-time 5 api.ipify.org)
+fi
+if [[ -z "$MYIP" ]]; then
+    clear
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[1;31m            GAGAL MENDETEKSI IP PUBLIK!            \e[0m"
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[1;37m Tidak dapat mendeteksi IP publik VPS Anda.\e[0m"
+    echo -e "\e[1;37m Silakan periksa koneksi internet dan coba lagi.\e[0m"
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    exit 1
+fi
+echo -e "\e[1;32m[✓] IP terdeteksi: $MYIP\e[0m"
 clear
 echo -e "\e[1;36m[+] Memeriksa Lisensi Script...\e[0m"
 
