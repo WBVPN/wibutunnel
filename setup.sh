@@ -557,7 +557,8 @@ chmod +x /usr/local/bin/wibu-daemon
 cat << 'EOF' > /etc/systemd/system/wibu-daemon.service
 [Unit]
 Description=Wibu Tunneling Real-Time Algojo Daemon
-After=network.target
+After=network.target xray.service
+Requires=xray.service
 
 [Service]
 ExecStart=/usr/local/bin/wibu-daemon
@@ -653,6 +654,9 @@ chmod +x /usr/local/bin/renew-cert-wibu.sh
 # Service Override
 mkdir -p /etc/systemd/system/haproxy.service.d /etc/systemd/system/xray.service.d
 cat <<EOF > /etc/systemd/system/haproxy.service.d/override.conf
+[Unit]
+After=xray.service
+
 [Service]
 Restart=on-failure
 RestartSec=5s
