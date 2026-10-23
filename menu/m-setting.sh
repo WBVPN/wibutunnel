@@ -269,8 +269,15 @@ EOF
     8)
         clear; echo -e "$LINE"; echo -e "       ${WHITE}GANTI DOMAIN & RENEW SSL${NC}"; echo -e "$LINE"
         read -p "Masukkan Domain Baru: " new_domain
+        if [[ ! "$new_domain" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+            echo -e "${RED}[!] Domain tidak valid!${NC}"
+            read -p "Tekan Enter..." dummy
+            exec m-setting
+        fi
         if [[ -n "$new_domain" ]]; then
             systemctl stop haproxy xray
+            _restore_svc() { systemctl start haproxy xray >/dev/null 2>&1; }
+            trap _restore_svc EXIT
             # Deteksi versi certbot
             if certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
                 certbot certonly --standalone --non-interactive --agree-tos -m "admin@${new_domain}" -d "$new_domain" --force-renewal 2>/dev/null
@@ -282,6 +289,7 @@ EOF
                 echo "$new_domain" > /etc/xray/domain
                 sed -i "s|bind \*:443 ssl crt .*\.pem|bind *:443 ssl crt /etc/haproxy/certs/${new_domain}.pem|g" /etc/haproxy/haproxy.cfg
                 systemctl start haproxy xray
+                trap - EXIT
                 echo -e "${GREEN}Domain berhasil diganti!${NC}"
             else
                 echo -e "${RED}SSL gagal untuk $new_domain!${NC}"
