@@ -157,30 +157,39 @@ create_account() {
     local link3=""
 
     if [[ "$proto" == "VLESS" ]]; then
-        safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
+        if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
             .inbounds[1].settings.clients += [{"id": $uuid, "email": $user}] |
             .inbounds[2].settings.clients += [{"id": $uuid, "email": $user}] |
             .inbounds[3].settings.clients += [{"id": $uuid, "email": $user}]
-        '
+        '; then
+            send_msg "❌ <b>Gagal!</b>\nConfig tidak bisa diubah (jq/flock error). Akun tidak dibuat."
+            return
+        fi
         echo "${user}:${exp_date}" >> /etc/xray/vless_exp.conf
         link1="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&host=${domain}&type=ws&sni=${domain}#${user}"
         link2="vless://${uuid}@${domain}:80?path=/vless-ntls&security=none&encryption=none&host=${domain}&type=ws#${user}"
         link3="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless&sni=${domain}#${user}"
     elif [[ "$proto" == "VMESS" ]]; then
-        safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
+        if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
             .inbounds[4].settings.clients += [{"id": $uuid, "alterId": 0, "email": $user}] |
             .inbounds[5].settings.clients += [{"id": $uuid, "alterId": 0, "email": $user}] |
             .inbounds[6].settings.clients += [{"id": $uuid, "alterId": 0, "email": $user}]
-        '
+        '; then
+            send_msg "❌ <b>Gagal!</b>\nConfig tidak bisa diubah (jq/flock error). Akun tidak dibuat."
+            return
+        fi
         echo "${user}:${exp_date}" >> /etc/xray/vmess_exp.conf
         link1="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"443\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/vmess\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"tls\",\"sni\":\"$domain\"}" | base64 -w 0)"
         link2="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"80\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/vmess-ntls\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"\",\"sni\":\"\"}" | base64 -w 0)"
         link3="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"443\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"grpc\",\"path\":\"vmess\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"tls\",\"sni\":\"$domain\"}" | base64 -w 0)"
     elif [[ "$proto" == "TROJAN" ]]; then
-        safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
+        if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
             .inbounds[7].settings.clients += [{"password": $uuid, "email": $user}] |
             .inbounds[8].settings.clients += [{"password": $uuid, "email": $user}]
-        '
+        '; then
+            send_msg "❌ <b>Gagal!</b>\nConfig tidak bisa diubah (jq/flock error). Akun tidak dibuat."
+            return
+        fi
         echo "${user}:${exp_date}" >> /etc/xray/trojan_exp.conf
         link1="trojan://${uuid}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
         link2="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan&sni=${domain}#${user}"
@@ -257,7 +266,7 @@ delete_account() {
         return
     fi
 
-    safe_jq_edit_args --arg u "$user" '
+    if ! safe_jq_edit_args --arg u "$user" '
         .inbounds[1].settings.clients |= map(select(.email != $u)) |
         .inbounds[2].settings.clients |= map(select(.email != $u)) |
         .inbounds[3].settings.clients |= map(select(.email != $u)) |
@@ -267,7 +276,10 @@ delete_account() {
         .inbounds[7].settings.clients |= map(select(.email != $u)) |
         .inbounds[8].settings.clients |= map(select(.email != $u)) |
         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-    '
+    '; then
+        send_msg "❌ <b>Gagal!</b>\nConfig tidak bisa diubah (jq/flock error). Akun tidak dihapus."
+        return
+    fi
 
     safe_sed_delete "$user" /etc/xray/vless_exp.conf
     safe_sed_delete "$user" /etc/xray/vmess_exp.conf
