@@ -118,6 +118,22 @@ read -p " Limit IP Baru (0=Bebas): " ip_baru; [[ ! "$ip_baru" =~ ^[0-9]+$ ]] && 
 read -p " Limit Kuota GB (0=Unli): " bw_baru; [[ ! "$bw_baru" =~ ^[0-9]+$ ]] && bw_baru=0
 
 new_exp=$(date -d "+${hari_baru} days" +"%Y-%m-%d %H:%M:%S"); proto="${USER_PROTOS[$user]}"
+
+# Restore client dari sidecar (UUID/password asli)
+if [[ -f "/etc/wibutunnel/recovery/${user}.json" ]]; then
+    client_data=$(jq -r '.client' "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null)
+    if [[ -n "$client_data" && "$client_data" != "null" ]]; then
+        if [[ "$proto" == "VLESS" ]]; then
+            safe_jq_edit_args --argjson c "$client_data" '.inbounds[1].settings.clients += [$c] | .inbounds[2].settings.clients += [$c] | .inbounds[3].settings.clients += [$c]'
+        elif [[ "$proto" == "VMESS" ]]; then
+            safe_jq_edit_args --argjson c "$client_data" '.inbounds[4].settings.clients += [$c] | .inbounds[5].settings.clients += [$c] | .inbounds[6].settings.clients += [$c]'
+        elif [[ "$proto" == "TROJAN" ]]; then
+            safe_jq_edit_args --argjson c "$client_data" '.inbounds[7].settings.clients += [$c] | .inbounds[8].settings.clients += [$c]'
+        fi
+    fi
+    rm -f "/etc/wibutunnel/recovery/${user}.json"
+fi
+
 [[ "$proto" == "VLESS" ]]  && { safe_sed_delete "$user" /etc/xray/vless_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/vless_exp.conf; }
 [[ "$proto" == "VMESS" ]]  && { safe_sed_delete "$user" /etc/xray/vmess_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/vmess_exp.conf; }
 [[ "$proto" == "TROJAN" ]] && { safe_sed_delete "$user" /etc/xray/trojan_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/trojan_exp.conf; }

@@ -82,29 +82,55 @@ while read -r line; do
                         -F "text=${PESAN}" >/dev/null 2>&1
                 ) &
             else
-                # Regular account = lock
-                now=$(date -u +%s)
-                echo "${user}:${now}:0:QUOTA" >> "$DB_LOCK"
+                # Regular account = delete + recovery (sama seperti manual delete)
+                # 1. Buat sidecar untuk recovery
+                mkdir -p /etc/wibutunnel/recovery && chmod 700 /etc/wibutunnel/recovery
+                
+                if grep -q "^${user_esc}:" /etc/xray/vless_exp.conf 2>/dev/null; then
+                    jq -c --arg u "$user" --arg p "VLESS" '{user:$u, proto:$p, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                elif grep -q "^${user_esc}:" /etc/xray/vmess_exp.conf 2>/dev/null; then
+                    jq -c --arg u "$user" --arg p "VMESS" '{user:$u, proto:$p, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                elif grep -q "^${user_esc}:" /etc/xray/trojan_exp.conf 2>/dev/null; then
+                    jq -c --arg u "$user" --arg p "TROJAN" '{user:$u, proto:$p, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                fi
+                [[ ! -s "/etc/wibutunnel/recovery/${user}.json" ]] && rm -f "/etc/wibutunnel/recovery/${user}.json"
 
-                USERS_TO_LOCK+=("$user")
+                # 2. Delete dari config
+                safe_jq_edit_args --arg u "$user" '
+                    .inbounds[1].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[2].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[3].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[4].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[5].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[6].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[7].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[8].settings.clients |= map(select(.email != $u)) |
+                    (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                '
 
+                # 3. Delete dari exp files & DBs
+                safe_sed_delete "$user" /etc/xray/vless_exp.conf
+                safe_sed_delete "$user" /etc/xray/vmess_exp.conf
+                safe_sed_delete "$user" /etc/xray/trojan_exp.conf
+                safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+                # limit_ip.db dan limit_bw.db TIDAK dihapus — akan dipakai saat restore
+                # user_usage.db TIDAK dihapus —histori tetap ada
+
+                # 4. Tulis flag QUOTA_EXCEEDED ke exp file (untuk recovery list)
+                now_ts=$(date +%s)
+                echo "${user}:${now_ts}:0:QUOTA_EXCEEDED" >> /etc/xray/${proto,,}_exp.conf
+
+                # 5. Notif Telegram
                 (
                     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                     WAKTU=$(date '+%d %b %Y %H:%M WIB')
-                    PESAN=$(printf "🔒 <b>USER DIKUNCI OTOMATIS</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Alasan   :</b> Kuota Habis\n<b>Durasi   :</b> Permanen (sampai di-unlock manual)\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Account akan otomatis dibuka jika dilonggarkan limitnya.</i>" "$user" "$WAKTU" "$DOMAIN")
+                    PESAN=$(printf "💾 <b>USER PINDAH KE RECOVERY (KUOTA HABIS)</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Kuota Habis\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Admin bisa restore via menu-recovery dengan limit baru.</i>" "$user" "$proto" "$WAKTU" "$DOMAIN")
                     curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
                 ) &
+
+                systemctl restart xray >/dev/null 2>&1
             fi
         fi
     fi
 done < "$DB_BW"
 rm -f /etc/wibutunnel/tmp/xray_quota_raw.txt
-
-if [[ ${#USERS_TO_LOCK[@]} -gt 0 ]]; then
-    jq_args=()
-    for usr in "${USERS_TO_LOCK[@]}"; do
-        jq_args+=("$usr")
-    done
-    safe_jq_edit_args --argjson users "$(printf '%s\n' "${jq_args[@]}" | jq -R . | jq -s .)" '(.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) |= (. + $users | unique)'
-    systemctl restart xray >/dev/null 2>&1
-fi
