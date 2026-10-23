@@ -334,7 +334,7 @@ curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-rel
 DUMMY_UUID=$(uuidgen)
 cat <<'XEOF' > /usr/local/etc/xray/config.json
 {
-  "log": {"access": "/var/log/xray/access.log","error": "/var/log/xray/error.log","loglevel": "warning"},
+  "log": {"access": "/var/log/xray/access.log","error": "/var/log/xray/error.log","loglevel": "info"},
   "api": {"tag": "api","services": ["StatsService", "HandlerService"]},
   "stats": {},
   "policy": {
