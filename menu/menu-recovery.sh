@@ -55,9 +55,9 @@ for line in "${locked_list[@]}"; do
         GHOST_FOUND=true; continue
     fi
     USER_NAMES[$idx]=$u
-    [[ "$reason" == "EXPIRED" ]]    && txt_rsn="${YELLOW}EXPIRED     ${NC}"
-    [[ "$reason" == "QUOTA" ]]      && txt_rsn="${RED}QUOTA       ${NC}"
-    [[ "$reason" == "IP_LIMIT" ]]   && txt_rsn="${RED}IP LIMIT    ${NC}"
+    [[ "$reason" == "EXPIRED" ]]         && txt_rsn="${YELLOW}EXPIRED     ${NC}"
+    [[ "$reason" == "QUOTA_EXCEEDED" ]] && txt_rsn="${RED}QUOTA       ${NC}"
+    [[ "$reason" == "IP_LIMIT" ]]        && txt_rsn="${RED}IP LIMIT    ${NC}"
     [[ "$reason" == "MANUAL_DEL" ]] && txt_rsn="${CYAN}DELETED     ${NC}"
     [[ "$reason" == "LOCK" ]]       && txt_rsn="${RED}LOCKED      ${NC}"
     [[ -z "$txt_rsn" ]]            && txt_rsn="${RED}${reason}${NC}"
