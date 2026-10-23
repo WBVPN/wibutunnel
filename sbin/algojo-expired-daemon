@@ -18,20 +18,44 @@ while true; do
             
             [[ $NOW_LOCAL -le $exp_ts ]] && continue
 
-            # Trial account = notify admin before deletion
+            # Trial account = notify + delete, Regular = notify + recovery
             if [[ "$user" == trial-* ]]; then
                 source /etc/wibutunnel/bot.conf 2>/dev/null
                 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
                     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                     WAKTU=$(date '+%d %b %Y %H:%M WIB')
-                    PESAN=$(printf 'TRIAL ACCOUNT DIHAPUS OTOMATIS\n\nUser     : %s\nProtocol : %s\nAlasan   : Expired\nWaktu    : %s\nDomain   : %s' "$user" "$proto" "$WAKTU" "$DOMAIN")
+                    PESAN=$(printf '🗑 <b>TRIAL ACCOUNT DIHAPUS OTOMATIS</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Expired\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>' "$user" "$proto" "$WAKTU" "$DOMAIN")
+                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                        -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" \
+                        -F "parse_mode=HTML" -F "text=${PESAN}" >/dev/null 2>&1 &
+                fi
+            else
+                # Regular account = create recovery sidecar
+                mkdir -p /etc/wibutunnel/recovery && chmod 700 /etc/wibutunnel/recovery
+                
+                user_esc=$(escape_grep "$user")
+                if [[ "$proto" == "VLESS" ]]; then
+                    jq -c --arg u "$user" --arg p "VLESS" '{user:$u, proto:$p, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                elif [[ "$proto" == "VMESS" ]]; then
+                    jq -c --arg u "$user" --arg p "VMESS" '{user:$u, proto:$p, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                elif [[ "$proto" == "TROJAN" ]]; then
+                    jq -c --arg u "$user" --arg p "TROJAN" '{user:$u, proto:$p, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                fi
+                [[ ! -s "/etc/wibutunnel/recovery/${user}.json" ]] && rm -f "/etc/wibutunnel/recovery/${user}.json"
+
+                # Send notification
+                source /etc/wibutunnel/bot.conf 2>/dev/null
+                if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+                    DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                    WAKTU=$(date '+%d %b %Y %H:%M WIB')
+                    PESAN=$(printf '💾 <b>USER PINDAH KE RECOVERY (EXPIRED)</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Expired\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Admin bisa restore via menu-recovery dengan limit baru.</i>' "$user" "$proto" "$WAKTU" "$DOMAIN")
                     curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                         -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" \
                         -F "parse_mode=HTML" -F "text=${PESAN}" >/dev/null 2>&1 &
                 fi
             fi
 
-            # Expired - delete immediately
+            # Delete from config
             case "$proto" in
                 VLESS)
                     safe_jq_edit_args --arg u "$user" '
@@ -57,13 +81,26 @@ while true; do
                     ' >/dev/null 2>&1
                     ;;
             esac
-            
+
+            # Cleanup: delete exp line
             safe_sed_delete "$user" "$proto_file"
-            safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
-            safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
-            safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
-            safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
             
+            # Trial = delete all DB, Regular = keep limit_ip & limit_bw for restore
+            if [[ "$user" == trial-* ]]; then
+                safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
+                safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
+                safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+                rm -f "/etc/wibutunnel/recovery/${user}.json"
+            else
+                # Regular: tulis flag EXPIRED ke exp file untuk recovery list
+                now_ts=$(date +%s)
+                echo "${user}:${now_ts}:0:EXPIRED" >> "$proto_file"
+                # limit_ip.db & limit_bw.db TIDAK dihapus (untuk restore)
+                # user_usage.db TIDAK dihapus (histori)
+            fi
+            
+            safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+
             deleted_any="1"
         done < "$proto_file"
     done

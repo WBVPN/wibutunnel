@@ -300,11 +300,8 @@ delete_user() {
     else
         echo -e "\n${GREEN}Akun '$user' berhasil dimusnahkan permanen!${NC}"
     fi
-    # snapshot client ke sidecar SEBELUM dihapus, agar menu Recovery bisa memulihkan
-    mkdir -p /etc/wibutunnel/recovery && chmod 700 /etc/wibutunnel/recovery
-    jq -c --arg u "$user" --arg p "VLESS" '{user:$u, proto:$p, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$CONFIG_FILE" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
-    if [ ! -s "/etc/wibutunnel/recovery/${user}.json" ]; then rm -f "/etc/wibutunnel/recovery/${user}.json"; fi
 
+    # Delete dari config (permanen, tidak masuk recovery)
     if ! safe_jq_edit_args --arg user "$user" '
         .inbounds[1].settings.clients |= map(select(.email != $user)) |
         .inbounds[2].settings.clients |= map(select(.email != $user)) |
@@ -317,8 +314,8 @@ delete_user() {
     safe_sed_delete "$user" "$EXP_FILE"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
-    # daftarkan ke Recovery sebagai MANUAL_DEL (jangan dihapus dari locked_users.db)
-    safe_sed_delete "$user" "$DB_LOCK"; echo "${user}:$(date +%s):0:MANUAL_DEL" >> "$DB_LOCK"
+    safe_sed_delete "$user" "$DB_LOCK"
+    rm -f "/etc/wibutunnel/recovery/${user}.json"
     systemctl restart xray >/dev/null 2>&1
     echo ""; read -p "Tekan Enter..." dummy
 }
