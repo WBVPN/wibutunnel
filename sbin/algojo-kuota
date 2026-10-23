@@ -49,18 +49,52 @@ while read -r line; do
             if grep -q "^${user_esc}:" /etc/xray/vless_exp.conf 2>/dev/null; then proto="VLESS"
             elif grep -q "^${user_esc}:" /etc/xray/vmess_exp.conf 2>/dev/null; then proto="VMESS"
             elif grep -q "^${user_esc}:" /etc/xray/trojan_exp.conf 2>/dev/null; then proto="TROJAN"; fi
-            
-            now=$(date -u +%s)
-            echo "${user}:${now}:0:QUOTA" >> "$DB_LOCK"
-            
-            USERS_TO_LOCK+=("$user")
-            
-            (
-                DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-                WAKTU=$(date '+%d %b %Y %H:%M WIB')
-                PESAN=$(printf "🔒 <b>USER DIKUNCI OTOMATIS</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Alasan   :</b> Kuota Habis\n<b>Durasi   :</b> Permanen (sampai di-unlock manual)\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Account akan otomatis dibuka jika dilonggarkan limitnya.</i>" "$user" "$WAKTU" "$DOMAIN")
-                curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
-            ) &
+
+            # Trial account = delete, regular = lock
+            if [[ "$user" =~ ^trial- ]]; then
+                safe_jq_edit_args --arg u "$user" '
+                    .inbounds[1].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[2].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[3].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[4].settings.clients |= map(select(.id != $u)) |
+                    .inbounds[5].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[6].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[7].settings.clients |= map(select(.password != $u)) |
+                    .inbounds[8].settings.clients |= map(select(.password != $u)) |
+                    (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                '
+                safe_sed_delete "$user" /etc/xray/vless_exp.conf
+                safe_sed_delete "$user" /etc/xray/vmess_exp.conf
+                safe_sed_delete "$user" /etc/xray/trojan_exp.conf
+                safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
+                safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
+                safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+                safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+                rm -f "/etc/wibutunnel/recovery/${user}.json"
+                (
+                    DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                    WAKTU=$(date '+%d %b %Y %H:%M WIB')
+                    PESAN=$(printf "🗑 <b>TRIAL ACCOUNT DIHAPUS OTOMATIS</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Kuota Habis\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>" "$user" "$proto" "$WAKTU" "$DOMAIN")
+                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                        -F "chat_id=${CHAT_ID}" \
+                        -F "disable_web_page_preview=true" \
+                        -F "parse_mode=html" \
+                        -F "text=${PESAN}" >/dev/null 2>&1
+                ) &
+            else
+                # Regular account = lock
+                now=$(date -u +%s)
+                echo "${user}:${now}:0:QUOTA" >> "$DB_LOCK"
+
+                USERS_TO_LOCK+=("$user")
+
+                (
+                    DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                    WAKTU=$(date '+%d %b %Y %H:%M WIB')
+                    PESAN=$(printf "🔒 <b>USER DIKUNCI OTOMATIS</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Alasan   :</b> Kuota Habis\n<b>Durasi   :</b> Permanen (sampai di-unlock manual)\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Account akan otomatis dibuka jika dilonggarkan limitnya.</i>" "$user" "$WAKTU" "$DOMAIN")
+                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
+                ) &
+            fi
         fi
     fi
 done < "$DB_BW"
