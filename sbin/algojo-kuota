@@ -58,7 +58,7 @@ while read -r line; do
             (
                 DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                 WAKTU=$(date '+%d %b %Y %H:%M WIB')
-                PESAN="🔒 <b>USER DIKUNCI OTOMATIS</b>\n\n<b>User     :</b> <code>${user}</code>\n<b>Alasan   :</b> Kuota Habis\n<b>Durasi   :</b> Permanen (sampai di-unlock manual)\n<b>Waktu    :</b> ${WAKTU}\n<b>Domain   :</b> <code>${DOMAIN}</code>\n\n<i>Account akan otomatis dibuka jika dilonggarkan limitnya.</i>"
+                PESAN=$(printf "🔒 <b>USER DIKUNCI OTOMATIS</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Alasan   :</b> Kuota Habis\n<b>Durasi   :</b> Permanen (sampai di-unlock manual)\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Account akan otomatis dibuka jika dilonggarkan limitnya.</i>" "$user" "$WAKTU" "$DOMAIN")
                 curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
             ) &
         fi
