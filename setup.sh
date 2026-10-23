@@ -504,7 +504,14 @@ download_menu() {
         rm -f "$tmp_file"
         return 1
     fi
-    
+
+    # Validate syntax sebelum dipasang
+    if ! bash -n "$tmp_file" 2>/dev/null; then
+        echo -e "\e[31m[!] File $2 gagal syntax check (bash -n)\e[0m"
+        rm -f "$tmp_file"
+        return 1
+    fi
+
     mv "$tmp_file" "$dest"
     chmod +x "$dest"
     return 0

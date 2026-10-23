@@ -17,7 +17,20 @@ while true; do
             exp_ts=$(date -d "$exp_str" +%s 2>/dev/null) || continue
             
             [[ $NOW_LOCAL -le $exp_ts ]] && continue
-            
+
+            # Trial account = notify admin before deletion
+            if [[ "$user" == trial-* ]]; then
+                source /etc/wibutunnel/bot.conf 2>/dev/null
+                if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+                    DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                    WAKTU=$(date '+%d %b %Y %H:%M WIB')
+                    PESAN=$(printf 'TRIAL ACCOUNT DIHAPUS OTOMATIS\n\nUser     : %s\nProtocol : %s\nAlasan   : Expired\nWaktu    : %s\nDomain   : %s' "$user" "$proto" "$WAKTU" "$DOMAIN")
+                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                        -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" \
+                        -F "parse_mode=HTML" -F "text=${PESAN}" >/dev/null 2>&1 &
+                fi
+            fi
+
             # Expired - delete immediately
             case "$proto" in
                 VLESS)
