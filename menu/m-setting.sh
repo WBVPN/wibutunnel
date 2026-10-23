@@ -35,7 +35,7 @@ safe_update() {
     local base_name=$(basename "$repo_path")
     local target_name="${base_name%.sh}"
     
-    local raw_url="https://raw.githubusercontent.com/WBVPN/WIBUTUNNEL/main/${repo_path}?$(date +%s)"
+    local raw_url="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/${repo_path}?$(date +%s)"
     
     wget -q -O "/etc/wibutunnel/tmp/${base_name}" "$raw_url" 2>/dev/null
     if [[ -s "/etc/wibutunnel/tmp/${base_name}" ]]; then
@@ -168,9 +168,11 @@ case $sub_setting in
         safe_update "menu/menu-recovery.sh"
         safe_update "menu/cek-trafik.sh"
         safe_update "menu/bot-daemon.sh"
-        
+
         safe_update "sbin/algojo-kuota"
         safe_update "sbin/algojo-wibu"
+        safe_update "sbin/algojo-expired"
+        safe_update "sbin/algojo-expired-daemon"
         safe_update "sbin/lock-user"
         safe_update "sbin/unlock-user"
         safe_update "sbin/unlocker-wibu"
