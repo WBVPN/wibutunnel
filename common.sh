@@ -65,12 +65,20 @@ safe_jq_edit_args() {
     ) 200>"$XRAY_LOCK"
 }
 
-# safe_sed_delete: hapus baris user dari flat-file DB pakai grep -F (fixed string)
+# safe_sed_delete: hapus baris user dari flat-file DB (fixed-string prefix match)
+# FIX: grep -v exit 1 saat file jadi kosong -> mv tidak jalan -> baris basi tertinggal.
+# FIX: awk index() = fixed string, aman untuk username berisi '.' dsb.
 safe_sed_delete() {
     local user="$1"
     local file="$2"
     [[ -f "$file" ]] || return 0
-    grep -v "^${user}:" "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+    local tmp="${file}.tmp.$$"
+    if awk -v u="$user" 'index($0, u ":") != 1' "$file" > "$tmp"; then
+        mv "$tmp" "$file"
+    else
+        rm -f "$tmp"
+        return 1
+    fi
 }
 
 check_license() {

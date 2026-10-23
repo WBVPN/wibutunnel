@@ -25,15 +25,26 @@ user_json_exists() {
     jq -e --arg u "$1" '[.inbounds[].settings.clients[]?.email] | index($u) != null' "$CONFIG_FILE" >/dev/null 2>&1
 }
 
+# db_get <file> <user> -- ambil value terakhir, fixed-string prefix match (aman untuk '.' dll)
+db_get() {
+    awk -v u="$2" 'index($0, u ":") == 1 { sub(/^[^:]*:/, ""); v=$0 } END { if (v != "") print v }' "$1" 2>/dev/null
+}
+
+# db_has <file> <user> -- true jika entry ada
+db_has() {
+    awk -v u="$2" 'index($0, u ":") == 1 {f=1} END {exit !f}' "$1" 2>/dev/null
+}
+
 select_user() {
     local ACTION_TITLE=$1
     local DISPLAY_TYPE=$2
     local SHOW_LOCKED=$3
-    mapfile -t raw_user_array < <(jq -r '.inbounds[1].settings.clients[].email' "$CONFIG_FILE" | grep -v "dummy" | sort)
-    
+    mapfile -t raw_user_array < <(jq -r '.inbounds[1].settings.clients[]?.email // empty' "$CONFIG_FILE" 2>/dev/null | grep -v "dummy" | sort)
+
     declare -a user_array
     for u in "${raw_user_array[@]}"; do
-        if [[ "$SHOW_LOCKED" != "YES" ]] && grep -q "^${u}:" "$DB_LOCK" 2>/dev/null; then continue; fi
+        [[ -z "$u" ]] && continue
+        if [[ "$SHOW_LOCKED" != "YES" ]] && db_has "$DB_LOCK" "$u"; then continue; fi
         user_array+=("$u")
     done
 
@@ -49,16 +60,16 @@ select_user() {
     for i in "${!user_array[@]}"; do
         u="${user_array[$i]}"
         if [[ "$DISPLAY_TYPE" == "IP" ]]; then
-            val=$(grep "^${u}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
+            val=$(db_get "$DB_IP" "$u")
             [[ -z "$val" || "$val" == "0" ]] && val="Bebas" || val="${val} IP"
             color="${CYAN}"
         elif [[ "$DISPLAY_TYPE" == "BW" ]]; then
-            val=$(grep "^${u}:" "$DB_BW" 2>/dev/null | cut -d: -f2)
+            val=$(db_get "$DB_BW" "$u")
             [[ -z "$val" || "$val" == "0" ]] && val="Unlimited" || val="${val} GB"
             color="${CYAN}"
         else
-            val=$(grep "^${u}:" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
-            is_locked=$(grep -q "^${u}:" "$DB_LOCK" 2>/dev/null && echo " ${RED}LOCKED${NC}" || echo "")
+            val=$(db_get "$EXP_FILE" "$u")
+            is_locked=$(db_has "$DB_LOCK" "$u" && echo " ${RED}LOCKED${NC}" || echo "")
             [[ -z "$val" ]] && val="Lifetime"
             color="${YELLOW}Exp: "
         fi
@@ -90,17 +101,20 @@ add_user() {
 
     read -p "Limit IP (0 = Bebas): " limit_ip
     read -p "Limit Kuota GB (0 = Unli): " limit_kuota
-    [[ -z "$limit_ip" ]] && limit_ip=0
-    [[ -z "$limit_kuota" ]] && limit_kuota=0
+    [[ "$limit_ip" =~ ^[0-9]+$ ]] || limit_ip=0
+    [[ "$limit_kuota" =~ ^[0-9]+$ ]] || limit_kuota=0
 
     uuid=$(uuidgen); domain=$(cat "$DOMAIN_FILE")
 
-    safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
+    if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
         .inbounds[1].settings.clients += [{"id": $uuid, "email": $user}] |
         .inbounds[2].settings.clients += [{"id": $uuid, "email": $user}] |
         .inbounds[3].settings.clients += [{"id": $uuid, "email": $user}]
-    '
+    '; then
+        echo -e "${RED}Gagal menulis config Xray! Akun tidak dibuat.${NC}"; read -p "Enter..." dummy; return
+    fi
 
+    safe_sed_delete "$user" "$EXP_FILE"
     echo "${user}:${exp_date}" >> "$EXP_FILE"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     echo "${user}:${limit_ip}" >> "$DB_IP"
@@ -192,12 +206,15 @@ trial_user() {
 
     uuid=$(uuidgen); domain=$(cat "$DOMAIN_FILE")
 
-    safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
+    if ! safe_jq_edit_args --arg uuid "$uuid" --arg user "$user" '
         .inbounds[1].settings.clients += [{"id": $uuid, "email": $user}] |
         .inbounds[2].settings.clients += [{"id": $uuid, "email": $user}] |
         .inbounds[3].settings.clients += [{"id": $uuid, "email": $user}]
-    '
+    '; then
+        echo -e "${RED}Gagal menulis config Xray! Trial tidak dibuat.${NC}"; read -p "Enter..." dummy; return
+    fi
 
+    safe_sed_delete "$user" "$EXP_FILE"
     echo "${user}:${exp_date}" >> "$EXP_FILE"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     echo "${user}:0" >> "$DB_IP"; echo "${user}:0" >> "$DB_BW"
@@ -283,16 +300,25 @@ delete_user() {
     else
         echo -e "\n${GREEN}Akun '$user' berhasil dimusnahkan permanen!${NC}"
     fi
-    safe_jq_edit_args --arg user "$user" '
+    # snapshot client ke sidecar SEBELUM dihapus, agar menu Recovery bisa memulihkan
+    mkdir -p /etc/wibutunnel/recovery && chmod 700 /etc/wibutunnel/recovery
+    jq -c --arg u "$user" --arg p "VLESS" '{user:$u, proto:$p, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$CONFIG_FILE" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+    if [ ! -s "/etc/wibutunnel/recovery/${user}.json" ]; then rm -f "/etc/wibutunnel/recovery/${user}.json"; fi
+
+    if ! safe_jq_edit_args --arg user "$user" '
         .inbounds[1].settings.clients |= map(select(.email != $user)) |
         .inbounds[2].settings.clients |= map(select(.email != $user)) |
         .inbounds[3].settings.clients |= map(select(.email != $user)) |
         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $user))
-    '
+    '; then
+        echo -e "${RED}Gagal menghapus akun dari config Xray!${NC}"; read -p "Enter..." dummy; return
+    fi
 
     safe_sed_delete "$user" "$EXP_FILE"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
-    safe_sed_delete "$user" "$DB_LOCK"; safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+    safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+    # daftarkan ke Recovery sebagai MANUAL_DEL (jangan dihapus dari locked_users.db)
+    safe_sed_delete "$user" "$DB_LOCK"; echo "${user}:$(date +%s):0:MANUAL_DEL" >> "$DB_LOCK"
     systemctl restart xray >/dev/null 2>&1
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -302,9 +328,9 @@ cek_user() {
     [[ -z "$SELECTED_USER" ]] && return
     user="$SELECTED_USER"
 
-    uuid=$(jq -r --arg email "$user" '.inbounds[1].settings.clients[] | select(.email == $email) | .id' "$CONFIG_FILE")
+    uuid=$(jq -r --arg email "$user" '.inbounds[1].settings.clients[]? | select(.email == $email) | .id' "$CONFIG_FILE" 2>/dev/null | head -n 1)
     domain=$(cat "$DOMAIN_FILE")
-    exp_date=$(grep "^${user}:" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
+    exp_date=$(db_get "$EXP_FILE" "$user")
     [[ -z "$exp_date" ]] && exp_date="Lifetime"
 
     vless_tls="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&host=${domain}&type=ws&sni=${domain}#${user}"
@@ -386,12 +412,13 @@ renew_user() {
     read -p " Jumlah Hari Tambahan : " tambahan
     if [[ ! "$tambahan" =~ ^[0-9]+$ ]] || [ "$tambahan" -le 0 ]; then echo -e "${RED}Error: Angka tidak valid!${NC}"; read -p "Enter..." dummy; return; fi
 
-    current_exp=$(grep "^${user}:" "$EXP_FILE" | cut -d: -f2- | tail -n 1)
-    today_sec=$(date -u +%s)
+    current_exp=$(db_get "$EXP_FILE" "$user")
+    today_sec=$(date +%s)
 
+    # FIX: exp file disimpan dalam waktu LOKAL -> harus di-parse sebagai lokal (bukan date -u)
     if [[ -n "$current_exp" && ${#current_exp} -eq 10 ]]; then current_exp="${current_exp} $(date +%H:%M:%S)"; fi
-    if [ -z "$current_exp" ]; then base_sec=$today_sec
-    else exp_sec=$(date -u -d "$current_exp" +%s 2>/dev/null); if [ -z "$exp_sec" ] || [ "$today_sec" -gt "$exp_sec" ]; then base_sec=$today_sec; else base_sec=$exp_sec; fi; fi
+    if [[ -z "$current_exp" || "$current_exp" == "Lifetime" ]]; then base_sec=$today_sec
+    else exp_sec=$(date -d "$current_exp" +%s 2>/dev/null); if [[ -z "$exp_sec" || "$today_sec" -gt "$exp_sec" ]]; then base_sec=$today_sec; else base_sec=$exp_sec; fi; fi
 
     new_exp=$(date -d "@$(( base_sec + (tambahan * 86400) ))" +"%Y-%m-%d %H:%M:%S")
     safe_sed_delete "$user" "$EXP_FILE"; echo "${user}:${new_exp}" >> "$EXP_FILE"
@@ -446,7 +473,7 @@ change_bw_user() {
     [[ ! "$new_limit" =~ ^[0-9]+$ ]] && new_limit=0
 
     safe_sed_delete "$user" "$DB_BW"; echo "${user}:${new_limit}" >> "$DB_BW"
-    /usr/local/sbin/algojo-kuota >/dev/null 2>&1
+    [[ -x /usr/local/sbin/algojo-kuota ]] && /usr/local/sbin/algojo-kuota >/dev/null 2>&1
     echo -e "\n${GREEN}Sukses! Limit Kuota user '${user}' diubah menjadi: ${new_limit} GB${NC}"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         PESAN_BW="${THICKLINE}
@@ -461,6 +488,9 @@ ${THICKLINE}"
 }
 
 recovery_vless() {
+    if ! command -v menu-recovery &>/dev/null; then
+        echo -e "${RED}ERROR: menu-recovery tidak ditemukan!${NC}"; read -p "Enter..." dummy; return
+    fi
     exec menu-recovery VLESS
 }
 
@@ -472,7 +502,7 @@ lock_unlock_user() {
     DB_LOCK="/etc/wibutunnel/locked_users.db"
     now=$(date -u +%s)
 
-    if grep -q "^${user}:" "$DB_LOCK" 2>/dev/null; then
+    if db_has "$DB_LOCK" "$user"; then
         safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))' 
         safe_sed_delete "$user" "$DB_LOCK"
         systemctl restart xray >/dev/null 2>&1
@@ -487,6 +517,8 @@ lock_unlock_user() {
 }
 
 # ===== MAIN MENU =====
+# guard: menu hanya jalan jika dieksekusi langsung, bukan di-source (agar bisa diuji)
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 clear; echo -e "${LINE}"
 echo -e "              ${WHITE}MENU KELOLA VLESS${NC}"
 echo -e "${LINE}"
@@ -515,9 +547,10 @@ case $sub_menu in
     5) renew_user; exec m-vless ;;
     6) change_ip_user; exec m-vless ;;
     7) change_bw_user; exec m-vless ;;
-    8) /usr/local/bin/cek-trafik VLESS ;;
+    8) /usr/local/bin/cek-trafik VLESS; exec m-vless ;;
     9) lock_unlock_user; exec m-vless ;;
     10) recovery_vless ;;
     0) exec menu ;;
     *) echo -e "${RED}Pilihan tidak valid!${NC}"; sleep 1; exec m-vless ;;
 esac
+fi
