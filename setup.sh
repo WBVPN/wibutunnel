@@ -114,13 +114,11 @@ echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
 
 # DOMAIN INPUT
 domain="${1:-${DOMAIN}}"
-if [[ -z "$domain" ]]; then
-    while true; do
+while true; do
+    if [[ -z "$domain" ]]; then
         read -p "Masukkan Domain Anda: " domain
-        [[ -n "$domain" ]] && break
-        echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"
-    done
-fi
+        [[ -z "$domain" ]] && { echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"; continue; }
+    fi
 
     if ! command -v dig >/dev/null 2>&1; then
         apt-get update -y >/dev/null 2>&1
@@ -131,6 +129,7 @@ fi
 
     if [[ -z "$IP_DOMAIN" ]]; then
         echo -e "\e[1;31m[!] Domain tidak valid!\e[0m"
+        domain=""
         continue
     fi
 
@@ -140,7 +139,11 @@ fi
     else
         echo -e "\e[1;33m[!] IP Domain berbeda dengan IP VPS.\e[0m"
         read -p "Lanjutkan dengan mode Cloudflare? (y/n): " lanjut
-        [[ "$lanjut" == "y" || "$lanjut" == "Y" ]] && break || continue
+        if [[ "$lanjut" == "y" || "$lanjut" == "Y" ]]; then
+            break
+        fi
+        domain=""
+        continue
     fi
 done
 
@@ -520,7 +523,6 @@ download_menu "menu/menu-recovery.sh" "menu-recovery"
 download_menu "menu/cek-trafik.sh" "cek-trafik"
 download_menu "common.sh" "common.sh"
 download_menu "menu/bot-daemon.sh" "bot-daemon"
-download_menu "menu/bot-webhook.sh" "bot-webhook"
 
 
 # =========================================================
@@ -537,9 +539,11 @@ download_menu "sbin/algojo-kuota" "algojo-kuota-dl"
 download_menu "sbin/lock-user" "lock-user-dl"
 download_menu "sbin/unlock-user" "unlock-user-dl"
 download_menu "sbin/unlocker-wibu" "unlocker-wibu-dl"
+download_menu "sbin/algojo-expired" "algojo-expired-dl"
+download_menu "sbin/algojo-expired-daemon" "algojo-expired-daemon"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu; do
+for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu algojo-expired; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
         chmod +x "/usr/local/sbin/${s}"
@@ -580,6 +584,21 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+cat << 'EOF' > /etc/systemd/system/algojo-expired.service
+[Unit]
+Description=Real-time VPN Account Expiry Enforcement
+After=xray.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/algojo-expired-daemon
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 cat << 'EOF' > /etc/systemd/system/telegram-bot.service
 [Unit]
 Description=Telegram Bot Polling Daemon
@@ -610,6 +629,8 @@ systemctl is-active --quiet wibu-daemon || { echo "wibu-daemon failed to start";
 systemctl daemon-reload
 systemctl enable telegram-bot.service >/dev/null 2>&1
 systemctl restart telegram-bot.service >/dev/null 2>&1
+systemctl enable algojo-expired.service >/dev/null 2>&1
+systemctl restart algojo-expired.service >/dev/null 2>&1
 
 # Logrotate & Cron
 cat << 'LREOF' > /etc/logrotate.d/xray
@@ -688,17 +709,10 @@ sleep 2
 systemctl is-active --quiet xray || { echo "xray failed to start"; systemctl status xray; exit 1; }
 systemctl is-active --quiet haproxy || { echo "haproxy failed to start"; systemctl status haproxy; exit 1; }
 
-# Set Webhook URL to Telegram
+# Pastikan tidak ada webhook aktif: webhook + getUpdates saling bertabrakan (Telegram error 409)
 source /etc/wibutunnel/bot.conf 2>/dev/null
 if [[ -n "$BOT_TOKEN" ]]; then
-    # Generate webhook secret jika belum ada
-    if [[ -z "$WEBHOOK_SECRET" ]]; then
-        WEBHOOK_SECRET=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
-        echo "WEBHOOK_SECRET='${WEBHOOK_SECRET}'" >> /etc/wibutunnel/bot.conf
-    fi
-    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
-        -F "url=https://${domain}/telehook" \
-        -F "secret_token=${WEBHOOK_SECRET}" >/dev/null 2>&1
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
 fi
 
 dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1

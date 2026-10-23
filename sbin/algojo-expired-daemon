@@ -1,0 +1,61 @@
+#!/bin/bash
+# Continuous expiry enforcement daemon - checks every 5 seconds
+source /usr/local/bin/common.sh 2>/dev/null || exit 1
+
+while true; do
+    deleted_any=""
+    
+    for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf; do
+        [[ ! -f "$proto_file" ]] && continue
+        
+        proto=$(basename "$proto_file" | cut -d_ -f1 | tr '[:lower:]' '[:upper:]')
+        NOW_LOCAL=$(date +%s)
+        
+        while IFS=: read -r user exp_str; do
+            [[ -z "$user" || -z "$exp_str" || "$exp_str" == "Lifetime" ]] && continue
+            
+            exp_ts=$(date -d "$exp_str" +%s 2>/dev/null) || continue
+            
+            [[ $NOW_LOCAL -le $exp_ts ]] && continue
+            
+            # Expired - delete immediately
+            case "$proto" in
+                VLESS)
+                    safe_jq_edit_args --arg u "$user" '
+                        .inbounds[1].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[2].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[3].settings.clients |= map(select(.email != $u)) |
+                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                    ' >/dev/null 2>&1
+                    ;;
+                VMESS)
+                    safe_jq_edit_args --arg u "$user" '
+                        .inbounds[4].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[5].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[6].settings.clients |= map(select(.email != $u)) |
+                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                    ' >/dev/null 2>&1
+                    ;;
+                TROJAN)
+                    safe_jq_edit_args --arg u "$user" '
+                        .inbounds[7].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[8].settings.clients |= map(select(.email != $u)) |
+                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                    ' >/dev/null 2>&1
+                    ;;
+            esac
+            
+            safe_sed_delete "$user" "$proto_file"
+            safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
+            safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
+            safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+            safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+            
+            deleted_any="1"
+        done < "$proto_file"
+    done
+    
+    [[ -n "$deleted_any" ]] && systemctl restart xray >/dev/null 2>&1
+    
+    sleep 5
+done

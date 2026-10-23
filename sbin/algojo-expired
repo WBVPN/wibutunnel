@@ -1,0 +1,74 @@
+#!/bin/bash
+# Auto-delete expired accounts
+source /usr/local/bin/common.sh 2>/dev/null || exit 1
+
+NOW=$(date -u +%s)
+deleted_any=""
+
+for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf; do
+    [[ ! -f "$proto_file" ]] && continue
+    
+    proto=$(basename "$proto_file" | cut -d_ -f1 | tr '[:lower:]' '[:upper:]')
+    
+    while IFS=: read -r user exp_str; do
+        [[ -z "$user" || -z "$exp_str" ]] && continue
+        [[ "$exp_str" == "Lifetime" ]] && continue
+        
+        # Parse exp_str as local timezone (VPS time), compare with local NOW
+        exp_ts=$(date -d "$exp_str" +%s 2>/dev/null)
+        [[ -z "$exp_ts" ]] && continue
+        
+        NOW_LOCAL=$(date +%s)
+        
+        if [[ $NOW_LOCAL -gt $exp_ts ]]; then
+            echo "[$(date)] Deleting expired: $user ($proto, exp: $exp_str)"
+            
+            # Kill active connections via xray API
+            xray api stats --server=127.0.0.1:10085 | grep -i "email.*$user" | awk '{print $1}' | while read stat_name; do
+                xray api rmoutbound --server=127.0.0.1:10085 "$stat_name" 2>/dev/null
+            done
+            
+            # Delete from config.json based on protocol
+            case "$proto" in
+                VLESS)
+                    safe_jq_edit_args --arg u "$user" '
+                        .inbounds[1].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[2].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[3].settings.clients |= map(select(.email != $u)) |
+                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                    '
+                    ;;
+                VMESS)
+                    safe_jq_edit_args --arg u "$user" '
+                        .inbounds[4].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[5].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[6].settings.clients |= map(select(.email != $u)) |
+                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                    '
+                    ;;
+                TROJAN)
+                    safe_jq_edit_args --arg u "$user" '
+                        .inbounds[7].settings.clients |= map(select(.email != $u)) |
+                        .inbounds[8].settings.clients |= map(select(.email != $u)) |
+                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                    '
+                    ;;
+            esac
+            
+            # Delete from exp file
+            safe_sed_delete "$user" "$proto_file"
+            safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
+            safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
+            safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+            safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+            
+            deleted_any="1"
+        fi
+    done < "$proto_file"
+done
+
+# Force restart xray to disconnect all expired users
+if [[ -n "$deleted_any" ]]; then
+    systemctl restart xray >/dev/null 2>&1
+    echo "[$(date)] Xray restarted to enforce disconnections"
+fi
