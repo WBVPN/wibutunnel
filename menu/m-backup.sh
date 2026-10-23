@@ -208,12 +208,15 @@ do_restore() {
         return
     fi
 
-    echo -e "${GREEN}[+] Backup valid. Membersihkan data lama...${NC}"
-    rm -f /usr/local/etc/xray/config.json
-    rm -f /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf
-    rm -f /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/locked_users.db /etc/wibutunnel/user_usage.db
-    rm -f /etc/xray/domain
+    # Validasi config hasil ekstrak SEBELUM menyentuh data lama
+    if ! xray -test -config "${BACKUP_DIR}/restore-tmp/usr/local/etc/xray/config.json" >/dev/null 2>&1; then
+        echo -e "${RED}[!] config.json di dalam backup tidak valid. Data lama AMAN.${NC}"
+        rm -rf "${BACKUP_DIR}/restore-tmp" "${BACKUP_DIR}/restore.zip"
+        read -p "Tekan Enter..." dummy
+        return
+    fi
 
+    echo -e "${GREEN}[+] Backup valid. Mengembalikan data...${NC}"
     cp -a "${BACKUP_DIR}/restore-tmp/usr/local/etc/xray/config.json" /usr/local/etc/xray/ 2>/dev/null
     cp -a "${BACKUP_DIR}/restore-tmp/etc/xray/"*.conf /etc/xray/ 2>/dev/null
     cp -a "${BACKUP_DIR}/restore-tmp/etc/wibutunnel/"*.db /etc/wibutunnel/ 2>/dev/null
