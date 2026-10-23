@@ -168,6 +168,10 @@ echo "$domain" > /root/domain
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
 echo "4.0 Kurumi" > /etc/wibutunnel/version
 
+# Lock duration config (dipakai algojo-wibu & m-setting)
+[[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
+chmod 600 /etc/wibutunnel/lock.conf
+
 # Dummy users
 echo "dummy-tls:Lifetime" > /etc/xray/vless_exp.conf
 echo "dummy-ntls:Lifetime" >> /etc/xray/vless_exp.conf
