@@ -178,7 +178,7 @@ case $sub_setting in
         safe_update "common.sh"
         
         dos2unix /usr/local/bin/* >/dev/null 2>&1
-        systemctl restart wibutunnel-bot >/dev/null 2>&1
+        systemctl restart telegram-bot >/dev/null 2>&1
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
