@@ -56,11 +56,11 @@ while read -r line; do
                     .inbounds[1].settings.clients |= map(select(.email != $u)) |
                     .inbounds[2].settings.clients |= map(select(.email != $u)) |
                     .inbounds[3].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[4].settings.clients |= map(select(.id != $u)) |
+                    .inbounds[4].settings.clients |= map(select(.email != $u)) |
                     .inbounds[5].settings.clients |= map(select(.email != $u)) |
                     .inbounds[6].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[7].settings.clients |= map(select(.password != $u)) |
-                    .inbounds[8].settings.clients |= map(select(.password != $u)) |
+                    .inbounds[7].settings.clients |= map(select(.email != $u)) |
+                    .inbounds[8].settings.clients |= map(select(.email != $u)) |
                     (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
                 '
                 safe_sed_delete "$user" /etc/xray/vless_exp.conf
