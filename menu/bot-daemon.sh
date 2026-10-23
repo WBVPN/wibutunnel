@@ -615,13 +615,15 @@ check_login() {
     THRESH=$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')
     LOGIN_DATA=$(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]", " : "") ip; counts[email]++ } } } } END { for (e in ips) print e "|" counts[e] "|" ips[e] }' <(tac "$LOG_FILE" 2>/dev/null) 2>/dev/null)
 
+    local back_cb="menu_${target_proto,,}"
+    [[ "$target_proto" == "ALL" || -z "$target_proto" ]] && back_cb="menu_system"
+    local kb='{"inline_keyboard":[[{"text":"🔙 Back","callback_data":"'"${back_cb}"'"}]]}'
+
     if [[ -z "$LOGIN_DATA" ]]; then
         local msg="<b>ONLINE USERS (LIVE)</b>\n━━━━━━━━━━━━━━━━━━━━\n<i>Saat ini tidak ada user yang aktif.</i>\n━━━━━━━━━━━━━━━━━━━━"
-        local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
         send_msg "$msg" "$kb"
     else
         LOG_MSG=$(format_online_users "$LOGIN_DATA" "$target_proto")
-        local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
         send_msg "$LOG_MSG" "$kb"
     fi
 }
@@ -739,6 +741,8 @@ while true; do
             
             is_admin "$SENDER_ID" || { OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue; }
             
+            rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
+
             if [[ "$DATA" == "main_menu" ]]; then
                 show_main_menu "$SENDER_ID" "$MSG_ID"
             elif [[ "$DATA" == menu_* ]]; then
