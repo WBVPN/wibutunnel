@@ -771,7 +771,7 @@ while true; do
                                 [[ $idx -gt 10 ]] && break
                             done < <(awk -F':' '{ if ($1 ~ /^(vless|vmess|trojan)-(ws|grpc)-(tls|ntls)$/ || $1 ~ /^(vless|vmess|trojan)-grpc$/ || $1 == "api" || $1 == "direct" || $1 == "blocked") next; down=($2=="null"||$2=="")?0:$2; up=($3=="null"||$3=="")?0:$3; print (down+up)":"$1 }' /etc/wibutunnel/user_usage.db 2>/dev/null | sort -t: -k1 -nr)
                             TRF_MSG+="━━━━━━━━━━━━━━━━━━━━"
-                            local kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
+                            kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
                             send_msg "$TRF_MSG" "$kb"
                         else
                             send_msg "📊 <b>Belum ada data trafik pemakaian.</b>" '{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
@@ -785,7 +785,7 @@ while true; do
                         DISK=$(df -h / | awk 'NR==2 {print $3" / "$2" ("$5")"}')
                         OS=$(cat /etc/os-release | grep -w PRETTY_NAME | cut -d= -f2 | tr -d '"')
                         INFO_MSG="💻 <b>INFORMASI VPS SERVER</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>🖥 OS     :</b> <code>${OS}</code>\n<b>🌐 IP     :</b> <code>${IP}</code>\n<b>⏱ Uptime :</b> <code>${UPTIME}</code>\n<b>🧠 RAM    :</b> <code>${RAM}</code>\n<b>⚡️ CPU    :</b> <code>${CPU}%</code>\n<b>💾 Disk   :</b> <code>${DISK}</code>\n━━━━━━━━━━━━━━━━━━━━"
-                        local kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
+                        kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
                         send_msg "$INFO_MSG" "$kb"
                         ;;
                     backup)
