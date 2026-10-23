@@ -1,168 +1,189 @@
-# 🦋 WIBU TUNNELING v4.0 Kurumi 🦋
+# 🦋 WIBU TUNNELING v4.0
 
-[![Version](https://img.shields.io/badge/Version-v4.0_Kurumi_Patched-blue.svg?style=for-the-badge&logo=appveyor)](https://github.com/WBVPN/wibutunnel)
-[![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg?style=for-the-badge&logo=ubuntu)](https://github.com/WBVPN/wibutunnel)
-[![Status](https://img.shields.io/badge/Status-Stable%20%26%20Secure-success.svg?style=for-the-badge&logo=checkmarx)](https://github.com/WBVPN/wibutunnel)
+**Auto-install VPN script** berbasis Xray dengan Telegram bot monitoring. Satu command, VPN langsung jalan.
 
-**Ultimate Xray VPN Auto Script** dengan arsitektur paling ringan dan mutakhir. Dibangun khusus untuk memberikan performa maksimal pada VPS dengan perlindungan keamanan, manajemen memori tingkat lanjut, dan sistem limit otomatis (Algojo). Edisi spesial **Kurumi** 💜.
-
----
-
-## 🔐 Security Patch & Bug Fix (Latest)
-
-| Kategori | Perbaikan |
-| :--- | :--- |
-| 🛡️ **Race Condition** | Semua akses ke `config.json` kini melalui `flock` via `safe_jq_edit()` — mencegah data user hilang saat proses paralel |
-| 🛡️ **Webhook Auth** | Telegram webhook dilindungi `X-Telegram-Bot-Api-Secret-Token` — cegah eksekusi command dari pihak luar |
-| 🛡️ **IP Guard** | Pengecekan `MYIP` kosong di `common.sh` — cegah bypass lisensi saat curl gagal |
-| 🔧 **Temp File Collision** | `algojo-wibu` & `algojo-kuota` pakai `mktemp` unik — tidak lagi saling timpa di `/tmp/xray.json` |
-| 🔧 **Lock/Unlock Menu** | User yang terkunci kini tetap muncul di menu Lock/Unlock — admin bisa unlock langsung |
-| 🔧 **Escape Functions** | `escape_sed()` & `escape_grep()` diperbaiki — user dengan titik (`.`) tidak salah match |
-| 🔧 **sed → grep -v** | Semua `sed -i` dengan variabel user diganti `safe_sed_delete()` (fixed string match) |
-| 🔧 **Uninstall Lengkap** | `uninstall.sh` membersihkan wibu-daemon, systemd overrides, logrotate, cron, `.profile` |
-| 🔧 **Logrotate** | Berjalan sebagai `nobody:nogroup` dengan `create 0644` — permission aman untuk Xray |
-| 🔧 **Config Permission** | `chmod 644` otomatis setelah setiap edit `config.json` — Xray (nobody) selalu bisa baca |
-| 🔧 **Setup.sh Cleanup** | Heredoc lama dihapus, sbin scripts di-download dari repo (source of truth) |
+[![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)](https://github.com/WBVPN/wibutunnel)
+[![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)](https://github.com/WBVPN/wibutunnel)
 
 ---
 
-## ✨ Fitur Unggulan
+## ✨ Fitur Utama
 
-🚀 **100% Zero Disk I/O (RAM Disk Logging)**
-Seluruh aktivitas log Xray diproses di RAM (`tmpfs`) — VPS super cepat dan kebal I/O wait.
-
-🧠 **Otak Algojo Generasi Baru (Awk Engine V4 + Tac)**
-Deteksi multilogin real-time via log terbalik (`tac`) dengan early exit AWK. Akurat 100% meski ribuan user aktif bersamaan.
-
-🛡️ **Anti URL-Encoding (100% Koneksi Sukses)**
-HAProxy kebal terhadap error copy-paste link klien (`%2F`, spasi, dll). Routing selalu sampai tanpa 503.
-
-🔄 **Sistem Recovery Cerdas**
-User limit/expired masuk "Ruang Recovery" (akses diblokir, bukan dihapus). Perpanjang → Unlock → langsung konek tanpa ganti link!
-
-🤖 **Bot Telegram Super Admin**
-Create, Renew, Delete, Lock, Cek Trafik, Cek Login — semua dari chat Telegram dengan layout premium.
-
-🚫 **Auto IPv6 Disabler**
-IPv6 otomatis mati via sysctl & GRUB. Kebal error `apt update` dan routing conflict.
-
-🔒 **Atomic Config Editing**
-Semua operasi edit `config.json` dilindungi file locking (`flock`) — aman dari race condition walau algojo, xp.sh, dan admin edit bersamaan.
+- **3 Protokol**: VLESS, VMESS, TROJAN (WS-TLS, WS-NTLS, gRPC)
+- **Telegram Bot**: Buat/hapus akun, cek login, backup, semua dari HP
+- **Auto Limit**: Kuota habis/expired = auto lock/delete
+- **IP Tracking**: Deteksi multi-device login real-time
+- **Trial Account**: Hardcoded 1 jam, auto-delete setelah expire/habis kuota
+- **HAProxy + Xray**: Port 80/443 langsung aktif
+- **Auto SSL**: Let's Encrypt via certbot, auto-renew
 
 ---
 
-## 📦 Protokol yang Didukung
-
-| Protokol | Transport |
-| :--- | :--- |
-| **VLESS** | WebSocket TLS, WebSocket Non-TLS, gRPC |
-| **VMESS** | WebSocket TLS, WebSocket Non-TLS, gRPC |
-| **TROJAN** | WebSocket TLS, gRPC |
-
----
-
-## 🔑 Sistem Lisensi & Registrasi IP
-
-Script ini menggunakan sistem lisensi berbasis IP VPS. IP yang diizinkan didaftarkan langsung di file `izin.txt` dalam repository.
-
-**Format `izin.txt`:**
-```
-### USERNAME EXPIRY_DATE IP_ADDRESS
-### WBVPN lifetime 103.123.45.67
-### DEMO_USER 2027-12-31 198.51.100.42
-```
-
-**Cara mendaftarkan IP Anda:**
-1. Fork repository ini dan tambahkan IP Anda ke `izin.txt`
-2. Atau hubungi admin untuk registrasi IP (lihat bagian Support di bawah)
-3. Format: `### USERNAME EXPIRY_DATE IP_ADDRESS`
-4. Expiry date: gunakan `lifetime` untuk tanpa batas, atau format `YYYY-MM-DD`
-
----
-
-## ⚡ Instalasi Cepat (1-Click)
+## 🚀 Instalasi (Fresh VPS)
 
 ```bash
-apt update -y && apt install -y curl wget && bash <(curl -s https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh)
+# 1. Ambil domain dulu (A record ke IP VPS)
+# 2. Login VPS sebagai root
+# 3. Jalankan:
+
+apt update && apt install -y wget curl
+wget -O setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
+bash setup.sh
 ```
 
-> **Syarat:** VPS Ubuntu/Debian fresh (baru rebuild). Jalankan sebagai `root`.
+**Butuh:**
+- Ubuntu 20.04+ atau Debian 11+
+- Domain aktif (untuk SSL)
+- VPS minimal 1 CPU / 512 MB RAM
+
+Setup nanya domain, Telegram bot token, dan chat ID — sisanya otomatis.
 
 ---
 
-## 📋 Daftar Menu
+## 📱 Telegram Bot
 
-| Menu | Fitur |
-| :--- | :--- |
-| **Kelola VLESS** | Create, Delete, Renew, Trial, Limit IP, Limit Kuota |
-| **Kelola VMESS** | Create, Delete, Renew, Trial, Limit IP, Limit Kuota |
-| **Kelola TROJAN** | Create, Delete, Renew, Trial, Limit IP, Limit Kuota |
-| **Recovery Center** | Lock, Unlock, Reaktivasi, Hapus Permanen |
-| **Cek Trafik** | Monitor Real-Time IP & Bandwidth per user |
-| **Settings** | Bot Telegram, Auto Reboot, Auto Backup, Speedtest |
-| **Backup & Restore** | Backup/Restore via Telegram (File ID / Path) |
+Setup otomatis install bot polling. **Token & Chat ID wajib** diisi waktu install.
+
+**Menu utama:**
+- `VLESS / VMESS / TROJAN` → Buat, hapus, renew, cek login
+- `SYSTEM` → Cek trafik global, info VPS, backup
+
+**Trial account:**  
+Format user `trial-xxxx` otomatis dapat 1 jam + 1 GB. Expired/habis = auto-delete + notif Telegram.
 
 ---
 
-## 📁 Struktur File
+## 🔧 Manajemen
 
-```
-wibutunnel/
-├── setup.sh              # Master installer
-├── common.sh             # Shared functions (flock, sanitize, license)
-├── uninstall.sh          # Clean uninstaller
-├── izin.txt              # License database
-├── config/
-│   ├── config.json       # Xray config template
-│   └── haproxy.cfg       # HAProxy config template
-├── menu/
-│   ├── menu.sh           # Dashboard utama
-│   ├── m-vless.sh        # Kelola VLESS
-│   ├── m-vmess.sh        # Kelola VMESS
-│   ├── m-trojan.sh       # Kelola TROJAN
-│   ├── m-setting.sh      # Pengaturan server
-│   ├── m-backup.sh       # Backup & Restore
-│   ├── menu-recovery.sh  # Recovery Center
-│   ├── menu-unlock.sh    # Unlock user
-│   ├── menu-lock.sh      # Lock user
-│   ├── xp.sh             # Auto expiry checker (cron)
-│   ├── cek-trafik.sh     # Monitor trafik real-time
-│   ├── bot-daemon.sh     # Telegram bot handler
-│   └── bot-webhook.sh    # Webhook receiver (authenticated)
-├── sbin/
-│   ├── algojo-wibu       # Auto IP limit enforcer
-│   ├── algojo-kuota      # Auto bandwidth limit enforcer
-│   ├── lock-user         # Lock user ke blocked routing
-│   ├── unlock-user       # Unlock user dari blocked routing
-│   └── unlocker-wibu     # Auto unlock scheduler
-└── etcwibutunnel/
-    └── lock.conf         # Lock duration config
+**SSH Menu:**
+```bash
+menu              # Menu utama
+m-vless           # Kelola VLESS
+m-vmess           # Kelola VMESS
+m-trojan          # Kelola TROJAN
+m-setting         # Update script, restart, setting bot
+m-backup          # Backup/restore manual
 ```
 
+**Service:**
+```bash
+systemctl status xray telegram-bot wibu-daemon algojo-expired
+journalctl -u telegram-bot -f   # Log bot real-time
+```
+
+**Lokasi file:**
+- Config: `/usr/local/etc/xray/config.json`
+- Expiry: `/etc/xray/{vless,vmess,trojan}_exp.conf`
+- Limit: `/etc/wibutunnel/limit_ip.db`, `limit_bw.db`
+- Log: `/var/log/xray/access.log`, `error.log`
+
 ---
 
-## 🤖 Cara Mengaktifkan Bot Telegram
+## 🛡️ Limit & Enforcement
 
-1. Buka Telegram → cari **@BotFather** → `/newbot`
-2. Dapatkan **HTTP API Token**
-3. Dapatkan **Chat ID** via @userinfobot
-4. Di VPS: `menu` → **Settings** → **Setup Bot Telegram**
-5. Masukkan Token & Chat ID → Bot aktif 24/7!
+| Daemon | Fungsi | Interval |
+|--------|--------|----------|
+| `algojo-wibu` | Limit IP | 60 detik |
+| `algojo-kuota` | Limit bandwidth | 60 detik |
+| `algojo-expired` | Delete expired | 5 detik |
+
+User yang kena limit = auto-lock 15 menit, lalu unlock otomatis. Trial yang kena = langsung dihapus permanen.
+
+**Lock config:** `/etc/wibutunnel/lock.conf` → ubah `LOCK_DURATION=15` (dalam menit)
 
 ---
 
-## 🗑️ Uninstall (Hapus Bersih)
+## 🔄 Update
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh)
+m-setting → [5] Update Script
+# Download versi terbaru dari GitHub, overwrite file lokal, restart service
+```
+
+Atau manual:
+```bash
+cd /root/wibutunnel-repo
+git pull origin main
+bash setup.sh    # Re-run setup (aman, tidak hapus data user)
 ```
 
 ---
 
-## 📞 Support & Kontak
+## 🗑️ Uninstall
 
-- **WhatsApp** : [087757315408](https://wa.me/6287757315408)
-- **Telegram** : [t.me/wibuvpn](https://t.me/wibuvpn)
+```bash
+cd /root/wibutunnel-repo
+bash uninstall.sh
+```
 
-> **Developed by WIBU TUNNELING Team**
-> **Versi:** v4.0 Kurumi Patched (2026)
+Hapus semua: xray, haproxy, bot, daemon, cron, service. **Backup disimpan** di `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum dihapus.
+
+---
+
+## 📊 Port & Protocol
+
+| Port | Protocol | Path |
+|------|----------|------|
+| 443 | VLESS WS-TLS | `/vless` |
+| 80 | VLESS WS-NTLS | `/vless-ntls` |
+| 443 | VLESS gRPC | `vless` |
+| 443 | VMESS WS-TLS | `/vmess` |
+| 80 | VMESS WS-NTLS | `/vmess-ntls` |
+| 443 | VMESS gRPC | `vmess` |
+| 443 | TROJAN WS-TLS | `/trojan` |
+| 443 | TROJAN gRPC | `trojan` |
+
+HAProxy listen di 80/443, forward ke Xray di 10086-10092.
+
+---
+
+## 🐛 Troubleshooting
+
+**Bot tidak respon:**
+```bash
+systemctl status telegram-bot
+journalctl -u telegram-bot --since "5 minutes ago"
+```
+
+**User tidak bisa konek:**
+```bash
+systemctl status xray
+xray -test -config /usr/local/etc/xray/config.json
+tail -50 /var/log/xray/error.log
+```
+
+**Limit IP tidak jalan:**
+- Cek `/var/log/xray/access.log` ada isi koneksi user (bukan cuma `[api -> api]`)
+- Cek log level: `jq '.log.loglevel' /usr/local/etc/xray/config.json` harus `"info"`
+
+**Trial tidak auto-delete:**
+```bash
+systemctl status algojo-expired
+journalctl -u algojo-expired --since "1 minute ago"
+```
+
+---
+
+## 📝 Changelog (v4.0 Latest)
+
+- ✅ Fix repo drift `algojo-expired` (trial notif hilang di fresh install)
+- ✅ Daemon `algojo-expired` kirim notif Telegram pas trial expire
+- ✅ `uninstall.sh` stop semua service + backup file sebelum hapus
+- ✅ `setup.sh` syntax-check script sebelum install (cegah install broken)
+- ✅ Bot state file auto-clear setiap callback (fix stale command)
+- ✅ Bot abort create/delete kalau `jq` edit config gagal (no zombie account)
+- ✅ Xray log level `"info"` (default dulu `"warning"` → IP tracking mati)
+
+---
+
+## 📄 License
+
+MIT — bebas pakai, modif, distribusi. Tapi **tidak ada garansi** — use at your own risk.
+
+**Support:**
+- 🐛 Issues: [GitHub Issues](https://github.com/WBVPN/wibutunnel/issues)
+- 💬 Telegram: [@wibuvpn](https://t.me/wibuvpn)
+
+---
+
+Made with 💜 by **WBVPN**
