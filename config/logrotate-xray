@@ -1,0 +1,14 @@
+/var/log/xray/*.log {
+    su xray xray
+    create 0644 xray xray
+    daily
+    rotate 3
+    size 10M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    postrotate
+        systemctl restart xray > /dev/null 2>&1
+    endscript
+}
