@@ -80,7 +80,7 @@ format_online_users() {
     PROTO_MAP=$(jq -r '
         .inbounds | to_entries[] |
         .key as $i | (.value.settings.clients[]? | (.email // .password // empty)) as $u |
-        ($i | if . <= 2 then "VLESS" elif . <= 5 then "VMESS" elif . <= 7 then "TROJAN" else "?" end) as $p |
+        ($i | if . < 1 then "?" elif . <= 3 then "VLESS" elif . <= 6 then "VMESS" elif . <= 8 then "TROJAN" else "?" end) as $p |
         "\($u)|\($p)"' "$CONFIG_FILE" 2>/dev/null | awk -F"|" '!seen[$1]++')
 
     while IFS="|" read -r usr count iplist; do
