@@ -74,12 +74,24 @@ format_online_users() {
     local MSG="<b>ONLINE USERS (LIVE)</b>\n━━━━━━━━━━━━━━━━━━━━\n"
     local count_users=0
 
+    # proto diambil dari config.json (sumber kebenaran), bukan exp file:
+    # baris flag recovery di exp file bisa menipu deteksi bila nama user dipakai ulang di proto lain.
+    local PROTO_MAP
+    PROTO_MAP=$(jq -r '
+        .inbounds | to_entries[] |
+        .key as $i | (.value.settings.clients[]? | (.email // .password // empty)) as $u |
+        ($i | if . <= 2 then "VLESS" elif . <= 5 then "VMESS" elif . <= 7 then "TROJAN" else "?" end) as $p |
+        "\($u)|\($p)"' "$CONFIG_FILE" 2>/dev/null | awk -F"|" '!seen[$1]++')
+
     while IFS="|" read -r usr count iplist; do
         local proto=""
-        if grep -q "^${usr}:" /etc/xray/vless_exp.conf 2>/dev/null; then proto="VLESS"
-        elif grep -q "^${usr}:" /etc/xray/vmess_exp.conf 2>/dev/null; then proto="VMESS"
-        elif grep -q "^${usr}:" /etc/xray/trojan_exp.conf 2>/dev/null; then proto="TROJAN"
-        else continue; fi
+        proto=$(awk -F"|" -v u="$usr" '$1==u{print $2; exit}' <<< "$PROTO_MAP")
+        if [[ -z "$proto" ]]; then
+            if grep -q "^${usr}:" /etc/xray/vless_exp.conf 2>/dev/null; then proto="VLESS"
+            elif grep -q "^${usr}:" /etc/xray/vmess_exp.conf 2>/dev/null; then proto="VMESS"
+            elif grep -q "^${usr}:" /etc/xray/trojan_exp.conf 2>/dev/null; then proto="TROJAN"
+            else continue; fi
+        fi
 
         if [[ -n "$target_proto" && "$target_proto" != "ALL" && "$proto" != "$target_proto" ]]; then
             continue
