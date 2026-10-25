@@ -13,6 +13,10 @@ while true; do
         
         while IFS=: read -r user exp_str; do
             [[ -z "$user" || -z "$exp_str" || "$exp_str" == "Lifetime" ]] && continue
+            # Baris flag recovery ditulis sebagai user:<epoch>:0:EXPIRED. IFS=: membuat exp_str
+            # = epoch saja, dan `date -d <epoch>` BERHASIL, sehingga baris itu dianggap expired
+            # lagi setiap tick -> notif + restart xray tak berujung.
+            [[ "$exp_str" =~ ^[0-9]+$ ]] && continue
             
             exp_ts=$(date -d "$exp_str" +%s 2>/dev/null) || continue
             
