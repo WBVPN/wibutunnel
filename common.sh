@@ -134,3 +134,25 @@ sanitize_user() {
 }
 escape_sed() { printf '%s' "$1" | sed 's/[].\/[\\*^$()+?{|]/\\&/g'; }
 escape_grep() { printf '%s' "$1" | sed 's/[].\/[\\*^$()+?{|]/\\&/g'; }
+
+# live_ip_pairs: cetak "user ip ip ..." hanya untuk koneksi yang socket TCP-nya masih hidup.
+# Asosiasi user<->IP diambil dari access.log 10 menit terakhir, liveness dari socket ESTABLISHED :443.
+# ponytail: kalau client lewat CDN/reverse-proxy, IP di ss != IP di log -> user tidak terhitung.
+#           Ganti ke conntrack per-UUID kalau topologi CDN dipakai.
+live_ip_pairs() {
+    local log="/var/log/xray/access.log"
+    local thresh assoc live
+    [[ ! -s "$log" ]] && return 0
+    thresh=$(date -d '10 minutes ago' +'%Y/%m/%d %H:%M:%S')
+    assoc=$(awk -v thresh="$thresh" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; } } } } END { for (e in ips) print e, ips[e] }' <(tac "$log" 2>/dev/null) 2>/dev/null)
+    [[ -z "$assoc" ]] && return 0
+    live=$(ss -Htn state established '( sport = :443 )' 2>/dev/null | awk '{print $4}' | sed -E 's/^\[?([^]]*)\]?:[0-9]+$/\1/' | grep -v '^$' | sort -u)
+    [[ -z "$live" ]] && return 0
+    while read -r email ips; do
+        local kept="" ip
+        for ip in $ips; do
+            grep -qxF "$ip" <<< "$live" && kept="$kept $ip"
+        done
+        [[ -n "$kept" ]] && printf '%s%s\n' "$email" "$kept"
+    done <<< "$assoc"
+}
