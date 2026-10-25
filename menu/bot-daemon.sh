@@ -777,8 +777,11 @@ while true; do
                         if [[ -s "/etc/wibutunnel/user_usage.db" ]]; then
                             TRF_MSG="📊 <b>TOP 10 PEMAKAIAN QUOTA</b>\n━━━━━━━━━━━━━━━━━━━━\n"
                             idx=1
+                            ACTIVE_USERS=$(jq -r '[.inbounds[].settings.clients[]? | (.email // .password // empty)] | .[]' "$CONFIG_FILE" 2>/dev/null)
                             while IFS=":" read -r bytes usr; do
                                 [[ "$bytes" -eq 0 ]] && continue
+                                # akun yang sudah dihapus / masuk recovery tidak boleh tampil
+                                grep -qxF "$usr" <<< "$ACTIVE_USERS" || continue
                                 if [[ "$bytes" -ge 1073741824 ]]; then gb=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b / 1073741824 }'); vol="${gb} GB"
                                 elif [[ "$bytes" -ge 1048576 ]]; then mb=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b / 1048576 }'); vol="${mb} MB"
                                 elif [[ "$bytes" -ge 1024 ]]; then kb=$(awk -v b="$bytes" 'BEGIN { printf "%.2f", b / 1024 }'); vol="${kb} KB"
