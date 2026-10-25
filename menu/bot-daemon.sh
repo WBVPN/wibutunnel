@@ -7,6 +7,7 @@ source /usr/local/bin/common.sh 2>/dev/null
 OFFSET_FILE="/etc/wibutunnel/tmp/bot_offset"
 CONFIG_FILE="/usr/local/etc/xray/config.json"
 
+umask 077   # log & state file tidak boleh world-readable (berisi UUID akun)
 mkdir -p /etc/wibutunnel/tmp
 touch "$OFFSET_FILE"
 

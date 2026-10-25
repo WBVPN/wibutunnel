@@ -239,11 +239,11 @@ if ! grep -q "tmpfs /tmp" /etc/fstab; then
 fi
 
 if ! grep -q "tmpfs /var/log/xray" /etc/fstab; then
-    echo "tmpfs /var/log/xray tmpfs defaults,nosuid,nodev,noexec,mode=0755,uid=65534,gid=65534,size=30M 0 0" >> /etc/fstab
+    echo "tmpfs /var/log/xray tmpfs defaults,nosuid,nodev,noexec,mode=0755,uid=988,gid=988,size=30M 0 0" >> /etc/fstab
     mkdir -p /var/log/xray
     mount /var/log/xray 2>/dev/null || true
 fi
-chown -R nobody:nogroup /var/log/xray
+chown -R xray:xray /var/log/xray
 chmod 755 /var/log/xray
 
 # Anti-Torrent
@@ -646,8 +646,8 @@ systemctl restart algojo-expired.service >/dev/null 2>&1
 # Logrotate & Cron
 cat << 'LREOF' > /etc/logrotate.d/xray
 /var/log/xray/*.log {
-    su nobody nogroup
-    create 0644 nobody nogroup
+    su xray xray
+    create 0644 xray xray
     daily
     rotate 3
     size 10M
