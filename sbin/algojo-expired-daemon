@@ -85,21 +85,20 @@ while true; do
             # Cleanup: delete exp line
             safe_sed_delete "$user" "$proto_file"
             
-            # Trial = delete all DB, Regular = keep limit_ip & limit_bw for restore
+            safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+
+            # Trial = delete all DB, Regular = masuk recovery (keep limit_ip & limit_bw)
             if [[ "$user" == trial-* ]]; then
                 safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
                 safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
                 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
                 rm -f "/etc/wibutunnel/recovery/${user}.json"
             else
-                # Regular: tulis flag EXPIRED ke exp file untuk recovery list
+                # Regular: flag di exp file (proto) + DB_LOCK (daftar menu recovery)
                 now_ts=$(date +%s)
                 echo "${user}:${now_ts}:0:EXPIRED" >> "$proto_file"
-                # limit_ip.db & limit_bw.db TIDAK dihapus (untuk restore)
-                # user_usage.db TIDAK dihapus (histori)
+                echo "${user}:${now_ts}:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
             fi
-            
-            safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
 
             deleted_any="1"
         done < "$proto_file"
