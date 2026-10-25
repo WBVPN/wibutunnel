@@ -246,6 +246,9 @@ fi
 chmod 755 /var/log/xray
 
 # Anti-Torrent
+# Guard idempoten: 25 rule di bawah di-append tanpa flush, jadi re-run setup.sh
+# akan menduplikasi semuanya. Rule pertama dipakai sebagai sentinel.
+if ! iptables -C FORWARD -m string --string "get_peers" --algo bm -j DROP 2>/dev/null; then
 iptables -A FORWARD -m string --string "get_peers" --algo bm -j DROP
 iptables -A FORWARD -m string --string "announce_peer" --algo bm -j DROP
 iptables -A FORWARD -m string --string "find_node" --algo bm -j DROP
@@ -274,6 +277,7 @@ iptables -I INPUT -p tcp --dport 22 -m state --state NEW -m recent --update --se
 iptables -I INPUT -p tcp --dport 443 -m connlimit --connlimit-above 100 -j REJECT --reject-with tcp-reset
 iptables -I INPUT -p tcp --dport 80 -m connlimit --connlimit-above 100 -j REJECT --reject-with tcp-reset
 
+fi   # end iptables idempotency guard
 iptables-save > /etc/iptables/rules.v4
 # QoS
 cat > /usr/local/sbin/network-tune.sh << 'EOF'
