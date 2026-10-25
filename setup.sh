@@ -243,9 +243,7 @@ if ! grep -q "tmpfs /var/log/xray" /etc/fstab; then
     mkdir -p /var/log/xray
     mount /var/log/xray 2>/dev/null || true
 fi
-chown -R xray:xray /var/log/xray
 chmod 755 /var/log/xray
-echo 'd /var/log/xray 0755 xray xray -' > /etc/tmpfiles.d/xray.conf
 
 # Anti-Torrent
 iptables -A FORWARD -m string --string "get_peers" --algo bm -j DROP
@@ -327,6 +325,9 @@ cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain
 
 # XRAY CORE
 curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install
+# user xray baru ada setelah install-release.sh di atas
+chown -R xray:xray /var/log/xray
+echo 'd /var/log/xray 0755 xray xray -' > /etc/tmpfiles.d/xray.conf
 
 # Backup config lama
 [ -f /usr/local/etc/xray/config.json ] && cp /usr/local/etc/xray/config.json "/usr/local/etc/xray/config.json.bak.$(date +%F_%H%M%S)"
