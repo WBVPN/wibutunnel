@@ -523,19 +523,23 @@ download_menu() {
     return 0
 }
 
-download_menu "menu/menu.sh" "menu"
-download_menu "menu/m-vless.sh" "m-vless"
-download_menu "menu/m-vmess.sh" "m-vmess"
-download_menu "menu/m-trojan.sh" "m-trojan"
-download_menu "menu/m-setting.sh" "m-setting"
-download_menu "menu/xp.sh" "xp"
-download_menu "menu/m-backup.sh" "m-backup"
-download_menu "menu/menu-lock.sh" "menu-lock"
-download_menu "menu/menu-unlock.sh" "menu-unlock"
-download_menu "menu/menu-recovery.sh" "menu-recovery"
-download_menu "menu/cek-trafik.sh" "cek-trafik"
-download_menu "common.sh" "common.sh"
-download_menu "menu/bot-daemon.sh" "bot-daemon"
+# download_menu mengembalikan 1 bila gagal; tanpa cek, instalasi lanjut dengan file hilang.
+_dl_fail=0
+_need() { download_menu "$1" "$2" || { echo -e "\e[31m[!] Gagal install $2\e[0m"; _dl_fail=1; }; }
+
+_need "menu/menu.sh" "menu"
+_need "menu/m-vless.sh" "m-vless"
+_need "menu/m-vmess.sh" "m-vmess"
+_need "menu/m-trojan.sh" "m-trojan"
+_need "menu/m-setting.sh" "m-setting"
+_need "menu/xp.sh" "xp"
+_need "menu/m-backup.sh" "m-backup"
+_need "menu/menu-lock.sh" "menu-lock"
+_need "menu/menu-unlock.sh" "menu-unlock"
+_need "menu/menu-recovery.sh" "menu-recovery"
+_need "menu/cek-trafik.sh" "cek-trafik"
+_need "common.sh" "common.sh"
+_need "menu/bot-daemon.sh" "bot-daemon"
 
 
 # =========================================================
@@ -547,13 +551,13 @@ chmod 600 /etc/wibutunnel/*.db
 
 # Scripts lock-user, unlock-user, algojo, unlocker diunduh dari repo (versi patched)
 # Download sbin scripts (source of truth — patched versions)
-download_menu "sbin/algojo-wibu" "algojo-wibu-dl"
-download_menu "sbin/algojo-kuota" "algojo-kuota-dl"
-download_menu "sbin/lock-user" "lock-user-dl"
-download_menu "sbin/unlock-user" "unlock-user-dl"
-download_menu "sbin/unlocker-wibu" "unlocker-wibu-dl"
-download_menu "sbin/algojo-expired" "algojo-expired-dl"
-download_menu "sbin/algojo-expired-daemon" "algojo-expired-daemon"
+_need "sbin/algojo-wibu" "algojo-wibu-dl"
+_need "sbin/algojo-kuota" "algojo-kuota-dl"
+_need "sbin/lock-user" "lock-user-dl"
+_need "sbin/unlock-user" "unlock-user-dl"
+_need "sbin/unlocker-wibu" "unlocker-wibu-dl"
+_need "sbin/algojo-expired" "algojo-expired-dl"
+_need "sbin/algojo-expired-daemon" "algojo-expired-daemon"
 
 # Install sbin scripts
 for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu algojo-expired; do
@@ -570,6 +574,25 @@ for s in lock-user unlock-user; do
     fi
 done
 
+
+# BOT TELEGRAM CONFIG
+# setup.sh sebelumnya tidak pernah menulis bot.conf, jadi telegram-bot start tanpa token
+# dan getUpdates gagal sampai admin menjalankan m-setting [6] secara manual.
+if [[ ! -s /etc/wibutunnel/bot.conf ]]; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  KONFIGURASI BOT TELEGRAM (opsional, Enter untuk lewati)"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    read -r -p "Bot Token (dari @BotFather): " _bt
+    read -r -p "Chat ID admin (dari @userinfobot): " _bc
+    if [[ -n "$_bt" && -n "$_bc" ]]; then
+        printf 'BOT_TOKEN=%s\nCHAT_ID=%s\n' "$_bt" "$_bc" > /etc/wibutunnel/bot.conf
+        chmod 600 /etc/wibutunnel/bot.conf
+        echo -e "\e[1;32m[+] bot.conf tersimpan\e[0m"
+    else
+        echo -e "\e[1;33m[!] Dilewati. Aktifkan nanti: menu -> Settings -> Setup Bot Telegram\e[0m"
+    fi
+fi
 
 # WIBU DAEMON
 cat << 'WDEOF' > /usr/local/bin/wibu-daemon
@@ -747,6 +770,12 @@ haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1 && echo -e "HAProxy Confi
 [ -f /etc/haproxy/certs/$domain.pem ] && echo -e "SSL Certificate     : \e[32m[OK]\e[0m" || echo -e "SSL Certificate     : \e[31m[FAIL]\e[0m"
 ss -tlnp | grep -q ":10085" && echo -e "Xray API (10085)    : \e[32m[OK]\e[0m" || echo -e "Xray API (10085)    : \e[33m[WARNING]\e[0m"
 systemctl is-active --quiet wibu-daemon && echo -e "Algojo Daemon       : \e[32m[OK]\e[0m" || echo -e "Algojo Daemon       : \e[31m[FAIL]\e[0m"
+
+if [[ "${_dl_fail:-0}" == "1" ]]; then
+    echo -e "\e[1;31m[!] Ada file yang gagal diunduh. Instalasi TIDAK lengkap.\e[0m"
+    echo -e "\e[1;33m    Perbaiki koneksi lalu jalankan ulang setup.sh, atau pakai m-setting [5].\e[0m"
+    exit 1
+fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "    INSTALASI SELESAI! REBOOT DALAM 8 DETIK...    "
