@@ -140,19 +140,15 @@ escape_grep() { printf '%s' "$1" | sed 's/[].\/[\\*^$()+?{|]/\\&/g'; }
 # ponytail: kalau client lewat CDN/reverse-proxy, IP di ss != IP di log -> user tidak terhitung.
 #           Ganti ke conntrack per-UUID kalau topologi CDN dipakai.
 live_ip_pairs() {
+    # IP diambil dari access.log (xray melihat IP asli via PROXY protocol).
+    # ponytail: liveness murni dari log, jadi device yang idle lebih lama dari jendela ini
+    #           akan lepas dari hitungan walau socket-nya masih terbuka. Alternatif `ss`/conntrack
+    #           TIDAK dipakai: pada box ini peer :80/:443 berisi IP Cloudflare, bukan IP client,
+    #           sehingga filter socket membuang semua user nyata. Upgrade path: ekspos jumlah
+    #           koneksi aktif per-user dari xray (butuh fork/plugin), bukan dari ss.
     local log="/var/log/xray/access.log"
-    local thresh assoc live
+    local thresh
     [[ ! -s "$log" ]] && return 0
-    thresh=$(date -d '10 minutes ago' +'%Y/%m/%d %H:%M:%S')
-    assoc=$(awk -v thresh="$thresh" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; } } } } END { for (e in ips) print e, ips[e] }' <(tac "$log" 2>/dev/null) 2>/dev/null)
-    [[ -z "$assoc" ]] && return 0
-    live=$(ss -Htn state established '( sport = :443 )' 2>/dev/null | awk '{print $4}' | sed -E 's/^\[?([^]]*)\]?:[0-9]+$/\1/' | grep -v '^$' | sort -u)
-    [[ -z "$live" ]] && return 0
-    while read -r email ips; do
-        local kept="" ip
-        for ip in $ips; do
-            grep -qxF "$ip" <<< "$live" && kept="$kept $ip"
-        done
-        [[ -n "$kept" ]] && printf '%s%s\n' "$email" "$kept"
-    done <<< "$assoc"
+    thresh=$(date -d "${LIVE_IP_WINDOW:-120 seconds} ago" +'%Y/%m/%d %H:%M:%S')
+    awk -v thresh="$thresh" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; } } } } END { for (e in ips) print e, ips[e] }' <(tac "$log" 2>/dev/null) 2>/dev/null
 }
