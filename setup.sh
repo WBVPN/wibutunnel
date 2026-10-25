@@ -239,12 +239,13 @@ if ! grep -q "tmpfs /tmp" /etc/fstab; then
 fi
 
 if ! grep -q "tmpfs /var/log/xray" /etc/fstab; then
-    echo "tmpfs /var/log/xray tmpfs defaults,nosuid,nodev,noexec,mode=0755,uid=988,gid=988,size=30M 0 0" >> /etc/fstab
+    echo "tmpfs /var/log/xray tmpfs defaults,nosuid,nodev,noexec,mode=0755,size=100M 0 0" >> /etc/fstab
     mkdir -p /var/log/xray
     mount /var/log/xray 2>/dev/null || true
 fi
 chown -R xray:xray /var/log/xray
 chmod 755 /var/log/xray
+echo 'd /var/log/xray 0755 xray xray -' > /etc/tmpfiles.d/xray.conf
 
 # Anti-Torrent
 iptables -A FORWARD -m string --string "get_peers" --algo bm -j DROP
