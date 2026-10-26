@@ -143,6 +143,27 @@ safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db; echo "${user}:${bw_baru}" >
 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
 safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
+# Send account details to Telegram
+echo -e "\n ${GREEN}BERHASIL! Akun ${user} telah aktif kembali.${NC}"
+[[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]] && echo -e " ${CYAN}Detail akun dikirim ke Telegram.${NC}"
+if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+    domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+    if [[ "$proto" == "VLESS" ]]; then
+        uuid=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' /etc/xray/config.json 2>/dev/null | head -n1)
+        link="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&host=${domain}&type=ws&sni=${domain}#${user}"
+        PESAN="<b>✅ VLESS RECOVERY</b>%0A━━━━━━━━━━━━━━━━━━━━%0A<b>User:</b> <code>${user}</code>%0A<b>Domain:</b> <code>${domain}</code>%0A<b>UUID:</b> <code>${uuid}</code>%0A<b>Expired:</b> <code>${new_exp}</code>%0A<b>IP Limit:</b> <code>${ip_baru}</code>%0A<b>BW Limit:</b> <code>${bw_baru} GB</code>%0A━━━━━━━━━━━━━━━━━━━━%0A<code>${link}</code>"
+    elif [[ "$proto" == "VMESS" ]]; then
+        uuid=$(jq -r --arg u "$user" '.inbounds[4].settings.clients[]? | select(.email == $u) | .id' /etc/xray/config.json 2>/dev/null | head -n1)
+        link="vmess://$(echo -n '{"add":"'${domain}'","aid":"0","host":"'${domain}'","id":"'${uuid}'","net":"ws","path":"/vmess","port":"443","ps":"'${user}'","scy":"auto","sni":"'${domain}'","tls":"tls","type":"none","v":"2"}' | base64 -w0)"
+        PESAN="<b>✅ VMESS RECOVERY</b>%0A━━━━━━━━━━━━━━━━━━━━%0A<b>User:</b> <code>${user}</code>%0A<b>Domain:</b> <code>${domain}</code>%0A<b>UUID:</b> <code>${uuid}</code>%0A<b>Expired:</b> <code>${new_exp}</code>%0A<b>IP Limit:</b> <code>${ip_baru}</code>%0A<b>BW Limit:</b> <code>${bw_baru} GB</code>%0A━━━━━━━━━━━━━━━━━━━━%0A<code>${link}</code>"
+    elif [[ "$proto" == "TROJAN" ]]; then
+        password=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[]? | select(.email == $u) | .password' /etc/xray/config.json 2>/dev/null | head -n1)
+        link="trojan://${password}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
+        PESAN="<b>✅ TROJAN RECOVERY</b>%0A━━━━━━━━━━━━━━━━━━━━%0A<b>User:</b> <code>${user}</code>%0A<b>Domain:</b> <code>${domain}</code>%0A<b>Password:</b> <code>${password}</code>%0A<b>Expired:</b> <code>${new_exp}</code>%0A<b>IP Limit:</b> <code>${ip_baru}</code>%0A<b>BW Limit:</b> <code>${bw_baru} GB</code>%0A━━━━━━━━━━━━━━━━━━━━%0A<code>${link}</code>"
+    fi
+    curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage?chat_id=${CHAT_ID}&parse_mode=html&text=${PESAN}" >/dev/null 2>&1 &
+fi
+
 safe_sed_delete "$user" /etc/wibutunnel/locked_users.db; systemctl restart xray >/dev/null 2>&1
 
 echo -e "\n ${GREEN}BERHASIL! Akun ${user} telah aktif kembali.${NC}"
