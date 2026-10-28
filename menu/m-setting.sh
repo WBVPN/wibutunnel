@@ -91,22 +91,37 @@ case $sub_setting in
         ;;
     3)
         clear; echo -e "$LINE"; echo -e "            ${WHITE}SPEEDTEST VPS${NC}"; echo -e "$LINE"
-        # Install Ookla Speedtest CLI (binary langsung)
-        if ! command -v speedtest &> /dev/null; then
-            apt-get remove -y speedtest-cli >/dev/null 2>&1
-            rm -f /usr/bin/speedtest /usr/local/bin/speedtest
-            ARCH=$(uname -m)
-            [[ "$ARCH" == "x86_64" ]] && ARCH="x86_64"
-            [[ "$ARCH" == "aarch64" ]] && ARCH="aarch64"
-            wget -qO- "https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-${ARCH}.tgz" | tar xz -C /usr/bin speedtest 2>/dev/null
-            chmod +x /usr/bin/speedtest 2>/dev/null
-        fi
-        if command -v speedtest &> /dev/null; then
-            echo -e "${GREEN}[+] Speedtest Ookla Resmi Berhasil Diinstal!${NC}"
-            speedtest --accept-license --accept-gdpr
-        else
-            echo -e "${RED}Speedtest gagal diinstall.${NC}"
-        fi
+        # [FIX] Ookla CLI dan speedtest-go sama-sama gagal di VPS ini:
+        # speedtest.net membalas 403 / HTML ke endpoint config & user-info
+        # (IP datacenter diblokir). Jadi jangan pakai binary Ookla lagi.
+        # Pakai Cloudflare speedtest lewat curl: tanpa binary, tanpa config Ookla.
+        CF="https://speed.cloudflare.com"
+        DL_BYTES=25000000
+        UL_BYTES=10000000
+
+        echo -e "${CYAN}[*] Ping...${NC}"
+        PING_MS=$(for _i in 1 2 3; do
+            curl -sS -o /dev/null -w '%{time_total}\n' --max-time 15 "$CF/__down?bytes=0" 2>/dev/null
+        done | sort -n | head -1 | awk '{printf "%.0f", $1*1000}')
+        [ -z "$PING_MS" ] && PING_MS="n/a"
+
+        echo -e "${CYAN}[*] Download 25 MB...${NC}"
+        DL_MBPS=$(curl -sS -o /dev/null -w '%{speed_download}' --max-time 90 \
+            "$CF/__down?bytes=${DL_BYTES}" 2>/dev/null \
+            | awk '{printf "%.2f", ($1*8)/1000000}')
+
+        echo -e "${CYAN}[*] Upload 10 MB...${NC}"
+        UL_MBPS=$(head -c "$UL_BYTES" /dev/zero \
+            | curl -sS -o /dev/null -w '%{speed_upload}' --max-time 90 \
+                -X POST --data-binary @- "$CF/__up" 2>/dev/null \
+            | awk '{printf "%.2f", ($1*8)/1000000}')
+
+        echo -e "$LINE"
+        echo -e " ${GREEN}PING     :${NC} ${PING_MS} ms"
+        echo -e " ${GREEN}DOWNLOAD :${NC} ${DL_MBPS:-n/a} Mbps"
+        echo -e " ${GREEN}UPLOAD   :${NC} ${UL_MBPS:-n/a} Mbps"
+        echo -e " ${YELLOW}Server   :${NC} Cloudflare (speed.cloudflare.com)"
+        echo -e "$LINE"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
         ;;
