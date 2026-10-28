@@ -14,16 +14,42 @@ systemctl disable telegram-bot.service algojo-expired.service 2>/dev/null
 systemctl stop telegram-webhook.socket 2>/dev/null
 systemctl disable telegram-webhook.socket 2>/dev/null
 
-# Simpan backup sebelum /etc/wibutunnel dihapus
-if [[ -d /etc/wibutunnel/tmp ]] && [[ -n $(ls -A /etc/wibutunnel/tmp/*.zip 2>/dev/null) ]]; then
-    SAVED="/root/wibutunnel-backup-$(date +%Y%m%d-%H%M%S)"
-    mkdir -p "$SAVED" && cp -a /etc/wibutunnel/tmp/*.zip "$SAVED"/ 2>/dev/null
-    echo -e "\e[33m[!] Backup disimpan di $SAVED\e[0m"
+# Backup SEMUA data user sebelum dihapus. Gagal backup = batalkan uninstall.
+SAVED="/root/wibutunnel-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$SAVED" || { echo -e "\e[31m[!] Gagal buat $SAVED, uninstall dibatalkan.\e[0m"; exit 1; }
+BACKUP_PATHS=()
+for p in /etc/xray /etc/wibutunnel /usr/local/etc/xray /etc/haproxy /etc/iptables; do
+    [ -e "$p" ] && BACKUP_PATHS+=("$p")
+done
+if [ ${#BACKUP_PATHS[@]} -gt 0 ]; then
+    tar -czf "$SAVED/data.tar.gz" "${BACKUP_PATHS[@]}" 2>/dev/null || {
+        echo -e "\e[31m[!] Backup gagal, uninstall dibatalkan. Cek disk/permission.\e[0m"; exit 1; }
+    echo -e "\e[33m[!] Backup data disimpan di $SAVED/data.tar.gz\e[0m"
+else
+    echo -e "\e[33m[!] Tidak ada data untuk dibackup.\e[0m"
 fi
 
 # Hapus file konfigurasi dan database
 umount -f /var/log/xray 2>/dev/null
 rm -rf /usr/local/etc/xray /etc/haproxy /etc/wibutunnel /etc/xray /var/log/xray
+
+# Uninstall Xray core (dipasang setup.sh via install-release.sh)
+if command -v xray >/dev/null 2>&1; then
+    curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- remove >/dev/null 2>&1
+fi
+rm -rf /usr/local/share/xray /usr/local/bin/xray /etc/tmpfiles.d/xray.conf
+rm -f /usr/lib/systemd/system/xray.service /usr/lib/systemd/system/xray@.service
+id -u xray >/dev/null 2>&1 && userdel xray >/dev/null 2>&1
+id -g xray >/dev/null 2>&1 && groupdel xray >/dev/null 2>&1
+
+# Kembalikan iptables ke kondisi bersih
+if command -v iptables >/dev/null 2>&1; then
+    iptables -F 2>/dev/null
+    iptables -t mangle -F 2>/dev/null
+    iptables -t mangle -X 2>/dev/null
+    command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1
+fi
+systemctl disable netfilter-persistent >/dev/null 2>&1
 
 # Hapus file executable menu & daemon
 rm -f /usr/local/sbin/algojo-wibu /usr/local/sbin/algojo-kuota /usr/local/sbin/unlocker-wibu /usr/local/sbin/algojo-expired
@@ -79,7 +105,7 @@ rm -f /swapfile
 # Run 'iptables -F && netfilter-persistent save' to reset if needed
 
 # Uninstall paket bawaan (opsional)
-apt-get remove --purge -y haproxy vnstat jq >/dev/null 2>&1
+apt-get remove --purge -y haproxy vnstat >/dev/null 2>&1
 apt-get autoremove -y >/dev/null 2>&1
 
 echo -e "\e[32mUninstalasi Selesai! VPS sudah bersih dari WIBU TUNNELING.\e[0m"
