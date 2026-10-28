@@ -91,36 +91,56 @@ case $sub_setting in
         ;;
     3)
         clear; echo -e "$LINE"; echo -e "            ${WHITE}SPEEDTEST VPS${NC}"; echo -e "$LINE"
-        # [FIX] Ookla CLI dan speedtest-go sama-sama gagal di VPS ini:
-        # speedtest.net membalas 403 / HTML ke endpoint config & user-info
-        # (IP datacenter diblokir). Jadi jangan pakai binary Ookla lagi.
-        # Pakai Cloudflare speedtest lewat curl: tanpa binary, tanpa config Ookla.
-        CF="https://speed.cloudflare.com"
-        DL_BYTES=25000000
-        UL_BYTES=10000000
+        # Ookla CLI gagal karena config.speedtest.net balas 403 dari IP VPS.
+        # Tapi server Ookla sendiri tetap bisa diakses langsung, jadi pakai
+        # protokol server Ookla (server sama yang dipakai CLI resmi):
+        #   /speedtest/latency.txt, /speedtest/random3500x3500.jpg, /speedtest/upload.php
+        # Daftar server diambil dari API JS speedtest.net (endpoint ini balas 200).
+        SRV_JSON=$(curl -fsSL --max-time 20 'https://www.speedtest.net/api/js/servers?engine=js&limit=10' 2>/dev/null)
+        if [ -z "$SRV_JSON" ]; then
+            echo -e "${RED}Gagal ambil daftar server Ookla (speedtest.net tidak terjangkau).${NC}"
+            read -n 1 -s -r -p "Tekan tombol apa saja..."; exec m-setting
+        fi
 
+        BASE=""; S_NAME=""; S_ID=""
+        for _i in 0 1 2 3 4 5 6 7 8 9; do
+            _h=$(echo "$SRV_JSON" | jq -r ".[$_i].host // empty" 2>/dev/null)
+            [ -z "$_h" ] && continue
+            _hn=${_h%%:*}; _pn=${_h##*:}
+            _hs=$(echo "$SRV_JSON" | jq -r ".[$_i].https_functional // 0" 2>/dev/null)
+            _sch=http; [ "$_hs" = "1" ] && _sch=https
+            if curl -fsS -o /dev/null --max-time 8 "$_sch://$_hn:$_pn/speedtest/latency.txt" 2>/dev/null; then
+                BASE="$_sch://$_hn:$_pn/speedtest"
+                S_NAME=$(echo "$SRV_JSON" | jq -r ".[$_i].sponsor // \"?\"" 2>/dev/null)
+                S_ID=$(echo "$SRV_JSON" | jq -r ".[$_i].id // \"?\"" 2>/dev/null)
+                break
+            fi
+        done
+
+        if [ -z "$BASE" ]; then
+            echo -e "${RED}Tidak ada server Ookla yang bisa dihubungi dari VPS ini.${NC}"
+            read -n 1 -s -r -p "Tekan tombol apa saja..."; exec m-setting
+        fi
+
+        echo -e "${CYAN}[*] Server : ${S_NAME} (Ookla id ${S_ID})${NC}"
         echo -e "${CYAN}[*] Ping...${NC}"
-        PING_MS=$(for _i in 1 2 3; do
-            curl -sS -o /dev/null -w '%{time_total}\n' --max-time 15 "$CF/__down?bytes=0" 2>/dev/null
+        PING_MS=$(for _n in 1 2 3 4 5; do
+            curl -fsS -o /dev/null -w '%{time_total}\n' --max-time 10 "$BASE/latency.txt" 2>/dev/null
         done | sort -n | head -1 | awk '{printf "%.0f", $1*1000}')
-        [ -z "$PING_MS" ] && PING_MS="n/a"
 
-        echo -e "${CYAN}[*] Download 25 MB...${NC}"
-        DL_MBPS=$(curl -sS -o /dev/null -w '%{speed_download}' --max-time 90 \
-            "$CF/__down?bytes=${DL_BYTES}" 2>/dev/null \
-            | awk '{printf "%.2f", ($1*8)/1000000}')
+        echo -e "${CYAN}[*] Download...${NC}"
+        DL_BPS=$(curl -fsS -o /dev/null -w '%{speed_download}' --max-time 90 "$BASE/random3500x3500.jpg" 2>/dev/null)
+        DL_MBPS=$(awk -v b="${DL_BPS:-0}" 'BEGIN{printf "%.2f", (b*8)/1000000}')
 
-        echo -e "${CYAN}[*] Upload 10 MB...${NC}"
-        UL_MBPS=$(head -c "$UL_BYTES" /dev/zero \
-            | curl -sS -o /dev/null -w '%{speed_upload}' --max-time 90 \
-                -X POST --data-binary @- "$CF/__up" 2>/dev/null \
-            | awk '{printf "%.2f", ($1*8)/1000000}')
+        echo -e "${CYAN}[*] Upload...${NC}"
+        UL_BPS=$(head -c 10000000 /dev/zero | curl -fsS -o /dev/null -w '%{speed_upload}' --max-time 90 -X POST --data-binary @- "$BASE/upload.php" 2>/dev/null)
+        UL_MBPS=$(awk -v b="${UL_BPS:-0}" 'BEGIN{printf "%.2f", (b*8)/1000000}')
 
         echo -e "$LINE"
-        echo -e " ${GREEN}PING     :${NC} ${PING_MS} ms"
-        echo -e " ${GREEN}DOWNLOAD :${NC} ${DL_MBPS:-n/a} Mbps"
-        echo -e " ${GREEN}UPLOAD   :${NC} ${UL_MBPS:-n/a} Mbps"
-        echo -e " ${YELLOW}Server   :${NC} Cloudflare (speed.cloudflare.com)"
+        echo -e " ${GREEN}Server   :${NC} ${S_NAME} (Ookla id ${S_ID})"
+        echo -e " ${GREEN}PING     :${NC} ${PING_MS:-n/a} ms"
+        echo -e " ${GREEN}DOWNLOAD :${NC} ${DL_MBPS} Mbps"
+        echo -e " ${GREEN}UPLOAD   :${NC} ${UL_MBPS} Mbps"
         echo -e "$LINE"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
