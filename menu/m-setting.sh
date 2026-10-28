@@ -91,29 +91,32 @@ case $sub_setting in
         ;;
     3)
         clear; echo -e "$LINE"; echo -e "            ${WHITE}SPEEDTEST VPS${NC}"; echo -e "$LINE"
-        # Ookla CLI gagal karena config.speedtest.net balas 403 dari IP VPS.
-        # Tapi server Ookla sendiri tetap bisa diakses langsung, jadi pakai
-        # protokol server Ookla (server sama yang dipakai CLI resmi):
-        #   /speedtest/latency.txt, /speedtest/random3500x3500.jpg, /speedtest/upload.php
-        # Daftar server diambil dari API JS speedtest.net (endpoint ini balas 200).
+        # Ookla CLI diblokir (config.speedtest.net 403), tapi server Ookla tetap
+        # terbuka. Ukur langsung pakai protokol server Ookla, multi-koneksi
+        # paralel seperti CLI resmi (single stream under-report di link cepat).
+        # ponytail: 6 stream tetap. Naikkan kalau link > 5 Gbps.
+        STREAMS=6
         SRV_JSON=$(curl -fsSL --max-time 20 'https://www.speedtest.net/api/js/servers?engine=js&limit=10' 2>/dev/null)
         if [ -z "$SRV_JSON" ]; then
             echo -e "${RED}Gagal ambil daftar server Ookla (speedtest.net tidak terjangkau).${NC}"
             read -n 1 -s -r -p "Tekan tombol apa saja..."; exec m-setting
         fi
 
-        BASE=""; S_NAME=""; S_ID=""
+        # Pilih server dengan latency terendah, bukan asal server pertama.
+        echo -e "${CYAN}[*] Cari server terdekat...${NC}"
+        BASE=""; S_NAME=""; S_ID=""; S_MS=999999
         for _i in 0 1 2 3 4 5 6 7 8 9; do
             _h=$(echo "$SRV_JSON" | jq -r ".[$_i].host // empty" 2>/dev/null)
             [ -z "$_h" ] && continue
             _hn=${_h%%:*}; _pn=${_h##*:}
             _hs=$(echo "$SRV_JSON" | jq -r ".[$_i].https_functional // 0" 2>/dev/null)
             _sch=http; [ "$_hs" = "1" ] && _sch=https
-            if curl -fsS -o /dev/null --max-time 8 "$_sch://$_hn:$_pn/speedtest/latency.txt" 2>/dev/null; then
-                BASE="$_sch://$_hn:$_pn/speedtest"
+            _t=$(curl -fsS -o /dev/null -w '%{time_total}' --max-time 6 "$_sch://$_hn:$_pn/speedtest/latency.txt" 2>/dev/null) || continue
+            _ms=$(awk -v t="$_t" 'BEGIN{printf "%d", t*1000}')
+            if [ "$_ms" -lt "$S_MS" ]; then
+                S_MS=$_ms; BASE="$_sch://$_hn:$_pn/speedtest"
                 S_NAME=$(echo "$SRV_JSON" | jq -r ".[$_i].sponsor // \"?\"" 2>/dev/null)
                 S_ID=$(echo "$SRV_JSON" | jq -r ".[$_i].id // \"?\"" 2>/dev/null)
-                break
             fi
         done
 
@@ -122,18 +125,24 @@ case $sub_setting in
             read -n 1 -s -r -p "Tekan tombol apa saja..."; exec m-setting
         fi
 
-        echo -e "${CYAN}[*] Server : ${S_NAME} (Ookla id ${S_ID})${NC}"
+        echo -e "${CYAN}[*] Server : ${S_NAME} (Ookla id ${S_ID}) - ${S_MS} ms${NC}"
+        curl -fsS -o /dev/null --max-time 10 "$BASE/random1000x1000.jpg" 2>/dev/null  # warmup
+
         echo -e "${CYAN}[*] Ping...${NC}"
         PING_MS=$(for _n in 1 2 3 4 5; do
             curl -fsS -o /dev/null -w '%{time_total}\n' --max-time 10 "$BASE/latency.txt" 2>/dev/null
         done | sort -n | head -1 | awk '{printf "%.0f", $1*1000}')
 
-        echo -e "${CYAN}[*] Download...${NC}"
-        DL_BPS=$(curl -fsS -o /dev/null -w '%{speed_download}' --max-time 90 "$BASE/random3500x3500.jpg" 2>/dev/null)
+        echo -e "${CYAN}[*] Download (${STREAMS} koneksi)...${NC}"
+        DL_BPS=$({ for _n in $(seq 1 $STREAMS); do
+            curl -fsS -o /dev/null -w '%{speed_download}\n' --max-time 10 "$BASE/random3500x3500.jpg" 2>/dev/null &
+        done; wait; } | awk '{s+=$1} END{printf "%.0f", s}')
         DL_MBPS=$(awk -v b="${DL_BPS:-0}" 'BEGIN{printf "%.2f", (b*8)/1000000}')
 
-        echo -e "${CYAN}[*] Upload...${NC}"
-        UL_BPS=$(head -c 10000000 /dev/zero | curl -fsS -o /dev/null -w '%{speed_upload}' --max-time 90 -X POST --data-binary @- "$BASE/upload.php" 2>/dev/null)
+        echo -e "${CYAN}[*] Upload (${STREAMS} koneksi)...${NC}"
+        UL_BPS=$({ for _n in $(seq 1 $STREAMS); do
+            head -c 30000000 /dev/zero | curl -fsS -o /dev/null -w '%{speed_upload}\n' --max-time 10 -X POST --data-binary @- "$BASE/upload.php" 2>/dev/null &
+        done; wait; } | awk '{s+=$1} END{printf "%.0f", s}')
         UL_MBPS=$(awk -v b="${UL_BPS:-0}" 'BEGIN{printf "%.2f", (b*8)/1000000}')
 
         echo -e "$LINE"
@@ -141,6 +150,7 @@ case $sub_setting in
         echo -e " ${GREEN}PING     :${NC} ${PING_MS:-n/a} ms"
         echo -e " ${GREEN}DOWNLOAD :${NC} ${DL_MBPS} Mbps"
         echo -e " ${GREEN}UPLOAD   :${NC} ${UL_MBPS} Mbps"
+        echo -e " ${YELLOW}Catatan  :${NC} ukur ke server Ookla (${STREAMS} koneksi paralel)"
         echo -e "$LINE"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
