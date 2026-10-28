@@ -59,12 +59,12 @@ rm -f /usr/local/bin/menu /usr/local/bin/m-vless /usr/local/bin/m-vmess /usr/loc
 rm -f /usr/local/bin/m-setting /usr/local/bin/m-backup /usr/local/bin/menu-lock /usr/local/bin/menu-unlock
 rm -f /usr/local/bin/menu-recovery /usr/local/bin/cek-trafik /usr/local/bin/xp
 rm -f /usr/local/bin/lock-user /usr/local/bin/unlock-user
-rm -f /usr/local/bin/bot-daemon /usr/local/bin/bot-webhook
+rm -f /usr/local/bin/bot-daemon /usr/local/bin/bot-webhook /usr/local/bin/bot-daemon-new /usr/local/bin/bot-webhook-handler
 rm -f /usr/local/bin/wibu-daemon /usr/local/bin/watchdog.sh /usr/local/bin/renew-cert-wibu.sh
-rm -f /usr/local/bin/common.sh
+rm -f /usr/local/bin/common.sh /usr/local/bin/common.sh.bak* /usr/local/bin/common.sh.before-lib-split
 
 # Bersihkan Cron Jobs bawaan Wibu Tunneling
-crontab -l 2>/dev/null | grep -v -E 'watchdog\.sh|/usr/local/bin/xp|unlocker-wibu|renew-cert-wibu|algojo|drop_caches.*swapon|/sbin/reboot' | crontab -
+crontab -l 2>/dev/null | grep -v -E 'watchdog\.sh|/usr/local/bin/xp|unlocker-wibu|renew-cert-wibu|algojo|m-backup|drop_caches.*swapon|/sbin/reboot' | crontab -
 
 # Hapus service systemd
 rm -f /etc/systemd/system/wibu-daemon.service
