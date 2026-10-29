@@ -286,14 +286,21 @@ EOFBOT
         ;;
     7)
         clear; echo -e "$LINE"; echo -e "            ${WHITE}SETUP AUTO REBOOT${NC}"; echo -e "$LINE"
-        read -p "Masukkan Jam (0-23): " input_jam
+        echo -e " ${YELLOW}Ketik jam (0-23) untuk aktifkan, atau ketik 'off' untuk matikan.${NC}"
+        read -p " Masukkan Pilihan: " input_jam
         if [[ "$input_jam" =~ ^[0-9]+$ ]] && [ "$input_jam" -le 23 ]; then
             crontab -l 2>/dev/null | grep -v "/sbin/reboot" | crontab -
             (crontab -l 2>/dev/null; echo "0 $input_jam * * * /sbin/reboot") | crontab -
             systemctl restart cron
-            echo -e "${GREEN}Auto Reboot disetel jam $input_jam:00 WIB${NC}"
+            echo -e "\n ${GREEN}Auto Reboot disetel jam $(printf "%02d:00" "$input_jam") WIB${NC}"
+        elif [[ "${input_jam,,}" == "off" || "${input_jam,,}" == "disable" ]]; then
+            crontab -l 2>/dev/null | grep -v "/sbin/reboot" | crontab -
+            systemctl restart cron
+            echo -e "\n ${YELLOW}Auto Reboot telah dinonaktifkan (dihapus dari crontab).${NC}"
+        else
+            echo -e "\n ${RED}Input tidak valid! Harus angka 0-23 atau 'off'.${NC}"
         fi
-        read -p "Tekan Enter..." dummy
+        read -p " Tekan Enter..." dummy
         exec m-setting
         ;;
     8)

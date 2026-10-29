@@ -227,7 +227,6 @@ EOF
 # INSTALL PAKET (dibersihkan dari bloat nginx/python3/socat)
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get upgrade -y
 apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix
 
 # [FIX] Enable iptables-persistent agar rules survive reboot
@@ -702,7 +701,6 @@ systemctl enable cron >/dev/null 2>&1
 crontab -l 2>/dev/null | grep -v -E "xp|reboot|watchdog|algojo|unlocker|drop_caches|renew-cert-wibu" | crontab -
 (crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/watchdog.sh") | crontab -
 (crontab -l 2>/dev/null; echo "0 0 * * * /usr/local/bin/xp") | crontab -
-(crontab -l 2>/dev/null; echo "0 5 * * * /sbin/reboot") | crontab -
 (crontab -l 2>/dev/null; echo "0 0 * * * sync; echo 3 > /proc/sys/vm/drop_caches && swapoff -a && swapon -a") | crontab -
 (crontab -l 2>/dev/null; echo "* * * * * /usr/local/sbin/unlocker-wibu") | crontab -
 
@@ -786,7 +784,16 @@ if [[ "${_dl_fail:-0}" == "1" ]]; then
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "    INSTALASI SELESAI! REBOOT DALAM 8 DETIK...    "
+echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-sleep 8
-reboot
+echo -e " Ketik \e[1;36mmenu\e[0m untuk membuka panel admin."
+echo ""
+read -r -p " Apakah Anda ingin reboot VPS sekarang? [y/N]: " ans_reboot
+if [[ "$ans_reboot" =~ ^[Yy]$ ]]; then
+    echo -e "\e[1;33m[!] Rebooting VPS...\e[0m"
+    reboot
+else
+    echo -e "\e[1;32m[✓] Membuka menu WIBUTUNNEL...\e[0m"
+    sleep 1
+    exec menu
+fi
