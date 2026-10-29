@@ -757,8 +757,12 @@ fi
 
 dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
 
-if ! grep -q "menu" /root/.profile; then
-    echo -e 'clear\nmenu' >> /root/.profile
+# Auto-start menu setelah login. Cek baris perintah persis, bukan kata "menu":
+# komentar "# Auto-start menu" membuat grep -q "menu" selalu cocok dan blok ini
+# tidak pernah jalan (bug lama).
+if ! grep -qx 'menu' /root/.profile 2>/dev/null; then
+    echo 'clear' >> /root/.profile
+    echo 'menu' >> /root/.profile
 fi
 
 echo ""
