@@ -129,61 +129,59 @@ add_user() {
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="${THICKLINE}
-               VLESS
+VPN ACCOUNT - VLESS
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Port none TLS  : 80
-id             : ${uuid}
-Encryption     : none
-Network        : ws,grpc
-Path ws        : /vless
-serviceName    : vless
-Expired On     : ${tampil_exp}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-            VLESS WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Port NTLS  : 80
+UUID       : ${uuid}
+Encryption : none
+Network    : ws, grpc
+Path WS    : /vless
+Serv.Name  : vless
 ${THICKLINE}
+LINK VLESS WS TLS
 ${vless_tls}
-${THICKLINE}
-          VLESS WS NO TLS
-${THICKLINE}
+
+LINK VLESS WS NO TLS
 ${vless_ntls}
-${THICKLINE}
-             VLESS GRPC
-${THICKLINE}
+
+LINK VLESS GRPC
 ${vless_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         PESAN_HTML="${THICKLINE}
-               <b>VLESS</b>
+<b>VPN ACCOUNT - VLESS</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Port none TLS  :</b> <code>80</code>
-<b>id             :</b> <code>${uuid}</code>
-<b>Encryption     :</b> <code>none</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/vless</code>
-<b>serviceName    :</b> <code>vless</code>
-<b>Expired On     :</b> <code>${tampil_exp}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-            <b>VLESS WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Port NTLS  :</b> <code>80</code>
+<b>UUID       :</b> <code>${uuid}</code>
+<b>Encryption :</b> <code>none</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/vless</code>
+<b>Serv.Name  :</b> <code>vless</code>
 ${THICKLINE}
+<b>LINK VLESS WS TLS</b>
 <code>${vless_tls}</code>
-${THICKLINE}
-          <b>VLESS WS NO TLS</b>
-${THICKLINE}
+
+<b>LINK VLESS WS NO TLS</b>
 <code>${vless_ntls}</code>
-${THICKLINE}
-             <b>VLESS GRPC</b>
-${THICKLINE}
+
+<b>LINK VLESS GRPC</b>
 <code>${vless_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
@@ -228,61 +226,59 @@ trial_user() {
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="${THICKLINE}
-             VLESS TRIAL
+VPN ACCOUNT - VLESS
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Port none TLS  : 80
-id             : ${uuid}
-Encryption     : none
-Network        : ws,grpc
-Path ws        : /vless
-serviceName    : vless
-Expired On     : ${exp_date}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-          VLESS WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Port NTLS  : 80
+UUID       : ${uuid}
+Encryption : none
+Network    : ws, grpc
+Path WS    : /vless
+Serv.Name  : vless
 ${THICKLINE}
+LINK VLESS WS TLS
 ${vless_tls}
-${THICKLINE}
-        VLESS WS NO TLS
-${THICKLINE}
+
+LINK VLESS WS NO TLS
 ${vless_ntls}
-${THICKLINE}
-           VLESS GRPC
-${THICKLINE}
+
+LINK VLESS GRPC
 ${vless_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         PESAN_HTML="${THICKLINE}
-               <b>VLESS TRIAL</b>
+<b>VPN ACCOUNT - VLESS</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Port none TLS  :</b> <code>80</code>
-<b>id             :</b> <code>${uuid}</code>
-<b>Encryption     :</b> <code>none</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/vless</code>
-<b>serviceName    :</b> <code>vless</code>
-<b>Expired On     :</b> <code>${exp_date}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-            <b>VLESS WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Port NTLS  :</b> <code>80</code>
+<b>UUID       :</b> <code>${uuid}</code>
+<b>Encryption :</b> <code>none</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/vless</code>
+<b>Serv.Name  :</b> <code>vless</code>
 ${THICKLINE}
+<b>LINK VLESS WS TLS</b>
 <code>${vless_tls}</code>
-${THICKLINE}
-          <b>VLESS WS NO TLS</b>
-${THICKLINE}
+
+<b>LINK VLESS WS NO TLS</b>
 <code>${vless_ntls}</code>
-${THICKLINE}
-             <b>VLESS GRPC</b>
-${THICKLINE}
+
+<b>LINK VLESS GRPC</b>
 <code>${vless_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
@@ -338,60 +334,59 @@ cek_user() {
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="${THICKLINE}
-               VLESS
+VLESS - CEK AKUN
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Port none TLS  : 80
-id             : ${uuid}
-Encryption     : none
-Network        : ws,grpc
-Path ws        : /vless
-serviceName    : vless
-Expired On     : ${exp_date}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-            VLESS WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Port NTLS  : 80
+UUID       : ${uuid}
+Encryption : none
+Network    : ws, grpc
+Path WS    : /vless
+Serv.Name  : vless
 ${THICKLINE}
+LINK VLESS WS TLS
 ${vless_tls}
-${THICKLINE}
-          VLESS WS NO TLS
-${THICKLINE}
+
+LINK VLESS WS NO TLS
 ${vless_ntls}
-${THICKLINE}
-             VLESS GRPC
-${THICKLINE}
+
+LINK VLESS GRPC
 ${vless_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
-        PESAN_HTML="<b>VLESS - CEK AKUN</b>
+        PESAN_HTML="${THICKLINE}
+<b>VLESS - CEK AKUN</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Port none TLS  :</b> <code>80</code>
-<b>id             :</b> <code>${uuid}</code>
-<b>Encryption     :</b> <code>none</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/vless</code>
-<b>serviceName    :</b> <code>vless</code>
-<b>Expired On     :</b> <code>${exp_date}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-            <b>VLESS WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Port NTLS  :</b> <code>80</code>
+<b>UUID       :</b> <code>${uuid}</code>
+<b>Encryption :</b> <code>none</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/vless</code>
+<b>Serv.Name  :</b> <code>vless</code>
 ${THICKLINE}
+<b>LINK VLESS WS TLS</b>
 <code>${vless_tls}</code>
-${THICKLINE}
-          <b>VLESS WS NO TLS</b>
-${THICKLINE}
+
+<b>LINK VLESS WS NO TLS</b>
 <code>${vless_ntls}</code>
-${THICKLINE}
-             <b>VLESS GRPC</b>
-${THICKLINE}
+
+<b>LINK VLESS GRPC</b>
 <code>${vless_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1

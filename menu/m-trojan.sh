@@ -117,49 +117,49 @@ add_user() {
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="${THICKLINE}
-               TROJAN
+VPN ACCOUNT - TROJAN
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Password       : ${uuid}
-Network        : ws,grpc
-Path ws        : /trojan
-serviceName    : trojan
-Expired On     : ${tampil_exp}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-            TROJAN WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Password   : ${uuid}
+Network    : ws, grpc
+Path WS    : /trojan
+Serv.Name  : trojan
 ${THICKLINE}
+LINK TROJAN WS TLS
 ${trojan_tls}
-${THICKLINE}
-             TROJAN GRPC
-${THICKLINE}
+
+LINK TROJAN GRPC
 ${trojan_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         PESAN_HTML="${THICKLINE}
-               <b>TROJAN</b>
+<b>VPN ACCOUNT - TROJAN</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Password       :</b> <code>${uuid}</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/trojan</code>
-<b>serviceName    :</b> <code>trojan</code>
-<b>Expired On     :</b> <code>${tampil_exp}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-            <b>TROJAN WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Password   :</b> <code>${uuid}</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/trojan</code>
+<b>Serv.Name  :</b> <code>trojan</code>
 ${THICKLINE}
+<b>LINK TROJAN WS TLS</b>
 <code>${trojan_tls}</code>
-${THICKLINE}
-             <b>TROJAN GRPC</b>
-${THICKLINE}
+
+<b>LINK TROJAN GRPC</b>
 <code>${trojan_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
@@ -202,49 +202,49 @@ trial_user() {
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="${THICKLINE}
-             TROJAN TRIAL
+VPN ACCOUNT - TROJAN
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Password       : ${uuid}
-Network        : ws,grpc
-Path ws        : /trojan
-serviceName    : trojan
-Expired On     : ${exp_date}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-          TROJAN WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Password   : ${uuid}
+Network    : ws, grpc
+Path WS    : /trojan
+Serv.Name  : trojan
 ${THICKLINE}
+LINK TROJAN WS TLS
 ${trojan_tls}
-${THICKLINE}
-           TROJAN GRPC
-${THICKLINE}
+
+LINK TROJAN GRPC
 ${trojan_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         PESAN_HTML="${THICKLINE}
-               <b>TROJAN TRIAL</b>
+<b>VPN ACCOUNT - TROJAN</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Password       :</b> <code>${uuid}</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/trojan</code>
-<b>serviceName    :</b> <code>trojan</code>
-<b>Expired On     :</b> <code>${exp_date}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-            <b>TROJAN WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Password   :</b> <code>${uuid}</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/trojan</code>
+<b>Serv.Name  :</b> <code>trojan</code>
 ${THICKLINE}
+<b>LINK TROJAN WS TLS</b>
 <code>${trojan_tls}</code>
-${THICKLINE}
-             <b>TROJAN GRPC</b>
-${THICKLINE}
+
+<b>LINK TROJAN GRPC</b>
 <code>${trojan_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
@@ -298,48 +298,49 @@ cek_user() {
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="${THICKLINE}
-              TROJAN
+TROJAN - CEK AKUN
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Password       : ${uuid}
-Network        : ws,grpc
-Path ws        : /trojan
-serviceName    : trojan
-Expired On     : ${exp_date}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-          TROJAN WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Password   : ${uuid}
+Network    : ws, grpc
+Path WS    : /trojan
+Serv.Name  : trojan
 ${THICKLINE}
+LINK TROJAN WS TLS
 ${trojan_tls}
-${THICKLINE}
-           TROJAN GRPC
-${THICKLINE}
+
+LINK TROJAN GRPC
 ${trojan_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
-        PESAN_HTML="<b>TROJAN - CEK AKUN</b>
+        PESAN_HTML="${THICKLINE}
+<b>TROJAN - CEK AKUN</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Password       :</b> <code>${uuid}</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/trojan</code>
-<b>serviceName    :</b> <code>trojan</code>
-<b>Expired On     :</b> <code>${exp_date}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-          <b>TROJAN WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Password   :</b> <code>${uuid}</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/trojan</code>
+<b>Serv.Name  :</b> <code>trojan</code>
 ${THICKLINE}
+<b>LINK TROJAN WS TLS</b>
 <code>${trojan_tls}</code>
-${THICKLINE}
-           <b>TROJAN GRPC</b>
-${THICKLINE}
+
+<b>LINK TROJAN GRPC</b>
 <code>${trojan_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1

@@ -121,60 +121,60 @@ add_user() {
     CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
-    PESAN_AKUN="${THICKLINE}
-               VMESS
+    PESAN_AKUN="VPN ACCOUNT - VMESS
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Port none TLS  : 80
-id             : ${uuid}
-Network        : ws,grpc
-Path ws        : /vmess
-serviceName    : vmess
-Expired On     : ${tampil_exp}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-            VMESS WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Port NTLS  : 80
+UUID       : ${uuid}
+AlterId    : 0
+Security   : auto
+Network    : ws, grpc
+Path WS    : /vmess
+Serv.Name  : vmess
 ${THICKLINE}
+LINK VMESS WS TLS
 ${vmess_tls}
-${THICKLINE}
-          VMESS WS NO TLS
-${THICKLINE}
+
+LINK VMESS WS NO TLS
 ${vmess_ntls}
-${THICKLINE}
-             VMESS GRPC
-${THICKLINE}
+
+LINK VMESS GRPC
 ${vmess_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
-        PESAN_HTML="${THICKLINE}
-               <b>VMESS</b>
+        PESAN_HTML="<b>VPN ACCOUNT - VMESS</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Port none TLS  :</b> <code>80</code>
-<b>id             :</b> <code>${uuid}</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/vmess</code>
-<b>serviceName    :</b> <code>vmess</code>
-<b>Expired On     :</b> <code>${tampil_exp}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-            <b>VMESS WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Port NTLS  :</b> <code>80</code>
+<b>UUID       :</b> <code>${uuid}</code>
+<b>AlterId    :</b> <code>0</code>
+<b>Security   :</b> <code>auto</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/vmess</code>
+<b>Serv.Name  :</b> <code>vmess</code>
 ${THICKLINE}
+<b>LINK VMESS WS TLS</b>
 <code>${vmess_tls}</code>
-${THICKLINE}
-          <b>VMESS WS NO TLS</b>
-${THICKLINE}
+
+<b>LINK VMESS WS NO TLS</b>
 <code>${vmess_ntls}</code>
-${THICKLINE}
-             <b>VMESS GRPC</b>
-${THICKLINE}
+
+<b>LINK VMESS GRPC</b>
 <code>${vmess_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
@@ -218,60 +218,60 @@ trial_user() {
     CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
-    PESAN_AKUN="${THICKLINE}
-             VMESS TRIAL
+    PESAN_AKUN="VPN ACCOUNT - VMESS
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Port none TLS  : 80
-id             : ${uuid}
-Network        : ws,grpc
-Path ws        : /vmess
-serviceName    : vmess
-Expired On     : ${exp_date}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-          VMESS WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Port NTLS  : 80
+UUID       : ${uuid}
+AlterId    : 0
+Security   : auto
+Network    : ws, grpc
+Path WS    : /vmess
+Serv.Name  : vmess
 ${THICKLINE}
+LINK VMESS WS TLS
 ${vmess_tls}
-${THICKLINE}
-        VMESS WS NO TLS
-${THICKLINE}
+
+LINK VMESS WS NO TLS
 ${vmess_ntls}
-${THICKLINE}
-           VMESS GRPC
-${THICKLINE}
+
+LINK VMESS GRPC
 ${vmess_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
-        PESAN_HTML="${THICKLINE}
-               <b>VMESS TRIAL</b>
+        PESAN_HTML="<b>VPN ACCOUNT - VMESS</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Port none TLS  :</b> <code>80</code>
-<b>id             :</b> <code>${uuid}</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/vmess</code>
-<b>serviceName    :</b> <code>vmess</code>
-<b>Expired On     :</b> <code>${exp_date}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-            <b>VMESS WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Port NTLS  :</b> <code>80</code>
+<b>UUID       :</b> <code>${uuid}</code>
+<b>AlterId    :</b> <code>0</code>
+<b>Security   :</b> <code>auto</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/vmess</code>
+<b>Serv.Name  :</b> <code>vmess</code>
 ${THICKLINE}
+<b>LINK VMESS WS TLS</b>
 <code>${vmess_tls}</code>
-${THICKLINE}
-          <b>VMESS WS NO TLS</b>
-${THICKLINE}
+
+<b>LINK VMESS WS NO TLS</b>
 <code>${vmess_ntls}</code>
-${THICKLINE}
-             <b>VMESS GRPC</b>
-${THICKLINE}
+
+<b>LINK VMESS GRPC</b>
 <code>${vmess_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
@@ -326,59 +326,60 @@ cek_user() {
     CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
-    PESAN_AKUN="${THICKLINE}
-               VMESS
+    PESAN_AKUN="VMESS - CEK AKUN
 ${THICKLINE}
-Remarks        : ${user}
-CITY           : ${CITY}
-ISP            : ${ISP}
-Domain         : ${domain}
-Port TLS       : 443
-Port none TLS  : 80
-id             : ${uuid}
-Network        : ws,grpc
-Path ws        : /vmess
-serviceName    : vmess
-Expired On     : ${exp_date}
+Remarks    : ${user}
+Domain     : ${domain}
+ISP        : ${ISP}
+City       : ${CITY}
+Expired On : ${exp_date}
 ${THICKLINE}
-            VMESS WS TLS
+CONFIG DETAILS
+Port TLS   : 443
+Port NTLS  : 80
+UUID       : ${uuid}
+AlterId    : 0
+Security   : auto
+Network    : ws, grpc
+Path WS    : /vmess
+Serv.Name  : vmess
 ${THICKLINE}
+LINK VMESS WS TLS
 ${vmess_tls}
-${THICKLINE}
-          VMESS WS NO TLS
-${THICKLINE}
+
+LINK VMESS WS NO TLS
 ${vmess_ntls}
-${THICKLINE}
-             VMESS GRPC
-${THICKLINE}
+
+LINK VMESS GRPC
 ${vmess_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         PESAN_HTML="<b>VMESS - CEK AKUN</b>
 ${THICKLINE}
-<b>Remarks        :</b> <code>${user}</code>
-<b>CITY           :</b> <code>${CITY}</code>
-<b>ISP            :</b> <code>${ISP}</code>
-<b>Domain         :</b> <code>${domain}</code>
-<b>Port TLS       :</b> <code>443</code>
-<b>Port none TLS  :</b> <code>80</code>
-<b>id             :</b> <code>${uuid}</code>
-<b>Network        :</b> <code>ws,grpc</code>
-<b>Path ws        :</b> <code>/vmess</code>
-<b>serviceName    :</b> <code>vmess</code>
-<b>Expired On     :</b> <code>${exp_date}</code>
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${exp_date}</code>
 ${THICKLINE}
-            <b>VMESS WS TLS</b>
+<b>CONFIG DETAILS</b>
+<b>Port TLS   :</b> <code>443</code>
+<b>Port NTLS  :</b> <code>80</code>
+<b>UUID       :</b> <code>${uuid}</code>
+<b>AlterId    :</b> <code>0</code>
+<b>Security   :</b> <code>auto</code>
+<b>Network    :</b> <code>ws, grpc</code>
+<b>Path WS    :</b> <code>/vmess</code>
+<b>Serv.Name  :</b> <code>vmess</code>
 ${THICKLINE}
+<b>LINK VMESS WS TLS</b>
 <code>${vmess_tls}</code>
-${THICKLINE}
-          <b>VMESS WS NO TLS</b>
-${THICKLINE}
+
+<b>LINK VMESS WS NO TLS</b>
 <code>${vmess_ntls}</code>
-${THICKLINE}
-             <b>VMESS GRPC</b>
-${THICKLINE}
+
+<b>LINK VMESS GRPC</b>
 <code>${vmess_grpc}</code>
 ${THICKLINE}"
         curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
