@@ -13,6 +13,7 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
     while IFS=: read -r user exp_str; do
         [[ -z "$user" || -z "$exp_str" ]] && continue
         [[ "$exp_str" == "Lifetime" ]] && continue
+        [[ "$exp_str" =~ ^[0-9]+$ || "$exp_str" == *EXPIRED* ]] && continue
         
         # Parse exp_str as local timezone (VPS time), compare with local NOW
         exp_ts=$(date -d "$exp_str" +%s 2>/dev/null)

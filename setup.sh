@@ -701,7 +701,7 @@ systemctl enable cron >/dev/null 2>&1
 
 crontab -l 2>/dev/null | grep -v -E "xp|reboot|watchdog|algojo|unlocker|drop_caches|renew-cert-wibu" | crontab -
 (crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/watchdog.sh") | crontab -
-(crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/xp") | crontab -
+(crontab -l 2>/dev/null; echo "0 0 * * * /usr/local/bin/xp") | crontab -
 (crontab -l 2>/dev/null; echo "0 5 * * * /sbin/reboot") | crontab -
 (crontab -l 2>/dev/null; echo "0 0 * * * sync; echo 3 > /proc/sys/vm/drop_caches && swapoff -a && swapon -a") | crontab -
 (crontab -l 2>/dev/null; echo "* * * * * /usr/local/sbin/unlocker-wibu") | crontab -
