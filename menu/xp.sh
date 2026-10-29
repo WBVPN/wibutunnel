@@ -11,12 +11,15 @@ mkdir -p /etc/wibutunnel/tmp 2>/dev/null
 exec 200>/etc/wibutunnel/tmp/xp.lock
 flock -n 200 || exit 0
 
-# 1. Truncate Xray logs if > 50MB to prevent disk full
+# 1. Truncate Xray & Bot logs if size exceeded to prevent disk full
 for log_file in /var/log/xray/access.log /var/log/xray/error.log; do
     if [[ -f "$log_file" ]] && [[ $(stat -c%s "$log_file" 2>/dev/null || echo 0) -gt 52428800 ]]; then
         > "$log_file"
     fi
 done
+if [[ -f /etc/wibutunnel/tmp/bot_error.log ]] && [[ $(stat -c%s /etc/wibutunnel/tmp/bot_error.log 2>/dev/null || echo 0) -gt 2097152 ]]; then
+    > /etc/wibutunnel/tmp/bot_error.log
+fi
 
 # 2. Clean temporary files older than 1 hour in /etc/wibutunnel/tmp
 find /etc/wibutunnel/tmp -type f \( -name "*.tmp.*" -o -name "xray_adu.*" \) -mmin +60 -delete 2>/dev/null || true

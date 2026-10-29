@@ -85,7 +85,8 @@ case $sub_setting in
         sync; echo 1 > /proc/sys/vm/drop_caches
         sync; echo 2 > /proc/sys/vm/drop_caches
         sync; echo 3 > /proc/sys/vm/drop_caches
-        echo -e "${GREEN}RAM berhasil dibersihkan!${NC}"
+        > /etc/wibutunnel/tmp/bot_error.log 2>/dev/null || true
+        echo -e "${GREEN}RAM & Log Bot berhasil dibersihkan!${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
         ;;
@@ -243,9 +244,10 @@ case $sub_setting in
         echo -e " [1] Ganti BOT TOKEN & CHAT ID"
         echo -e " [2] Hidupkan (Start) Bot"
         echo -e " [3] Matikan (Stop) Bot"
+        echo -e " [4] Bersihkan Log Bot"
         echo -e " [0] Kembali"
         echo -e "$LINE"
-        read -p " Pilih opsi [0-3]: " sub_bot
+        read -p " Pilih opsi [0-4]: " sub_bot
         case $sub_bot in
             1)
                 read -p "Masukkan BOT TOKEN : " input_token
@@ -277,6 +279,10 @@ EOFBOT
             3)
                 systemctl stop telegram-bot >/dev/null 2>&1
                 echo -e "${YELLOW}Bot Telegram telah dimatikan!${NC}"
+                ;;
+            4)
+                > /etc/wibutunnel/tmp/bot_error.log
+                echo -e "${GREEN}Log Bot Telegram (/etc/wibutunnel/tmp/bot_error.log) berhasil dibersihkan!${NC}"
                 ;;
             0) exec m-setting ;;
             *) echo -e "${RED}Pilihan salah!${NC}" ;;

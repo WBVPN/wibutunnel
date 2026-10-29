@@ -33,23 +33,38 @@ get_random_quote() {
     echo "${quotes[$rand]}"
 }
 
+log_bot_error() {
+    local err_text="$1"
+    local log_file="/etc/wibutunnel/tmp/bot_error.log"
+    # ponytail: cap bot error log to 1MB, retain last 200KB if exceeded
+    if [[ $(stat -c%s "$log_file" 2>/dev/null || echo 0) -gt 1048576 ]]; then
+        local tmp="${log_file}.tmp.$$"
+        tail -c 200000 "$log_file" > "$tmp" 2>/dev/null && mv "$tmp" "$log_file" || > "$log_file"
+    fi
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $err_text" >> "$log_file"
+}
+
 send_msg() {
     local text=$(echo -e "$1")
     local keyboard="$2"
     local target_id="${3:-${SENDER_ID:-$CHAT_ID}}"
+    local resp
     if [[ -n "$keyboard" ]]; then
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${target_id}" \
             --data-urlencode "disable_web_page_preview=true" \
             --data-urlencode "parse_mode=html" \
             --data-urlencode "text=${text}" \
-            --data-urlencode "reply_markup=${keyboard}" >> /etc/wibutunnel/tmp/bot_error.log 2>&1
+            --data-urlencode "reply_markup=${keyboard}" 2>&1)
     else
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${target_id}" \
             --data-urlencode "disable_web_page_preview=true" \
             --data-urlencode "parse_mode=html" \
-            --data-urlencode "text=${text}" >> /etc/wibutunnel/tmp/bot_error.log 2>&1
+            --data-urlencode "text=${text}" 2>&1)
+    fi
+    if [[ $(echo "$resp" | jq -r '.ok' 2>/dev/null) != "true" ]]; then
+        log_bot_error "send_msg failed: $resp"
     fi
 }
 
@@ -59,13 +74,17 @@ edit_msg() {
     local text=$(echo -e "$3")
     local keyboard="$4"
 
-    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
+    local resp
+    resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
         --data-urlencode "chat_id=${target_id}" \
         --data-urlencode "message_id=${msg_id}" \
         --data-urlencode "disable_web_page_preview=true" \
         --data-urlencode "parse_mode=html" \
         --data-urlencode "text=${text}" \
-        --data-urlencode "reply_markup=${keyboard}" >> /etc/wibutunnel/tmp/bot_error.log 2>&1
+        --data-urlencode "reply_markup=${keyboard}" 2>&1)
+    if [[ $(echo "$resp" | jq -r '.ok' 2>/dev/null) != "true" ]]; then
+        log_bot_error "edit_msg failed: $resp"
+    fi
 }
 
 format_online_users() {
