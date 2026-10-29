@@ -97,6 +97,7 @@ if [[ "$target" == "deleteallusers" ]]; then
         safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
         safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
         safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+        rm -f "/etc/wibutunnel/recovery/${user}.json"
     done
     > /etc/wibutunnel/locked_users.db
     systemctl restart xray >/dev/null 2>&1
