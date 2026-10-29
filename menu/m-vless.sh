@@ -128,8 +128,7 @@ add_user() {
     CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
-    PESAN_AKUN="${THICKLINE}
-VPN ACCOUNT - VLESS
+    PESAN_AKUN="VPN ACCOUNT - VLESS
 ${THICKLINE}
 Remarks    : ${user}
 Domain     : ${domain}
@@ -157,8 +156,7 @@ ${vless_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
-        PESAN_HTML="${THICKLINE}
-<b>VPN ACCOUNT - VLESS</b>
+        PESAN_HTML="<b>VPN ACCOUNT - VLESS</b>
 ${THICKLINE}
 <b>Remarks    :</b> <code>${user}</code>
 <b>Domain     :</b> <code>${domain}</code>
@@ -225,8 +223,7 @@ trial_user() {
     CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
-    PESAN_AKUN="${THICKLINE}
-VPN ACCOUNT - VLESS
+    PESAN_AKUN="VPN ACCOUNT - VLESS
 ${THICKLINE}
 Remarks    : ${user}
 Domain     : ${domain}
@@ -254,8 +251,7 @@ ${vless_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
-        PESAN_HTML="${THICKLINE}
-<b>VPN ACCOUNT - VLESS</b>
+        PESAN_HTML="<b>VPN ACCOUNT - VLESS</b>
 ${THICKLINE}
 <b>Remarks    :</b> <code>${user}</code>
 <b>Domain     :</b> <code>${domain}</code>
@@ -333,8 +329,7 @@ cek_user() {
     CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
-    PESAN_AKUN="${THICKLINE}
-VLESS - CEK AKUN
+    PESAN_AKUN="VLESS - CEK AKUN
 ${THICKLINE}
 Remarks    : ${user}
 Domain     : ${domain}
@@ -362,8 +357,7 @@ ${vless_grpc}
 ${THICKLINE}"
     clear; echo -e "$PESAN_AKUN"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
-        PESAN_HTML="${THICKLINE}
-<b>VLESS - CEK AKUN</b>
+        PESAN_HTML="<b>VLESS - CEK AKUN</b>
 ${THICKLINE}
 <b>Remarks    :</b> <code>${user}</code>
 <b>Domain     :</b> <code>${domain}</code>
