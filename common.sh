@@ -65,20 +65,79 @@ safe_jq_edit_args() {
     ) 200>"$XRAY_LOCK"
 }
 
-# safe_sed_delete: hapus baris user dari flat-file DB (fixed-string prefix match)
+# safe_sed_delete: hapus baris user dari flat-file DB dengan flock agar aman concurrency
 # FIX: grep -v exit 1 saat file jadi kosong -> mv tidak jalan -> baris basi tertinggal.
 # FIX: awk index() = fixed string, aman untuk username berisi '.' dsb.
+# ponytail: flat-file DB locked with flock. Upgrade to SQLite if > 10,000 concurrent users.
 safe_sed_delete() {
     local user="$1"
     local file="$2"
     [[ -f "$file" ]] || return 0
-    local tmp="${file}.tmp.$$"
-    if awk -v u="$user" 'index($0, u ":") != 1' "$file" > "$tmp"; then
-        mv "$tmp" "$file"
-    else
-        rm -f "$tmp"
-        return 1
-    fi
+    mkdir -p /etc/wibutunnel/tmp 2>/dev/null
+    local lockfile="/etc/wibutunnel/tmp/$(basename "$file").lock"
+    (
+        flock -w 10 200 || { echo "[ERROR] flock timeout on $file" >&2; return 1; }
+        local tmp="${file}.tmp.$$"
+        if awk -v u="$user" 'index($0, u ":") != 1' "$file" > "$tmp"; then
+            mv "$tmp" "$file"
+            chmod 644 "$file" 2>/dev/null || true
+        else
+            rm -f "$tmp"
+            return 1
+        fi
+    ) 200>"$lockfile"
+}
+
+# db_set <file> <user> <value>: update line user atau append jika belum ada (atomic + flock)
+db_set() {
+    local file="$1"
+    local user="$2"
+    local val="$3"
+    [[ -n "$file" && -n "$user" ]] || return 1
+    mkdir -p "$(dirname "$file")" /etc/wibutunnel/tmp 2>/dev/null
+    touch "$file"
+    local lockfile="/etc/wibutunnel/tmp/$(basename "$file").lock"
+    (
+        flock -w 10 200 || { echo "[ERROR] flock timeout on $file" >&2; return 1; }
+        local tmp="${file}.tmp.$$"
+        local target="${user}:${val}"
+        if awk -v u="$user" -v v="$target" '
+            BEGIN { found = 0 }
+            index($0, u ":") == 1 { print v; found = 1; next }
+            { print }
+            END { if (!found) print v }
+        ' "$file" > "$tmp"; then
+            mv "$tmp" "$file"
+            chmod 644 "$file" 2>/dev/null || true
+        else
+            rm -f "$tmp"
+            return 1
+        fi
+    ) 200>"$lockfile"
+}
+
+# db_append <file> <line>: append line ke file dengan perlindungan flock
+db_append() {
+    local file="$1"
+    local line="$2"
+    [[ -n "$file" && -n "$line" ]] || return 1
+    mkdir -p "$(dirname "$file")" /etc/wibutunnel/tmp 2>/dev/null
+    touch "$file"
+    local lockfile="/etc/wibutunnel/tmp/$(basename "$file").lock"
+    (
+        flock -w 10 200 || { echo "[ERROR] flock timeout on $file" >&2; return 1; }
+        echo "$line" >> "$file"
+    ) 200>"$lockfile"
+}
+
+# db_get <file> <user>: ambil value terakhir, fixed-string prefix match
+db_get() {
+    awk -v u="$2" 'index($0, u ":") == 1 { sub(/^[^:]*:/, ""); v=$0 } END { if (v != "") print v }' "$1" 2>/dev/null
+}
+
+# db_has <file> <user>: true jika entry ada
+db_has() {
+    awk -v u="$2" 'index($0, u ":") == 1 {f=1} END {exit !f}' "$1" 2>/dev/null
 }
 
 # xray_sync_user: sinkronisasi penambahan/penghapusan user via Xray API (port 10085)

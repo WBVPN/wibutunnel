@@ -178,7 +178,7 @@ create_account() {
             send_msg "❌ <b>Gagal!</b>\nConfig tidak bisa diubah (jq/flock error). Akun tidak dibuat."
             return
         fi
-        echo "${user}:${exp_date}" >> /etc/xray/vless_exp.conf
+        db_set /etc/xray/vless_exp.conf "$user" "$exp_date"
         link1="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&host=${domain}&type=ws&sni=${domain}#${user}"
         link2="vless://${uuid}@${domain}:80?path=/vless-ntls&security=none&encryption=none&host=${domain}&type=ws#${user}"
         link3="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless&sni=${domain}#${user}"
@@ -191,7 +191,7 @@ create_account() {
             send_msg "❌ <b>Gagal!</b>\nConfig tidak bisa diubah (jq/flock error). Akun tidak dibuat."
             return
         fi
-        echo "${user}:${exp_date}" >> /etc/xray/vmess_exp.conf
+        db_set /etc/xray/vmess_exp.conf "$user" "$exp_date"
         link1="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"443\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/vmess\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"tls\",\"sni\":\"$domain\"}" | base64 -w 0)"
         link2="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"80\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"/vmess-ntls\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"\",\"sni\":\"\"}" | base64 -w 0)"
         link3="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"443\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"grpc\",\"path\":\"vmess\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"tls\",\"sni\":\"$domain\"}" | base64 -w 0)"
@@ -203,13 +203,13 @@ create_account() {
             send_msg "❌ <b>Gagal!</b>\nConfig tidak bisa diubah (jq/flock error). Akun tidak dibuat."
             return
         fi
-        echo "${user}:${exp_date}" >> /etc/xray/trojan_exp.conf
+        db_set /etc/xray/trojan_exp.conf "$user" "$exp_date"
         link1="trojan://${uuid}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
         link2="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan&sni=${domain}#${user}"
     fi
 
-    echo "${user}:${limit_ip}" >> /etc/wibutunnel/limit_ip.db
-    echo "${user}:${limit_bw}" >> /etc/wibutunnel/limit_bw.db
+    db_set /etc/wibutunnel/limit_ip.db "$user" "$limit_ip"
+    db_set /etc/wibutunnel/limit_bw.db "$user" "$limit_bw"
     xray_sync_user add "$proto" "$user" "$uuid"
 
     [[ "$limit_ip" -eq 0 ]] && limit_ip="Bebas" || limit_ip="${limit_ip} IP"
@@ -397,11 +397,8 @@ change_limit() {
         return
     fi
 
-    safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
-    echo "${user}:${limit_ip}" >> /etc/wibutunnel/limit_ip.db
-
-    safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
-    echo "${user}:${limit_bw}" >> /etc/wibutunnel/limit_bw.db
+    db_set /etc/wibutunnel/limit_ip.db "$user" "$limit_ip"
+    db_set /etc/wibutunnel/limit_bw.db "$user" "$limit_bw"
 
     local ip_str="Bebas"; [[ "$limit_ip" -ne 0 ]] && ip_str="${limit_ip} IP"
     local bw_str="Unlimited"; [[ "$limit_bw" -ne 0 ]] && bw_str="${limit_bw} GB"

@@ -76,8 +76,7 @@ process_expired() {
                     NEW_EXP_CONTENT+="${line}\n"
                     
                     now=$(date -u +%s)
-                    safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
-                    echo "$user:$now:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
+                    db_set /etc/wibutunnel/locked_users.db "$user" "$now:0:EXPIRED"
                     
                     FOOTER="Move to Recovery"
                 fi

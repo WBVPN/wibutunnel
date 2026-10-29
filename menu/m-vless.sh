@@ -25,16 +25,6 @@ user_json_exists() {
     jq -e --arg u "$1" '[.inbounds[].settings.clients[]?.email] | index($u) != null' "$CONFIG_FILE" >/dev/null 2>&1
 }
 
-# db_get <file> <user> -- ambil value terakhir, fixed-string prefix match (aman untuk '.' dll)
-db_get() {
-    awk -v u="$2" 'index($0, u ":") == 1 { sub(/^[^:]*:/, ""); v=$0 } END { if (v != "") print v }' "$1" 2>/dev/null
-}
-
-# db_has <file> <user> -- true jika entry ada
-db_has() {
-    awk -v u="$2" 'index($0, u ":") == 1 {f=1} END {exit !f}' "$1" 2>/dev/null
-}
-
 select_user() {
     local ACTION_TITLE=$1
     local DISPLAY_TYPE=$2
@@ -114,11 +104,9 @@ add_user() {
         echo -e "${RED}Gagal menulis config Xray! Akun tidak dibuat.${NC}"; read -p "Enter..." dummy; return
     fi
 
-    safe_sed_delete "$user" "$EXP_FILE"
-    echo "${user}:${exp_date}" >> "$EXP_FILE"
-    safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
-    echo "${user}:${limit_ip}" >> "$DB_IP"
-    echo "${user}:${limit_kuota}" >> "$DB_BW"
+    db_set "$EXP_FILE" "$user" "$exp_date"
+    db_set "$DB_IP" "$user" "$limit_ip"
+    db_set "$DB_BW" "$user" "$limit_kuota"
     xray_sync_user add VLESS "$user" "$uuid"
 
     vless_tls="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&host=${domain}&type=ws&sni=${domain}#${user}"
@@ -210,10 +198,9 @@ trial_user() {
         echo -e "${RED}Gagal menulis config Xray! Trial tidak dibuat.${NC}"; read -p "Enter..." dummy; return
     fi
 
-    safe_sed_delete "$user" "$EXP_FILE"
-    echo "${user}:${exp_date}" >> "$EXP_FILE"
-    safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
-    echo "${user}:0" >> "$DB_IP"; echo "${user}:0" >> "$DB_BW"
+    db_set "$EXP_FILE" "$user" "$exp_date"
+    db_set "$DB_IP" "$user" "0"
+    db_set "$DB_BW" "$user" "0"
     xray_sync_user add VLESS "$user" "$uuid"
 
     vless_tls="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&host=${domain}&type=ws&sni=${domain}#${user}"
@@ -407,7 +394,7 @@ renew_user() {
     else exp_sec=$(date -d "$current_exp" +%s 2>/dev/null); if [[ -z "$exp_sec" || "$today_sec" -gt "$exp_sec" ]]; then base_sec=$today_sec; else base_sec=$exp_sec; fi; fi
 
     new_exp=$(date -d "@$(( base_sec + (tambahan * 86400) ))" +"%Y-%m-%d %H:%M:%S")
-    safe_sed_delete "$user" "$EXP_FILE"; echo "${user}:${new_exp}" >> "$EXP_FILE"
+    db_set "$EXP_FILE" "$user" "$new_exp"
 
     echo -e "\n${GREEN}Berhasil! Expired baru: $new_exp${NC}"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
@@ -433,7 +420,7 @@ change_ip_user() {
     read -p " Masukkan Limit IP Baru (0 = Bebas): " new_limit
     [[ ! "$new_limit" =~ ^[0-9]+$ ]] && new_limit=0
 
-    safe_sed_delete "$user" "$DB_IP"; echo "${user}:${new_limit}" >> "$DB_IP"
+    db_set "$DB_IP" "$user" "$new_limit"
     echo -e "\n${GREEN}Sukses! Limit IP user '${user}' diubah menjadi: ${new_limit}${NC}"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         PESAN_IP="${THICKLINE}
@@ -457,7 +444,7 @@ change_bw_user() {
     read -p " Masukkan Limit Kuota Baru GB (0 = Unli): " new_limit
     [[ ! "$new_limit" =~ ^[0-9]+$ ]] && new_limit=0
 
-    safe_sed_delete "$user" "$DB_BW"; echo "${user}:${new_limit}" >> "$DB_BW"
+    db_set "$DB_BW" "$user" "$new_limit"
     [[ -x /usr/local/sbin/algojo-kuota ]] && /usr/local/sbin/algojo-kuota >/dev/null 2>&1
     echo -e "\n${GREEN}Sukses! Limit Kuota user '${user}' diubah menjadi: ${new_limit} GB${NC}"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
@@ -495,7 +482,7 @@ lock_unlock_user() {
         echo -e "\n${GREEN}Akun '$user' berhasil di-UNLOCK! Kini bisa login kembali.${NC}"
     else
         safe_jq_edit_args --arg user "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= (. + [$user] | unique)' 
-        echo "$user:$now:0:LOCK" >> "$DB_LOCK"
+        db_append "$DB_LOCK" "$user:$now:0:LOCK"
         xray_sync_user del VLESS "$user"
         echo -e "\n${RED}Akun '$user' berhasil di-LOCK! Dipindahkan ke Recovery.${NC}"
     fi

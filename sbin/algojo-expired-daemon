@@ -87,12 +87,10 @@ while true; do
             esac
 
             # Cleanup: delete exp line
-            safe_sed_delete "$user" "$proto_file"
-            
-            safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
-
             # Trial = delete all DB, Regular = masuk recovery (keep limit_ip & limit_bw)
             if [[ "$user" == trial-* ]]; then
+                safe_sed_delete "$user" "$proto_file"
+                safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
                 safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
                 safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
                 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
@@ -100,8 +98,8 @@ while true; do
             else
                 # Regular: flag di exp file (proto) + DB_LOCK (daftar menu recovery)
                 now_ts=$(date +%s)
-                echo "${user}:${now_ts}:0:EXPIRED" >> "$proto_file"
-                echo "${user}:${now_ts}:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
+                db_set "$proto_file" "$user" "${now_ts}:0:EXPIRED"
+                db_set /etc/wibutunnel/locked_users.db "$user" "${now_ts}:0:EXPIRED"
             fi
 
             xray_sync_user del "$proto" "$user"

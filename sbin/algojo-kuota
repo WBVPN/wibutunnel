@@ -122,8 +122,8 @@ while read -r line; do
 
                 # 4. Daftarkan ke recovery: flag di exp file (proto) + DB_LOCK (daftar menu)
                 now_ts=$(date +%s)
-                echo "${user}:${now_ts}:0:QUOTA_EXCEEDED" >> /etc/xray/${proto,,}_exp.conf
-                echo "${user}:${now_ts}:0:QUOTA_EXCEEDED" >> "$DB_LOCK"
+                db_set "/etc/xray/${proto,,}_exp.conf" "$user" "${now_ts}:0:QUOTA_EXCEEDED"
+                db_set "$DB_LOCK" "$user" "${now_ts}:0:QUOTA_EXCEEDED"
 
                 # 5. Notif Telegram
                 (

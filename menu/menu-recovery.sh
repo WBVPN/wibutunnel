@@ -135,12 +135,12 @@ if [[ -f "/etc/wibutunnel/recovery/${user}.json" ]]; then
     rm -f "/etc/wibutunnel/recovery/${user}.json"
 fi
 
-[[ "$proto" == "VLESS" ]]  && { safe_sed_delete "$user" /etc/xray/vless_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/vless_exp.conf; }
-[[ "$proto" == "VMESS" ]]  && { safe_sed_delete "$user" /etc/xray/vmess_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/vmess_exp.conf; }
-[[ "$proto" == "TROJAN" ]] && { safe_sed_delete "$user" /etc/xray/trojan_exp.conf; echo "${user}:${new_exp}" >> /etc/xray/trojan_exp.conf; }
+[[ "$proto" == "VLESS" ]]  && db_set /etc/xray/vless_exp.conf "$user" "$new_exp"
+[[ "$proto" == "VMESS" ]]  && db_set /etc/xray/vmess_exp.conf "$user" "$new_exp"
+[[ "$proto" == "TROJAN" ]] && db_set /etc/xray/trojan_exp.conf "$user" "$new_exp"
 
-safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db; echo "${user}:${ip_baru}" >> /etc/wibutunnel/limit_ip.db
-safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db; echo "${user}:${bw_baru}" >> /etc/wibutunnel/limit_bw.db
+db_set /etc/wibutunnel/limit_ip.db "$user" "$ip_baru"
+db_set /etc/wibutunnel/limit_bw.db "$user" "$bw_baru"
 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
 safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'

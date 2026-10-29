@@ -185,22 +185,15 @@ read -p " Masukkan Limit Kuota GB (0=Unli): " bw_baru
 new_exp=$(date -d "+${hari_baru} days" +"%Y-%m-%d %H:%M:%S")
 proto="${USER_PROTOS[$user]}"
 if [[ "$proto" == "VLESS" ]]; then
-    safe_sed_delete "$user" /etc/xray/vless_exp.conf
-    echo "${user}:${new_exp}" >> /etc/xray/vless_exp.conf
-fi
-if [[ "$proto" == "VMESS" ]]; then
-    safe_sed_delete "$user" /etc/xray/vmess_exp.conf
-    echo "${user}:${new_exp}" >> /etc/xray/vmess_exp.conf
-fi
-if [[ "$proto" == "TROJAN" ]]; then
-    safe_sed_delete "$user" /etc/xray/trojan_exp.conf
-    echo "${user}:${new_exp}" >> /etc/xray/trojan_exp.conf
+    db_set /etc/xray/vless_exp.conf "$user" "$new_exp"
+elif [[ "$proto" == "VMESS" ]]; then
+    db_set /etc/xray/vmess_exp.conf "$user" "$new_exp"
+elif [[ "$proto" == "TROJAN" ]]; then
+    db_set /etc/xray/trojan_exp.conf "$user" "$new_exp"
 fi
 
-safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
-echo "${user}:${ip_baru}" >> /etc/wibutunnel/limit_ip.db
-safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
-echo "${user}:${bw_baru}" >> /etc/wibutunnel/limit_bw.db
+db_set /etc/wibutunnel/limit_ip.db "$user" "$ip_baru"
+db_set /etc/wibutunnel/limit_bw.db "$user" "$bw_baru"
 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
 # UNLOCK DARI XRAY
