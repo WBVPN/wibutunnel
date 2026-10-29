@@ -206,7 +206,22 @@ safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 # UNLOCK DARI XRAY
 safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
 safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
-systemctl restart xray >/dev/null 2>&1
+
+proto=""
+cred=""
+if cred=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' "$CONFIG_FILE" 2>/dev/null) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    proto="VLESS"
+elif cred=$(jq -r --arg u "$user" '.inbounds[4].settings.clients[]? | select(.email == $u) | .id' "$CONFIG_FILE" 2>/dev/null) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    proto="VMESS"
+elif cred=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[]? | select(.email == $u) | .password' "$CONFIG_FILE" 2>/dev/null) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    proto="TROJAN"
+fi
+
+if [[ -n "$proto" && -n "$cred" ]]; then
+    xray_sync_user add "$proto" "$user" "$cred"
+else
+    systemctl restart xray >/dev/null 2>&1
+fi
 
 echo -e "\n ${GREEN}BERHASIL! Akun ${user} telah aktif kembali.${NC}"
 read -p " Tekan Enter Untuk Kembali..."

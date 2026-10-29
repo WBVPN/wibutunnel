@@ -6,7 +6,10 @@
   },
   "api": {
     "tag": "api",
-    "services": ["StatsService"]
+    "services": [
+      "StatsService",
+      "HandlerService"
+    ]
   },
   "stats": {},
   "policy": {
@@ -23,134 +26,262 @@
   },
   "inbounds": [
     {
+      "tag": "api",
       "listen": "127.0.0.1",
       "port": 10085,
       "protocol": "dokodemo-door",
-      "settings": { "address": "127.0.0.1" },
-      "tag": "api"
+      "settings": {
+        "address": "127.0.0.1"
+      }
     },
     {
+      "tag": "vless-ws-tls",
       "port": 10086,
       "listen": "127.0.0.1",
       "protocol": "vless",
-      "settings": { "clients": [], "decryption": "none" },
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
       "streamSettings": {
         "network": "ws",
-        "sockopt": { "acceptProxyProtocol": true },
-        "wsSettings": { "path": "/vless" }
+        "sockopt": {
+          "acceptProxyProtocol": true
+        },
+        "wsSettings": {
+          "path": "/vless"
+        }
       },
-      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
     },
     {
+      "tag": "vless-ws-ntls",
       "port": 10087,
       "listen": "127.0.0.1",
       "protocol": "vless",
-      "settings": { "clients": [], "decryption": "none" },
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
       "streamSettings": {
         "network": "ws",
-        "sockopt": { "acceptProxyProtocol": true },
-        "wsSettings": { "path": "/vless-ntls" }
+        "sockopt": {
+          "acceptProxyProtocol": true
+        },
+        "wsSettings": {
+          "path": "/vless-ntls"
+        }
       },
-      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
     },
     {
+      "tag": "vless-grpc",
       "port": 10088,
       "listen": "127.0.0.1",
       "protocol": "vless",
-      "settings": { "clients": [], "decryption": "none" },
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
       "streamSettings": {
         "network": "grpc",
-        "sockopt": { "acceptProxyProtocol": true },
-        "grpcSettings": { "serviceName": "vless" }
+        "sockopt": {
+          "acceptProxyProtocol": true
+        },
+        "grpcSettings": {
+          "serviceName": "vless"
+        }
       },
-      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
     },
     {
+      "tag": "vmess-ws-tls",
       "port": 10089,
       "listen": "127.0.0.1",
       "protocol": "vmess",
-      "settings": { "clients": [], "alterId": 0 },
+      "settings": {
+        "alterId": 0,
+        "clients": []
+      },
       "streamSettings": {
         "network": "ws",
-        "sockopt": { "acceptProxyProtocol": true },
-        "wsSettings": { "path": "/vmess" }
+        "sockopt": {
+          "acceptProxyProtocol": true
+        },
+        "wsSettings": {
+          "path": "/vmess"
+        }
       },
-      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
     },
     {
+      "tag": "vmess-ws-ntls",
       "port": 10090,
       "listen": "127.0.0.1",
       "protocol": "vmess",
-      "settings": { "clients": [], "alterId": 0 },
+      "settings": {
+        "alterId": 0,
+        "clients": []
+      },
       "streamSettings": {
         "network": "ws",
-        "sockopt": { "acceptProxyProtocol": true },
-        "wsSettings": { "path": "/vmess-ntls" }
+        "sockopt": {
+          "acceptProxyProtocol": true
+        },
+        "wsSettings": {
+          "path": "/vmess-ntls"
+        }
       },
-      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
     },
     {
+      "tag": "vmess-grpc",
       "port": 10091,
       "listen": "127.0.0.1",
       "protocol": "vmess",
-      "settings": { "clients": [], "alterId": 0 },
+      "settings": {
+        "alterId": 0,
+        "clients": []
+      },
       "streamSettings": {
         "network": "grpc",
-        "sockopt": { "acceptProxyProtocol": true },
-        "grpcSettings": { "serviceName": "vmess" }
+        "sockopt": {
+          "acceptProxyProtocol": true
+        },
+        "grpcSettings": {
+          "serviceName": "vmess"
+        }
       },
-      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
     },
     {
+      "tag": "trojan-ws-tls",
       "port": 10092,
       "listen": "127.0.0.1",
       "protocol": "trojan",
-      "settings": { "clients": [] },
+      "settings": {
+        "clients": []
+      },
       "streamSettings": {
         "network": "ws",
-        "sockopt": { "acceptProxyProtocol": true },
-        "wsSettings": { "path": "/trojan" }
+        "sockopt": {
+          "acceptProxyProtocol": true
+        },
+        "wsSettings": {
+          "path": "/trojan"
+        }
       },
-      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
     },
     {
+      "tag": "trojan-grpc",
       "port": 10093,
       "listen": "127.0.0.1",
       "protocol": "trojan",
-      "settings": { "clients": [] },
+      "settings": {
+        "clients": []
+      },
       "streamSettings": {
         "network": "grpc",
-        "sockopt": { "acceptProxyProtocol": true },
-        "grpcSettings": { "serviceName": "trojan" }
+        "sockopt": {
+          "acceptProxyProtocol": true
+        },
+        "grpcSettings": {
+          "serviceName": "trojan"
+        }
       },
-      "sniffing": { "enabled": true, "destOverride": ["http", "tls"] }
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ]
+      }
     }
   ],
   "outbounds": [
-    { "protocol": "freedom", "settings": {}, "tag": "direct" },
-    { "protocol": "blackhole", "settings": {}, "tag": "blocked" }
+    {
+      "protocol": "freedom",
+      "settings": {},
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "settings": {},
+      "tag": "blocked"
+    }
   ],
   "routing": {
     "domainStrategy": "AsIs",
     "rules": [
       {
         "type": "field",
-        "inboundTag": ["api"],
+        "inboundTag": [
+          "api"
+        ],
         "outboundTag": "api"
       },
       {
         "type": "field",
         "outboundTag": "blocked",
-        "user": []
+        "user": [
+          "DUMMY-LOCK"
+        ]
       },
       {
         "type": "field",
-        "ip": ["geoip:private"],
+        "ip": [
+          "geoip:private"
+        ],
         "outboundTag": "blocked"
       },
       {
         "type": "field",
-        "protocol": ["bittorrent"],
+        "protocol": [
+          "bittorrent"
+        ],
         "outboundTag": "blocked"
       }
     ]

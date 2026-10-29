@@ -25,7 +25,7 @@ fi
 safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
 echo "$user:$now:$unlock_time:$reason" >> /etc/wibutunnel/locked_users.db
 
-systemctl restart xray >/dev/null 2>&1
+xray_sync_user del ALL "$user"
 
 # === TELEGRAM NOTIFICATION ===
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then

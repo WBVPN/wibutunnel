@@ -58,7 +58,7 @@ if [[ ${#USERS_TO_LOCK[@]} -gt 0 ]]; then
     jq_args=()
     for usr in "${USERS_TO_LOCK[@]}"; do
         jq_args+=("$usr")
+        xray_sync_user del ALL "$usr"
     done
     safe_jq_edit_args --argjson users "$(printf '%s\n' "${jq_args[@]}" | jq -R . | jq -s .)" '(.routing.rules[] | select(.outboundTag == "blocked" and .user != null) | .user) |= (. + $users | unique)'
-    systemctl restart xray >/dev/null 2>&1
 fi

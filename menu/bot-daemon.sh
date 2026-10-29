@@ -210,7 +210,7 @@ create_account() {
 
     echo "${user}:${limit_ip}" >> /etc/wibutunnel/limit_ip.db
     echo "${user}:${limit_bw}" >> /etc/wibutunnel/limit_bw.db
-    systemctl restart xray >/dev/null 2>&1
+    xray_sync_user add "$proto" "$user" "$uuid"
 
     [[ "$limit_ip" -eq 0 ]] && limit_ip="Bebas" || limit_ip="${limit_ip} IP"
     [[ "$limit_bw" -eq 0 ]] && limit_bw="Unlimited" || limit_bw="${limit_bw} GB"
@@ -303,7 +303,7 @@ delete_account() {
     safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
     rm -f "/etc/wibutunnel/recovery/${user}.json"
 
-    systemctl restart xray >/dev/null 2>&1
+    xray_sync_user del ALL "$user"
 
     local kb=""
     [[ -n "$proto" ]] && kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'

@@ -138,7 +138,12 @@ if [[ ${#TRIAL_TO_DELETE[@]} -gt 0 || ${#NORMAL_TO_RECOVERY[@]} -gt 0 ]]; then
     
     safe_jq_edit "$JQ_FILTER"
     
-    systemctl restart xray >/dev/null 2>&1
+    for u in "${TRIAL_TO_DELETE[@]}"; do
+        xray_sync_user del ALL "$u"
+    done
+    for u in "${NORMAL_TO_RECOVERY[@]}"; do
+        xray_sync_user del ALL "$u"
+    done
 fi
 
 # ==========================================

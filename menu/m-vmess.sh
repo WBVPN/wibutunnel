@@ -112,7 +112,7 @@ add_user() {
     echo "${user}:${exp_date}" >> "$EXP_FILE"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     echo "${user}:${limit_ip}" >> "$DB_IP"; echo "${user}:${limit_kuota}" >> "$DB_BW"
-    systemctl restart xray >/dev/null 2>&1
+    xray_sync_user add VMESS "$user" "$uuid"
 
     vmess_tls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"443","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess","type":"none","host":"'$domain'","tls":"tls","sni":"'$domain'"}' | base64 -w 0)"
     vmess_ntls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"80","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess-ntls","type":"none","host":"'$domain'","tls":"","sni":""}' | base64 -w 0)"
@@ -209,7 +209,7 @@ trial_user() {
     echo "${user}:${exp_date}" >> "$EXP_FILE"
     safe_sed_delete "$user" "$DB_IP"; safe_sed_delete "$user" "$DB_BW"
     echo "${user}:0" >> "$DB_IP"; echo "${user}:0" >> "$DB_BW"
-    systemctl restart xray >/dev/null 2>&1
+    xray_sync_user add VMESS "$user" "$uuid"
 
     vmess_tls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"443","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess","type":"none","host":"'$domain'","tls":"tls","sni":"'$domain'"}' | base64 -w 0)"
     vmess_ntls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"80","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess-ntls","type":"none","host":"'$domain'","tls":"","sni":""}' | base64 -w 0)"
@@ -305,7 +305,7 @@ delete_user() {
     safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
     safe_sed_delete "$user" "$DB_LOCK"
     rm -f "/etc/wibutunnel/recovery/${user}.json"
-    systemctl restart xray >/dev/null 2>&1
+    xray_sync_user del VMESS "$user"
     echo ""; read -p "Tekan Enter..." dummy
 }
 
@@ -407,7 +407,6 @@ renew_user() {
 
     new_exp=$(date -d "@$(( base_sec + (tambahan * 86400) ))" +"%Y-%m-%d %H:%M:%S")
     safe_sed_delete "$user" "$EXP_FILE"; echo "${user}:${new_exp}" >> "$EXP_FILE"
-    systemctl restart xray >/dev/null 2>&1
 
     echo -e "\n${GREEN}Berhasil! Expired baru: $new_exp${NC}"
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
@@ -487,12 +486,13 @@ lock_unlock_user() {
     if db_has "$DB_LOCK" "$user"; then
         safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))' 
         safe_sed_delete "$user" "$DB_LOCK"
-        systemctl restart xray >/dev/null 2>&1
+        uuid=$(jq -r --arg email "$user" '.inbounds[4].settings.clients[]? | select(.email == $email) | .id' "$CONFIG_FILE" 2>/dev/null | head -n 1)
+        xray_sync_user add VMESS "$user" "$uuid"
         echo -e "\n${GREEN}Akun '$user' berhasil di-UNLOCK! Kini bisa login kembali.${NC}"
     else
         safe_jq_edit_args --arg user "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= (. + [$user] | unique)' 
         echo "$user:$now:0:LOCK" >> "$DB_LOCK"
-        systemctl restart xray >/dev/null 2>&1
+        xray_sync_user del VMESS "$user"
         echo -e "\n${RED}Akun '$user' berhasil di-LOCK! Dipindahkan ke Recovery.${NC}"
     fi
     echo ""; read -p "Tekan Enter..." dummy

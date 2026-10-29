@@ -81,6 +81,84 @@ safe_sed_delete() {
     fi
 }
 
+# xray_sync_user: sinkronisasi penambahan/penghapusan user via Xray API (port 10085)
+# Tanpa restart service -> koneksi user lain tidak terputus.
+# Fallback ke systemctl restart xray jika API offline/gagal.
+# ponytail: sync inbounds via gRPC API port 10085. Dynamic routing rules require RoutingService API if needed later.
+# Usage:
+#   xray_sync_user add <VLESS|VMESS|TROJAN> <user> <uuid_or_pw>
+#   xray_sync_user del <VLESS|VMESS|TROJAN|ALL> <user>
+xray_sync_user() {
+    local action="$1"
+    local proto="${2^^}"
+    local user="$3"
+    local cred="$4"
+    local api_server="127.0.0.1:10085"
+
+    # Jika port API tidak hidup, fallback restart service
+    if ! ss -tln 2>/dev/null | grep -q ":10085 "; then
+        systemctl restart xray >/dev/null 2>&1
+        return
+    fi
+
+    if [[ "$action" == "add" ]]; then
+        local tmp
+        tmp=$(mktemp /etc/wibutunnel/tmp/xray_adu.XXXXXX.json 2>/dev/null) || tmp="/tmp/xray_adu_$$.json"
+        case "$proto" in
+            VLESS)
+                cat <<EOF > "$tmp"
+{"inbounds":[
+  {"tag":"vless-ws-tls","port":10086,"protocol":"vless","settings":{"decryption":"none","clients":[{"id":"$cred","email":"$user"}]}},
+  {"tag":"vless-ws-ntls","port":10087,"protocol":"vless","settings":{"decryption":"none","clients":[{"id":"$cred","email":"$user"}]}},
+  {"tag":"vless-grpc","port":10088,"protocol":"vless","settings":{"decryption":"none","clients":[{"id":"$cred","email":"$user"}]}}
+]}
+EOF
+                ;;
+            VMESS)
+                cat <<EOF > "$tmp"
+{"inbounds":[
+  {"tag":"vmess-ws-tls","port":10089,"protocol":"vmess","settings":{"clients":[{"id":"$cred","alterId":0,"email":"$user"}]}},
+  {"tag":"vmess-ws-ntls","port":10090,"protocol":"vmess","settings":{"clients":[{"id":"$cred","alterId":0,"email":"$user"}]}},
+  {"tag":"vmess-grpc","port":10091,"protocol":"vmess","settings":{"clients":[{"id":"$cred","alterId":0,"email":"$user"}]}}
+]}
+EOF
+                ;;
+            TROJAN)
+                cat <<EOF > "$tmp"
+{"inbounds":[
+  {"tag":"trojan-ws-tls","port":10092,"protocol":"trojan","settings":{"clients":[{"password":"$cred","email":"$user"}]}},
+  {"tag":"trojan-grpc","port":10093,"protocol":"trojan","settings":{"clients":[{"password":"$cred","email":"$user"}]}}
+]}
+EOF
+                ;;
+            *)
+                rm -f "$tmp"
+                systemctl restart xray >/dev/null 2>&1
+                return
+                ;;
+        esac
+
+        if ! xray api adu --server="$api_server" "$tmp" >/dev/null 2>&1; then
+            systemctl restart xray >/dev/null 2>&1
+        fi
+        rm -f "$tmp"
+
+    elif [[ "$action" == "del" ]]; then
+        local tags=()
+        case "$proto" in
+            VLESS) tags=("vless-ws-tls" "vless-ws-ntls" "vless-grpc") ;;
+            VMESS) tags=("vmess-ws-tls" "vmess-ws-ntls" "vmess-grpc") ;;
+            TROJAN) tags=("trojan-ws-tls" "trojan-grpc") ;;
+            ALL) tags=("vless-ws-tls" "vless-ws-ntls" "vless-grpc" "vmess-ws-tls" "vmess-ws-ntls" "vmess-grpc" "trojan-ws-tls" "trojan-grpc") ;;
+            *) tags=() ;;
+        esac
+
+        for tag in "${tags[@]}"; do
+            xray api rmu --server="$api_server" -tag="$tag" "$user" >/dev/null 2>&1
+        done
+    fi
+}
+
 check_license() {
     local CACHE_FILE="/etc/wibutunnel/tmp/wibu_license.cache"
     local CACHE_TTL=3600

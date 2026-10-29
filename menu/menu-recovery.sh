@@ -144,7 +144,17 @@ safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db; echo "${user}:${bw_baru}" >
 safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
 
 safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
-safe_sed_delete "$user" /etc/wibutunnel/locked_users.db; systemctl restart xray >/dev/null 2>&1
+safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+
+cred=""
+if [[ "$proto" == "VLESS" ]]; then
+    cred=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' "$CONFIG_FILE" 2>/dev/null | head -n1)
+elif [[ "$proto" == "VMESS" ]]; then
+    cred=$(jq -r --arg u "$user" '.inbounds[4].settings.clients[]? | select(.email == $u) | .id' "$CONFIG_FILE" 2>/dev/null | head -n1)
+elif [[ "$proto" == "TROJAN" ]]; then
+    cred=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[]? | select(.email == $u) | .password' "$CONFIG_FILE" 2>/dev/null | head -n1)
+fi
+[[ -n "$cred" && "$cred" != "null" ]] && xray_sync_user add "$proto" "$user" "$cred" || systemctl restart xray >/dev/null 2>&1
 
 # Send full account details to Telegram
 source /etc/wibutunnel/bot.conf 2>/dev/null

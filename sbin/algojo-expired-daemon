@@ -104,11 +104,9 @@ while true; do
                 echo "${user}:${now_ts}:0:EXPIRED" >> /etc/wibutunnel/locked_users.db
             fi
 
-            deleted_any="1"
+            xray_sync_user del "$proto" "$user"
         done < "$proto_file"
     done
-    
-    [[ -n "$deleted_any" ]] && systemctl restart xray >/dev/null 2>&1
     
     sleep 5
 done

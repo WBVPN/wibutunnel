@@ -77,13 +77,7 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
             safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
             safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
             
-            deleted_any="1"
+            xray_sync_user del "$proto" "$user"
         fi
     done < "$proto_file"
 done
-
-# Force restart xray to disconnect all expired users
-if [[ -n "$deleted_any" ]]; then
-    systemctl restart xray >/dev/null 2>&1
-    echo "[$(date)] Xray restarted to enforce disconnections"
-fi
