@@ -629,11 +629,39 @@ echo "✓ Backup valid"
 
 ---
 
+## Architecture Upgrades (v4.0.1)
+
+1. **Zero-Downtime User Sync (`xray_sync_user` in `common.sh`)**
+   - Dynamic client addition/removal via Xray gRPC HandlerService on `127.0.0.1:10085`.
+   - Eliminates disruptive `systemctl restart xray` on create, trial, delete, lock, and unlock. Existing user sessions stay active.
+   - Automatic fallback to restart if API port is unreachable.
+
+2. **Atomic Flat-file DB Operations (`flock` in `common.sh`)**
+   - `safe_sed_delete`, `db_set`, `db_append` protected by non-blocking/wait flock.
+   - Eliminates race conditions and file wipeouts under concurrent bot/daemon executions.
+   - Consolidated `db_get` and `db_has` helper routines.
+
+3. **Elimination of Expiry Redundancy (`xp.sh` & `algojo-expired-daemon`)**
+   - Real-time 5-second account expiration strictly delegated to `algojo-expired-daemon` systemd service.
+   - `xp.sh` demoted from 1-minute crontab to daily midnight maintenance (`0 0 * * *`) for Xray/bot log truncation, temp file cleanup, and exp file deduplication.
+
+4. **Lean Installer & Configurable Reboot (`setup.sh` & `m-setting.sh`)**
+   - Stripped global `apt-get upgrade -y` from installer to prevent breakage of host packages and reduce install time to ~1 minute.
+   - Replaced forced reboot with interactive prompt at the end of installation.
+   - Auto-reboot crontab is now fully user-configurable (0-23 hours or 'off') via `m-setting` option [7].
+
+5. **Bounded Telegram Bot Logging (`menu/bot-daemon.sh`)**
+   - Removed stdout dumping of successful Telegram API responses (`{"ok":true}`) to `bot_error.log`.
+   - Error logs strictly capped at 1MB with byte-based truncation (`tail -c 200000`).
+   - Added manual log purge via `m-setting` options [2] and [6][4], plus daily truncation in `xp.sh`.
+
+---
+
 ## Contact & Support
 
 **Original Author:** wibuvpnstore@gmail.com  
-**Version:** 4.0 KURUMI  
-**Last Audit:** 2026-10-26 (3 critical bugs fixed)  
-**Verified Commit:** 74fa709a09925964810e4f520f31d0737042d1be
+**Version:** 4.0.1 KURUMI  
+**Last Audit:** 2026-10-30 (5 architecture upgrades completed)  
+**Verified Commit:** ac2379f1e0aa93e0f0f903cf522943265281c789
 
 **AI Assistants:** This documentation updated untuk memudahkan context transfer antar session. Baca ini first sebelum perform operations.
