@@ -54,10 +54,15 @@ db_set /etc/xray/vless_exp.conf "$TRIAL_USER" "$EXP_PAST"
 db_set /etc/wibutunnel/limit_ip.db "$TRIAL_USER" "1"
 xray_sync_user add VLESS "$TRIAL_USER" "$TRIAL_UUID"
 
+# Register SSH trial past expiry
+SSH_TRIAL="trial-ssh-exp-$$"
+add_ssh_user "$SSH_TRIAL" "testpass123" 1 1 1
+db_set /etc/xray/ssh_exp.conf "$SSH_TRIAL" "$EXP_PAST"
+
 # Run algojo-expired one-shot
 bash /usr/local/sbin/algojo-expired >/dev/null 2>&1
 
-# Verify trial was purged completely
+# Verify VLESS trial was purged completely
 if grep -q "$TRIAL_USER" /etc/xray/vless_exp.conf; then
     echo "ASSERT_FAILED: trial user still in exp.conf"
     exit 1
@@ -70,6 +75,16 @@ if xray api inbounduser --server=127.0.0.1:10085 --tag="vless-ws-tls" --email="$
     echo "ASSERT_FAILED: trial user still active in Xray RAM"
     exit 1
 fi
-echo "Trial auto-expiry purge: PASS"
+
+# Verify SSH trial was purged completely
+if id "$SSH_TRIAL" >/dev/null 2>&1; then
+    echo "ASSERT_FAILED: SSH trial user still in Linux system"
+    exit 1
+fi
+if grep -q "$SSH_TRIAL" /etc/xray/ssh_exp.conf; then
+    echo "ASSERT_FAILED: SSH trial user still in ssh_exp.conf"
+    exit 1
+fi
+echo "Trial auto-expiry purge (VLESS & SSH): PASS"
 
 echo "ALL_EXPIRY_AND_XP_ASSERTS_PASSED"
