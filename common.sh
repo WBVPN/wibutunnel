@@ -340,7 +340,7 @@ ssh_list_users() {
 
 ssh_get_pass() {
     [[ -f "$SSH_DB_PASS" ]] || return 1
-    db_get "$1" "$SSH_DB_PASS" | cut -d: -f2
+    db_get "$1" "$SSH_DB_PASS"
 }
 
 ssh_session_count() {
@@ -424,7 +424,7 @@ renew_ssh_user() {
     esac
     [[ "$add_sec" -le 0 ]] && { echo "durasi tidak valid"; return 1; }
 
-    base=$(db_get "$user" "$SSH_EXP_FILE" | cut -d: -f2-)
+    base=$(db_get "$user" "$SSH_EXP_FILE")
     if [[ -z "$base" ]]; then
         base=$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/{print $2}')
         [[ -z "$base" || "$base" == "never" ]] && base=$(date +"%Y-%m-%d %H:%M:%S")

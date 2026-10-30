@@ -598,7 +598,7 @@ list_account() {
         while read -r usr; do
             [[ -z "$usr" || "$usr" == dummy* ]] && continue
             local lmt=$(get_limits "$usr")
-            local exp; exp=$(db_get "$usr" /etc/xray/ssh_exp.conf | cut -d: -f2- | awk '{print $1}')
+            local exp; exp=$(db_get "$usr" /etc/xray/ssh_exp.conf | awk '{print $1}')
             [[ -z "$exp" ]] && exp="Lifetime"
             local lock_tag=""
             grep -q "^${usr}:" "$lock_db" 2>/dev/null && lock_tag=" [🔒LOCKED]"
@@ -756,10 +756,10 @@ detail_account() {
     elif ssh_user_exists "$user"; then
         local pass; pass=$(ssh_get_pass "$user")
         [[ -z "$pass" ]] && pass="<tidak tersedia>"
-        local exp; exp=$(db_get "$user" /etc/xray/ssh_exp.conf | cut -d: -f2-)
+        local exp; exp=$(db_get "$user" /etc/xray/ssh_exp.conf)
         [[ -z "$exp" ]] && exp="Lifetime"
-        local lip; lip=$(db_get "$user" /etc/wibutunnel/limit_ip.db | cut -d: -f2)
-        local lbw; lbw=$(db_get "$user" /etc/wibutunnel/limit_bw.db | cut -d: -f2)
+        local lip; lip=$(db_get "$user" /etc/wibutunnel/limit_ip.db)
+        local lbw; lbw=$(db_get "$user" /etc/wibutunnel/limit_bw.db)
         ssh_bot_config_message "$user" "$pass" "$exp" "$lip" "$lbw"
         return
     fi

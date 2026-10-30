@@ -40,15 +40,15 @@ select_ssh_user() {
     for i in "${!user_array[@]}"; do
         u="${user_array[$i]}"
         if [[ "$DISPLAY_TYPE" == "IP" ]]; then
-            val=$(db_get "$u" "$DB_IP" | cut -d: -f2)
+            val=$(db_get "$u" "$DB_IP")
             [[ -z "$val" || "$val" == "0" ]] && val="Bebas" || val="${val} IP"
             color="${CYAN}"
         elif [[ "$DISPLAY_TYPE" == "BW" ]]; then
-            val=$(db_get "$u" "$DB_BW" | cut -d: -f2)
+            val=$(db_get "$u" "$DB_BW")
             [[ -z "$val" || "$val" == "0" ]] && val="Unlimited" || val="${val} GB"
             color="${CYAN}"
         else
-            val=$(db_get "$u" "$SSH_EXP_FILE" | cut -d: -f2- | tail -n 1)
+            val=$(db_get "$u" "$SSH_EXP_FILE" | tail -n 1)
             is_locked=$(db_has "$u" "$DB_LOCK" && echo " ${RED}LOCKED${NC}" || echo "")
             [[ -z "$val" ]] && val="Lifetime"
             color="${YELLOW}Exp: "
@@ -210,10 +210,10 @@ cek_ssh_menu() {
 
     printf " ${WHITE}%-15s %-20s %-8s %-6s %-8s %s${NC}\n" USER EXPIRED IP KUOTA STATUS LOGIN
     for u in "${user_array[@]}"; do
-        exp=$(db_get "$u" "$SSH_EXP_FILE" | cut -d: -f2- | awk '{print $1}')
+        exp=$(db_get "$u" "$SSH_EXP_FILE" | awk '{print $1}')
         [[ -z "$exp" ]] && exp="Lifetime"
-        lip=$(db_get "$u" "$DB_IP" | cut -d: -f2); [[ -z "$lip" || "$lip" == "0" ]] && lip="Bebas"
-        lbw=$(db_get "$u" "$DB_BW" | cut -d: -f2); [[ -z "$lbw" || "$lbw" == "0" ]] && lbw="Unli" || lbw="${lbw}G"
+        lip=$(db_get "$u" "$DB_IP"); [[ -z "$lip" || "$lip" == "0" ]] && lip="Bebas"
+        lbw=$(db_get "$u" "$DB_BW"); [[ -z "$lbw" || "$lbw" == "0" ]] && lbw="Unli" || lbw="${lbw}G"
         if db_has "$u" "$DB_LOCK"; then status="${RED}LOCK${NC}"
         elif [[ "$exp" != "Lifetime" && "$exp" < "$(date +%F)" ]]; then status="${YELLOW}EXPD${NC}"
         else status="${GREEN}AKTIF${NC}"; fi
@@ -249,10 +249,10 @@ detail_ssh_menu() {
     local user="$SELECTED_USER"
     local pass; pass=$(ssh_get_pass "$user")
     [[ -z "$pass" ]] && pass="<tidak tersedia>"
-    local exp; exp=$(db_get "$user" "$SSH_EXP_FILE" | cut -d: -f2-)
+    local exp; exp=$(db_get "$user" "$SSH_EXP_FILE")
     [[ -z "$exp" ]] && exp="Lifetime"
-    local lip; lip=$(db_get "$user" "$DB_IP" | cut -d: -f2)
-    local lbw; lbw=$(db_get "$user" "$DB_BW" | cut -d: -f2)
+    local lip; lip=$(db_get "$user" "$DB_IP")
+    local lbw; lbw=$(db_get "$user" "$DB_BW")
     ssh_config_message "$user" "$pass" "$exp" "$lip" "$lbw"
     read -p "Tekan Enter..." dummy
 }
@@ -328,6 +328,26 @@ lock_unlock_ssh_menu() {
     read -p "Tekan Enter..." dummy
 }
 
+edit_banner_ssh() {
+    clear; echo -e "${LINE}"; echo -e "             ${WHITE}EDIT BANNER SSH${NC}"; echo -e "${LINE}"
+    BANNER_FILE="/etc/wibutunnel/ssh-banner"
+    if [[ ! -f "$BANNER_FILE" ]]; then
+        mkdir -p /etc/wibutunnel
+        printf '<b><font color="#00ff36">WIBU TUNNELING SSH</font></b>\n' > "$BANNER_FILE"
+    fi
+    echo -e "${CYAN}Banner saat ini:${NC}"
+    echo -e "${LINE}"
+    cat "$BANNER_FILE"
+    echo -e "\n${LINE}"
+    echo -e "${YELLOW}Buka editor nano untuk mengubah banner.${NC}"
+    echo -e "${YELLOW}Simpan: CTRL+O lalu Enter. Keluar: CTRL+X.${NC}"
+    read -p "Tekan Enter untuk membuka nano..." dummy
+    ${EDITOR:-nano} "$BANNER_FILE"
+    systemctl restart dropbear
+    echo -e "\n${GREEN}Banner SSH berhasil diperbarui & Dropbear direstart!${NC}"
+    read -p "Tekan Enter..." dummy
+}
+
 install_ssh_menu() {
     clear; echo -e "${LINE}"; echo -e "          ${WHITE}INSTALL SSH STACK${NC}"; echo -e "${LINE}"
     echo -e " ${CYAN}Memasang: dropbear 2019.78 + ws-stunnel + badvpn-udpgw${NC}"
@@ -359,6 +379,7 @@ echo -e " ${CYAN}[8]  Ganti Limit Kuota GB${NC}"
 echo -e " ${GREEN}[9]  Cek Login Online${NC}"
 echo -e "${LINE}"
 echo -e " ${RED}[10] Lock / Unlock Akun${NC}"
+echo -e " ${YELLOW}[11] Edit Banner SSH${NC}"
 echo -e " ${CYAN}[99] Install / Repair SSH Stack${NC}"
 echo -e " ${WHITE}[0]  Back to Menu Dashboard${NC}"
 echo -e "${LINE}"
@@ -377,6 +398,7 @@ case $sub_menu in
     8) change_bw_ssh_menu; exec m-ssh ;;
     9) /usr/local/bin/cek-trafik SSH ;;
     10) lock_unlock_ssh_menu; exec m-ssh ;;
+    11) edit_banner_ssh; exec m-ssh ;;
     0) exec menu ;;
     *) echo -e "${RED}Pilihan tidak valid!${NC}"; sleep 1; exec m-ssh ;;
 esac

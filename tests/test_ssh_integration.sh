@@ -21,8 +21,8 @@ pass_read=$(ssh_get_pass "$TEST_USER")
 [[ "$pass_read" == "$TEST_PASS" ]] || { echo "ASSERT_FAILED: password mismatch"; exit 1; }
 
 # Pastikan limit IP dan BW tersimpan
-[[ "$(db_get "$TEST_USER" /etc/wibutunnel/limit_ip.db | cut -d: -f2)" == "2" ]] || { echo "ASSERT_FAILED: limit ip mismatch"; exit 1; }
-[[ "$(db_get "$TEST_USER" /etc/wibutunnel/limit_bw.db | cut -d: -f2)" == "10" ]] || { echo "ASSERT_FAILED: limit bw mismatch"; exit 1; }
+[[ "$(db_get "$TEST_USER" /etc/wibutunnel/limit_ip.db)" == "2" ]] || { echo "ASSERT_FAILED: limit ip mismatch"; exit 1; }
+[[ "$(db_get "$TEST_USER" /etc/wibutunnel/limit_bw.db)" == "10" ]] || { echo "ASSERT_FAILED: limit bw mismatch"; exit 1; }
 echo "add_ssh_user: PASS"
 
 echo "=== 2. Testing bot-daemon SSH function integration ==="
@@ -52,15 +52,15 @@ echo "Bot Unlock SSH: PASS"
 
 # Test Bot Change Limit
 change_limit "$TEST_USER" 5 20 "SSH"
-[[ "$(db_get "$TEST_USER" /etc/wibutunnel/limit_ip.db | cut -d: -f2)" == "5" ]] || { echo "ASSERT_FAILED: changed limit ip mismatch"; exit 1; }
-[[ "$(db_get "$TEST_USER" /etc/wibutunnel/limit_bw.db | cut -d: -f2)" == "20" ]] || { echo "ASSERT_FAILED: changed limit bw mismatch"; exit 1; }
+[[ "$(db_get "$TEST_USER" /etc/wibutunnel/limit_ip.db)" == "5" ]] || { echo "ASSERT_FAILED: changed limit ip mismatch"; exit 1; }
+[[ "$(db_get "$TEST_USER" /etc/wibutunnel/limit_bw.db)" == "20" ]] || { echo "ASSERT_FAILED: changed limit bw mismatch"; exit 1; }
 echo "Bot Change Limit SSH: PASS"
 
 # Test Bot Renew
-old_exp=$(db_get "$TEST_USER" /etc/xray/ssh_exp.conf | cut -d: -f2-)
+old_exp=$(db_get "$TEST_USER" /etc/xray/ssh_exp.conf)
 renew_account "$TEST_USER" 10 "SSH"
-new_exp=$(db_get "$TEST_USER" /etc/xray/ssh_exp.conf | cut -d: -f2-)
-[[ "$new_exp" > "$old_exp" ]] || { echo "ASSERT_FAILED: expiry not renewed"; exit 1; }
+new_exp=$(db_get "$TEST_USER" /etc/xray/ssh_exp.conf)
+[[ "$new_exp" > "$old_exp" ]] || { echo "ASSERT_FAILED: expiry not renewed (old: $old_exp, new: $new_exp)"; exit 1; }
 echo "Bot Renew SSH: PASS"
 
 # Test Bot Delete

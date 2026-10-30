@@ -66,6 +66,7 @@ echo -e " ${WHITE}[6] Setup Bot Telegram${NC}"
 echo -e " ${CYAN}[7] Setup Auto Reboot VPS${NC}"
 echo -e " ${YELLOW}[8] Ganti Domain & Renew SSL${NC}"
 echo -e " ${GREEN}[9] Atur Durasi Lock Otomatis${NC}"
+echo -e " ${WHITE}[10] Edit Banner SSH${NC}"
 echo -e " ${RED}[0] Kembali ke Dashboard Utama${NC}"
 echo -e "$LINE"
 
@@ -352,6 +353,26 @@ EOFBOT
         fi
         echo "LOCK_DURATION=$new_duration" > /etc/wibutunnel/lock.conf
         echo -e "${GREEN}Berhasil! Durasi lock diubah menjadi ${new_duration} menit.${NC}"
+        read -p "Tekan Enter..." dummy
+        exec m-setting
+        ;;
+    10)
+        clear; echo -e "$LINE"; echo -e "         ${WHITE}EDIT BANNER SSH${NC}"; echo -e "$LINE"
+        BANNER_FILE="/etc/wibutunnel/ssh-banner"
+        if [[ ! -f "$BANNER_FILE" ]]; then
+            mkdir -p /etc/wibutunnel
+            printf '<b><font color="#00ff36">WIBU TUNNELING SSH</font></b>\n' > "$BANNER_FILE"
+        fi
+        echo -e "${CYAN}Banner saat ini:${NC}"
+        echo -e "$LINE"
+        cat "$BANNER_FILE"
+        echo -e "\n$LINE"
+        echo -e "${YELLOW}Buka editor nano untuk mengubah banner.${NC}"
+        echo -e "${YELLOW}Simpan: CTRL+O lalu Enter. Keluar: CTRL+X.${NC}"
+        read -p "Tekan Enter untuk membuka editor..." dummy
+        ${EDITOR:-nano} "$BANNER_FILE"
+        systemctl restart dropbear
+        echo -e "\n${GREEN}Banner SSH berhasil diperbarui & Dropbear direstart!${NC}"
         read -p "Tekan Enter..." dummy
         exec m-setting
         ;;
