@@ -655,13 +655,27 @@ echo "✓ Backup valid"
    - Error logs strictly capped at 1MB with byte-based truncation (`tail -c 200000`).
    - Added manual log purge via `m-setting` options [2] and [6][4], plus daily truncation in `xp.sh`.
 
+6. **Interactive Bot Lock & Unlock (`menu/bot-daemon.sh`)**
+   - Added `[🔒 Lock User]` and `[🔓 Unlock User]` inline buttons to VLESS, VMESS, TROJAN, and SSH bot menus.
+   - Real-time locked tag indicator (`[🔒LOCKED]`) visible on account lists when user is present in `locked_users.db`.
+
+7. **Full SSH Tunnel Stack Integration (Dropbear + WS-Stunnel + HAProxy)**
+   - Re-integrated Dropbear (ports 109, 143, 2222) and Python `ws-stunnel` (port 10015).
+   - HAProxy 2-stage TCP multiplexing on ports 80 & 443:
+     - Direct SSH string `SSH-` routed straight to Dropbear port 143.
+     - Enhanced HTTP/WS split payloads (`GET` + `PATCH` + `[split] HTTP/ 69`) routed raw TCP to `ws-stunnel` to avoid 502 Bad Gateway.
+     - `ws-stunnel` cleans HTTP split preamble before feeding valid SSH packets to Dropbear port 109.
+   - Comprehensive SSH management in CLI menu (`m-ssh.sh`) and Telegram Bot (`menu/bot-daemon.sh`): create, trial, delete, renew, limit IP/BW, lock/unlock, and live login status.
+   - Expiry daemon (`algojo-expired-daemon`) auto-purging expired SSH trials (`pkill -u` + `del_ssh_user`).
+   - Banner SSH editor restored in `m-ssh` [11] and `m-setting` [10] modifying `/etc/wibutunnel/ssh-banner`.
+
 ---
 
 ## Contact & Support
 
 **Original Author:** wibuvpnstore@gmail.com  
-**Version:** 4.0.1 KURUMI  
-**Last Audit:** 2026-10-30 (5 architecture upgrades completed)  
-**Verified Commit:** ac2379f1e0aa93e0f0f903cf522943265281c789
+**Version:** 4.0.3 KURUMI  
+**Last Audit:** 2026-10-30 (SSH Tunnel, Enhanced Mode, Banner & Bot Upgrades)  
+**Verified Commit:** 69c28b7
 
 **AI Assistants:** This documentation updated untuk memudahkan context transfer antar session. Baca ini first sebelum perform operations.
