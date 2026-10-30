@@ -440,12 +440,16 @@ list_account() {
         echo "IP: ${ip} | BW: ${bw}"
     }
 
+    local lock_db="/etc/wibutunnel/locked_users.db"
+
     if [[ "$target_proto" == "VLESS" ]]; then
         local c=0
         while IFS=":" read -r usr exp; do
             [[ -z "$usr" || "$usr" == dummy* ]] && continue
             local lmt=$(get_limits "$usr")
-            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})\n"
+            local lock_tag=""
+            grep -q "^${usr}:" "$lock_db" 2>/dev/null && lock_tag=" [🔒LOCKED]"
+            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})${lock_tag}\n"
             ((c++))
         done < /etc/xray/vless_exp.conf
         [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
@@ -454,7 +458,9 @@ list_account() {
         while IFS=":" read -r usr exp; do
             [[ -z "$usr" || "$usr" == dummy* ]] && continue
             local lmt=$(get_limits "$usr")
-            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})\n"
+            local lock_tag=""
+            grep -q "^${usr}:" "$lock_db" 2>/dev/null && lock_tag=" [🔒LOCKED]"
+            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})${lock_tag}\n"
             ((c++))
         done < /etc/xray/vmess_exp.conf
         [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
@@ -463,7 +469,9 @@ list_account() {
         while IFS=":" read -r usr exp; do
             [[ -z "$usr" || "$usr" == dummy* ]] && continue
             local lmt=$(get_limits "$usr")
-            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})\n"
+            local lock_tag=""
+            grep -q "^${usr}:" "$lock_db" 2>/dev/null && lock_tag=" [🔒LOCKED]"
+            msg+=" ├ <code>${usr}</code> (Exp: $(echo "$exp" | awk '{print $1}') | ${lmt})${lock_tag}\n"
             ((c++))
         done < /etc/xray/trojan_exp.conf
         [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
@@ -472,6 +480,53 @@ list_account() {
     msg+="\n━━━━━━━━━━━━━━━━━━━━"
     local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${target_proto}"' Menu","callback_data":"menu_'"${target_proto,,}"'"}]]}'
     send_msg "$msg" "$kb"
+}
+
+lock_account() {
+    local user=$1
+    local proto=$2
+    if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
+
+    local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+
+    if ! jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) != null' "$CONFIG_FILE" >/dev/null 2>&1; then
+        send_msg "❌ <b>Gagal!</b>\nAkun <code>${user}</code> tidak ditemukan di config Xray." "$kb"
+        return
+    fi
+
+    if grep -q "^${user}:" /etc/wibutunnel/locked_users.db 2>/dev/null; then
+        send_msg "⚠️ <b>Perhatian!</b>\nAkun <code>${user}</code> memang sudah dalam kondisi terkunci." "$kb"
+        return
+    fi
+
+    if [[ -x /usr/local/sbin/lock-user ]]; then
+        /usr/local/sbin/lock-user "$user" "0" "MANUAL"
+    elif [[ -x /usr/local/bin/lock-user ]]; then
+        /usr/local/bin/lock-user "$user" "0" "MANUAL"
+    fi
+
+    send_msg "🔒 <b>Sukses!</b>\nAkun <code>${user}</code> telah dikunci (status LOCKED).\nKoneksi user diputus dan dipindahkan ke Recovery." "$kb"
+}
+
+unlock_account() {
+    local user=$1
+    local proto=$2
+    if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
+
+    local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+
+    if ! grep -q "^${user}:" /etc/wibutunnel/locked_users.db 2>/dev/null; then
+        send_msg "⚠️ <b>Perhatian!</b>\nAkun <code>${user}</code> tidak ada dalam daftar terkunci (tidak dalam status locked)." "$kb"
+        return
+    fi
+
+    if [[ -x /usr/local/sbin/unlock-user ]]; then
+        /usr/local/sbin/unlock-user "$user" "MANUAL"
+    elif [[ -x /usr/local/bin/unlock-user ]]; then
+        /usr/local/bin/unlock-user "$user" "MANUAL"
+    fi
+
+    send_msg "🔓 <b>Sukses!</b>\nAkun <code>${user}</code> berhasil dibuka kembali (UNLOCKED).\nUser sekarang dapat login kembali ke VPN." "$kb"
 }
 
 backup_vps() {
@@ -711,6 +766,7 @@ show_proto_menu() {
     kb+='[{"text":"♻️ Renew","callback_data":"act_renew_'"$proto"'"},{"text":"🗑 Delete","callback_data":"act_del_'"$proto"'"}],'
     kb+='[{"text":"🟢 Cek Login","callback_data":"act_login_'"$proto"'"},{"text":"📋 List Akun","callback_data":"act_list_'"$proto"'"}],'
     kb+='[{"text":"🎛 Limit & BW","callback_data":"act_limit_'"$proto"'"},{"text":"🔎 Detail Link","callback_data":"act_detail_'"$proto"'"}],'
+    kb+='[{"text":"🔒 Lock User","callback_data":"act_lock_'"$proto"'"},{"text":"🔓 Unlock User","callback_data":"act_unlock_'"$proto"'"}],'
     kb+='[{"text":"🔙 Back","callback_data":"main_menu"}]'
     kb+=']}'
 
@@ -730,6 +786,8 @@ ask_input() {
         renew) text="♻️ <b>RENEW ${proto}</b>\n\nKirim data dengan format:\n<code>[username] [tambahan_hari]</code>\n\nContoh: <code>budi 30</code>" ;;
         limit) text="🎛 <b>UBAH LIMIT ${proto}</b>\n\nKirim data dengan format:\n<code>[username] [limit_ip_baru] [limit_gb_baru]</code>\n\nContoh: <code>budi 2 5</code>\n<i>(Kirim 0 untuk unlimited)</i>" ;;
         detail) text="🔎 <b>DETAIL AKUN ${proto}</b>\n\nKirim <b>Username</b>:\nContoh: <code>budi</code>" ;;
+        lock) text="🔒 <b>LOCK USER ${proto}</b>\n\nKirim <b>Username</b> yang ingin dikunci:\nContoh: <code>budi</code>" ;;
+        unlock) text="🔓 <b>UNLOCK USER ${proto}</b>\n\nKirim <b>Username</b> yang ingin dibuka kuncinya:\nContoh: <code>budi</code>" ;;
     esac
 
     local kb='{"inline_keyboard":[[{"text":"❌ Batal","callback_data":"menu_'"${proto,,}"'"}]]}'
@@ -895,6 +953,12 @@ while true; do
                         ;;
                     detail)
                         detail_account "$TEXT" "$proto"
+                        ;;
+                    lock)
+                        lock_account "$TEXT" "$proto"
+                        ;;
+                    unlock)
+                        unlock_account "$TEXT" "$proto"
                         ;;
                 esac
             else
