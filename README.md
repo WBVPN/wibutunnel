@@ -1,8 +1,9 @@
-# 🦋 WIBU TUNNELING v4.0 KURUMI
+# 🦋 WIBU TUNNELING v4.0.3 KURUMI
 
 **Auto-install VPN script** berbasis Xray dengan Telegram bot monitoring. Satu command, VPN langsung jalan.
 
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)](https://github.com/WBVPN/wibutunnel)
+[![Version](https://img.shields.io/badge/Version-v4.0.3%20KURUMI-blue.svg)](https://github.com/WBVPN/wibutunnel)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)](https://github.com/WBVPN/wibutunnel)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -10,14 +11,14 @@
 
 ## ✨ Fitur Utama
 
-- 🔐 **3 Protokol**: VLESS, VMESS, TROJAN (WS-TLS, WS-NTLS, gRPC)
+- 🔐 **3 Protokol + SSH**: VLESS, VMESS, TROJAN (WS-TLS, WS-NTLS, gRPC) & SSH Tunnel (Dropbear, WebSocket, Direct Port 80/443, Enhanced Split Payload)
 - 🤖 **Telegram Bot**: Buat/hapus akun, cek login, backup - semua dari HP
 - 🎯 **Auto Enforcement**: Kuota habis/expired = auto lock/delete + notif
 - 🛡️ **IP Tracking**: Deteksi multi-device login real-time via live socket
 - ⚡ **Trial Account**: Hardcoded 1 jam, auto-delete setelah expire/habis kuota
 - 🔄 **Recovery System**: User expired/habis kuota disimpan, bisa restore dengan limit baru
 - 🌐 **HAProxy + Xray**: Port 80/443 langsung aktif
-- 🔒 **Auto SSL**: Let's Encrypt via acme.sh, auto-renew
+- 🔒 **Auto SSL**: Let's Encrypt via certbot, auto-renew
 
 ---
 
@@ -28,23 +29,24 @@
 - Domain aktif dengan A record pointing ke IP VPS
 - VPS minimal 1 CPU / 512MB RAM
 - Root access
+- IP VPS harus didaftarkan oleh admin di `izin.txt` sebelum instalasi (hubungi @wibuvpn atau pastikan IP sudah terdaftar di `izin.txt`)
 
 ### Instalasi
 
 ```bash
-# 1. Update system
 apt update && apt install -y wget curl
-
-# 2. Download installer
 wget https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-
-# 3. Jalankan installer
 bash setup.sh
 ```
 
+Atau one-liner:
+```bash
+wget -qO setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh && bash setup.sh
+```
+
 Installer akan:
-1. ✅ Install dependencies (curl, jq, nginx/haproxy, xray)
-2. ✅ Setup SSL certificate (acme.sh)
+1. ✅ Install dependencies (curl, jq, haproxy, xray)
+2. ✅ Setup SSL certificate (certbot)
 3. ✅ Configure 3 protocols dengan 9 inbounds
 4. ✅ Prompt Telegram bot token & chat ID
 5. ✅ Install systemd services (xray, telegram-bot, enforcement daemons)
@@ -88,10 +90,11 @@ Format username `trial-xxxx` otomatis:
 ### Menu Utama
 ```bash
 menu              # Dashboard utama
+m-ssh             # Kelola SSH accounts & tunnel (Edit Banner SSH: [11])
 m-vless           # Kelola VLESS accounts
 m-vmess           # Kelola VMESS accounts
 m-trojan          # Kelola TROJAN accounts
-m-setting         # System settings, update script, bot config
+m-setting         # System settings, update script, bot config, banner SSH: [10]
 m-backup          # Backup/restore manual
 menu-recovery     # Restore user dari recovery room
 menu-lock         # Lock user manual
@@ -101,7 +104,7 @@ menu-unlock       # Unlock user manual
 ### Service Management
 ```bash
 # Status check
-systemctl status xray telegram-bot algojo-expired
+systemctl status xray telegram-bot algojo-expired wibu-daemon
 
 # Restart services
 systemctl restart xray
@@ -154,6 +157,8 @@ tail -f /var/log/xray/error.log
 | `algojo-wibu` | IP limit check | 60s | Lock 15 min (auto-unlock) |
 | `algojo-kuota` | Bandwidth limit | 60s | Delete + recovery (regular) atau delete permanen (trial) |
 | `algojo-expired` | Expiry check | 5s | Delete + recovery (regular) atau delete permanen (trial) |
+| `algojo-expired-daemon` | 5s real-time expiry sweep | 5s | Delete + recovery (regular) atau delete permanen (trial) |
+| `ws-stunnel` | Python WebSocket SSH proxy | Real-time | Raw TCP proxy & HTTP split payload sanitizer ke Dropbear :109 |
 
 ### Behavior
 
@@ -252,6 +257,12 @@ bash uninstall.sh
 | 443 | VMESS | `vmess` | gRPC-TLS |
 | 443 | TROJAN | `/trojan` | WS-TLS |
 | 443 | TROJAN | `trojan` | gRPC-TLS |
+| 443 | Direct SSH | - | `SSH-` direct to Dropbear :143 |
+| 80 | Direct SSH | - | `SSH-` direct to Dropbear :143 |
+| 80/443 | SSH WS / Enhanced | `/` or split payload | ws-stunnel :10015 -> Dropbear :109 |
+| 109 | Dropbear | - | Dropbear WS internal target |
+| 143 | Dropbear | - | Dropbear Direct multiplexed target |
+| 2222 | Dropbear | - | Dropbear loopback |
 
 ### Architecture
 
@@ -264,7 +275,9 @@ Internet → HAProxy (80/443)
             ├→ Xray inbound[5] VMESS WS-NTLS :10090
             ├→ Xray inbound[6] VMESS gRPC :10091
             ├→ Xray inbound[7] TROJAN WS-TLS :10092
-            └→ Xray inbound[8] TROJAN gRPC :10093
+            ├→ Xray inbound[8] TROJAN gRPC :10093
+            ├→ Direct SSH (`SSH-`) → Dropbear :143
+            └→ SSH WS / Enhanced Split Payload (`/` or split) → ws-stunnel :10015 → Dropbear :109
 ```
 
 ---
@@ -311,7 +324,7 @@ jq '.log.loglevel' /etc/xray/config.json
 tail -20 /var/log/xray/access.log | grep "accepted"
 
 # Check daemon running
-systemctl status algojo-wibu
+systemctl status wibu-daemon
 
 # Manual test
 bash /usr/local/sbin/algojo-wibu

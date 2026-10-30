@@ -16,6 +16,9 @@ if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
     exit 1
 fi
 
+# Pre-flight tool check
+command -v curl >/dev/null 2>&1 || { apt-get update -y >/dev/null 2>&1 && apt-get install -y curl wget >/dev/null 2>&1; }
+
 # [FIX Bug #1] Deteksi IP publik dengan validasi dan retry
 echo -e "\e[1;36m[+] Mendeteksi IP publik...\e[0m"
 MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com)
@@ -42,7 +45,11 @@ clear
 echo -e "\e[1;36m[+] Memeriksa Lisensi Script...\e[0m"
 
 LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
-GET_DATA=$(curl -sS --max-time 10 $LINK_IZIN | grep -w "$MYIP")
+if [[ -f "./izin.txt" ]] && grep -w "$MYIP" "./izin.txt" >/dev/null 2>&1; then
+    GET_DATA=$(grep -w "$MYIP" "./izin.txt")
+else
+    GET_DATA=$(curl -sS --max-time 10 $LINK_IZIN | grep -w "$MYIP")
+fi
 
 CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
 EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')
@@ -309,6 +316,15 @@ EOF
 systemctl daemon-reload
 systemctl enable --now network-tune.service >/dev/null 2>&1
 
+# Stop conflicting web servers
+echo -e "\e[1;36m[+] Menghentikan web server yang konflik dengan HAProxy...\e[0m"
+for svc in nginx apache2; do
+    if systemctl is-active --quiet $svc; then
+        echo -e "\e[1;33m[!] Menghentikan $svc...\e[0m"
+        systemctl stop $svc && systemctl disable $svc
+    fi
+done
+
 # SSL
 systemctl stop haproxy 2>/dev/null
 
@@ -325,6 +341,8 @@ if [ ! -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
     exit 1
 fi
 cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain"/privkey.pem > /etc/haproxy/certs/"$domain".pem
+chmod 700 /etc/haproxy/certs
+chmod 600 /etc/haproxy/certs/*.pem
 
 # XRAY CORE
 curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install
@@ -361,15 +379,10 @@ cat <<'XEOF' > /usr/local/etc/xray/config.json
   "routing": {"domainStrategy": "AsIs","rules": [{"type": "field","inboundTag": ["api"],"outboundTag": "api"},{"type": "field","outboundTag": "blocked","user": ["DUMMY-LOCK"]},{"type": "field","ip": ["geoip:private"],"outboundTag": "blocked"},{"type": "field","protocol": ["bittorrent"],"outboundTag": "blocked"}]}
 }
 XEOF
-
-# Stop conflicting web servers
-echo -e "\e[1;36m[+] Menghentikan web server yang konflik dengan HAProxy...\e[0m"
-for svc in nginx apache2; do
-    if systemctl is-active --quiet $svc; then
-        echo -e "\e[1;33m[!] Menghentikan $svc...\e[0m"
-        systemctl stop $svc && systemctl disable $svc
-    fi
-done
+chown -R root:xray /usr/local/etc/xray
+chmod 640 /usr/local/etc/xray/config.json
+ln -sf /usr/local/etc/xray/config.json /etc/xray/config.json
+chown -R root:xray /etc/xray 2>/dev/null || true
 
 # HAProxy Config
 cat <<HFEOF > /etc/haproxy/haproxy.cfg
@@ -400,7 +413,7 @@ defaults
 
 # ===================== TAHAP 1 =====================
 frontend ssl_sni
-    bind *:443 ssl crt /etc/haproxy/certs/\${domain}.pem alpn h2,http/1.1
+    bind *:443 ssl crt /etc/haproxy/certs/${domain}.pem alpn h2,http/1.1
     mode tcp
     tcp-request inspect-delay 5s
     tcp-request content accept if { req.payload(0,4) -m str SSH- }
@@ -571,16 +584,23 @@ download_menu() {
         return 1
     fi
     
-    # Validate shebang
-    if ! head -n1 "$tmp_file" | grep -q '^#!/bin/bash'; then
-        echo -e "\e[31m[!] File $2 bukan bash script valid\e[0m"
-        rm -f "$tmp_file"
-        return 1
-    fi
-
-    # Validate syntax sebelum dipasang
-    if ! bash -n "$tmp_file" 2>/dev/null; then
-        echo -e "\e[31m[!] File $2 gagal syntax check (bash -n)\e[0m"
+    # Validate shebang and syntax
+    local shebang=$(head -n 1 "$tmp_file")
+    if [[ "$shebang" =~ ^#!.*(bash|sh) ]]; then
+        if ! bash -n "$tmp_file" 2>/dev/null; then
+            echo -e "\e[31m[!] File $2 gagal syntax check (bash -n)\e[0m"
+            rm -f "$tmp_file"
+            return 1
+        fi
+    elif [[ "$shebang" =~ ^#!.*python ]]; then
+        if ! python3 -m py_compile "$tmp_file" 2>/dev/null; then
+            echo -e "\e[31m[!] File $2 gagal syntax check (python3 -m py_compile)\e[0m"
+            rm -f "$tmp_file"
+            return 1
+        fi
+        rm -rf /etc/wibutunnel/tmp/__pycache__
+    else
+        echo -e "\e[31m[!] File $2 bukan script bash/python valid\e[0m"
         rm -f "$tmp_file"
         return 1
     fi
@@ -629,17 +649,16 @@ _need "sbin/algojo-expired-daemon" "algojo-expired-daemon"
 _need "sbin/ws-stunnel" "ws-stunnel"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu algojo-expired; do
+for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
-        chmod +x "/usr/local/sbin/${s}"
     fi
-done
-# lock-user and unlock-user go to /usr/local/bin/
-for s in lock-user unlock-user; do
     if [ -f "/usr/local/sbin/${s}" ]; then
-        mv "/usr/local/sbin/${s}" "/usr/local/bin/${s}"
-        chmod +x "/usr/local/bin/${s}"
+        cp -f "/usr/local/sbin/${s}" "/usr/local/bin/${s}" 2>/dev/null || ln -sf "/usr/local/sbin/${s}" "/usr/local/bin/${s}"
+        chmod +x "/usr/local/bin/${s}" "/usr/local/sbin/${s}" 2>/dev/null || true
+    elif [ -f "/usr/local/bin/${s}" ]; then
+        cp -f "/usr/local/bin/${s}" "/usr/local/sbin/${s}" 2>/dev/null || ln -sf "/usr/local/bin/${s}" "/usr/local/sbin/${s}"
+        chmod +x "/usr/local/bin/${s}" "/usr/local/sbin/${s}" 2>/dev/null || true
     fi
 done
 
@@ -822,6 +841,8 @@ domain=$(cat /etc/xray/domain 2>/dev/null)
 systemctl stop haproxy
 certbot renew --quiet --no-self-upgrade --standalone
 cat /etc/letsencrypt/live/$domain/fullchain.pem /etc/letsencrypt/live/$domain/privkey.pem > /etc/haproxy/certs/$domain.pem
+chmod 700 /etc/haproxy/certs
+chmod 600 /etc/haproxy/certs/*.pem
 systemctl start haproxy || { echo "Failed to start haproxy"; exit 1; }
 sleep 2
 systemctl is-active --quiet haproxy || { echo "haproxy failed to start"; systemctl status haproxy; exit 1; }

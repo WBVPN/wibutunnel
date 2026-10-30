@@ -37,7 +37,8 @@ safe_jq_edit() {
         tmp=$(mktemp /etc/wibutunnel/tmp/xray_edit.XXXXXX.json) || return 1
         if jq "$filter" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             mv "$tmp" "$src"
-            chmod 644 "$src"
+            chown root:xray "$src" 2>/dev/null || true
+            chmod 640 "$src"
             rm -f "$tmp"
         else
             echo "[ERROR] jq edit gagal, config tidak diubah" >&2
@@ -55,7 +56,8 @@ safe_jq_edit_args() {
         tmp=$(mktemp /etc/wibutunnel/tmp/xray_edit.XXXXXX.json) || return 1
         if jq "$@" "$src" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
             mv "$tmp" "$src"
-            chmod 644 "$src"
+            chown root:xray "$src" 2>/dev/null || true
+            chmod 640 "$src"
             rm -f "$tmp"
         else
             echo "[ERROR] jq edit gagal, config tidak diubah" >&2

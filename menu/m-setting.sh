@@ -34,13 +34,45 @@ safe_update() {
     local repo_path="$1"
     local base_name=$(basename "$repo_path")
     local target_name="${base_name%.sh}"
+    if [[ "$base_name" == "common.sh" ]]; then target_name="common.sh"; fi
     
     local raw_url="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/${repo_path}?$(date +%s)"
+    local tmp_file="/etc/wibutunnel/tmp/${base_name}"
     
-    wget -q -O "/etc/wibutunnel/tmp/${base_name}" "$raw_url" 2>/dev/null
-    if [[ -s "/etc/wibutunnel/tmp/${base_name}" ]]; then
-        mv "/etc/wibutunnel/tmp/${base_name}" "/usr/local/bin/${target_name}"
-        chmod +x "/usr/local/bin/${target_name}"
+    wget -q -O "$tmp_file" "$raw_url" 2>/dev/null
+    if [[ -s "$tmp_file" ]]; then
+        local shebang=$(head -n 1 "$tmp_file")
+        if [[ "$shebang" =~ ^#!.*(bash|sh) ]]; then
+            if ! bash -n "$tmp_file" 2>/dev/null; then
+                echo -e "${RED}× Gagal syntax check bash -n: ${base_name}${NC}"
+                rm -f "$tmp_file"
+                return 1
+            fi
+        elif [[ "$shebang" =~ ^#!.*python ]]; then
+            if ! python3 -m py_compile "$tmp_file" 2>/dev/null; then
+                echo -e "${RED}× Gagal syntax check python: ${base_name}${NC}"
+                rm -f "$tmp_file"
+                return 1
+            fi
+            rm -rf /etc/wibutunnel/tmp/__pycache__
+        else
+            if ! bash -n "$tmp_file" 2>/dev/null; then
+                echo -e "${RED}× Gagal validasi script: ${base_name}${NC}"
+                rm -f "$tmp_file"
+                return 1
+            fi
+        fi
+
+        if [[ "$repo_path" =~ ^sbin/ ]]; then
+            cp -f "$tmp_file" "/usr/local/sbin/${target_name}"
+            chmod +x "/usr/local/sbin/${target_name}"
+            cp -f "$tmp_file" "/usr/local/bin/${target_name}"
+            chmod +x "/usr/local/bin/${target_name}"
+            rm -f "$tmp_file"
+        else
+            mv "$tmp_file" "/usr/local/bin/${target_name}"
+            chmod +x "/usr/local/bin/${target_name}"
+        fi
         echo -e "${GREEN}√ Berhasil memperbarui ${target_name}${NC}"
     else
         echo -e "${RED}× Gagal mengunduh ${base_name} (Sistem dilindungi dari file kosong)${NC}"
@@ -207,6 +239,7 @@ case $sub_setting in
         safe_update "menu/m-vless.sh"
         safe_update "menu/m-vmess.sh"
         safe_update "menu/m-trojan.sh"
+        safe_update "menu/m-ssh.sh"
         safe_update "menu/m-setting.sh"
         safe_update "menu/xp.sh"
         safe_update "menu/m-backup.sh"
@@ -223,11 +256,12 @@ case $sub_setting in
         safe_update "sbin/lock-user"
         safe_update "sbin/unlock-user"
         safe_update "sbin/unlocker-wibu"
+        safe_update "sbin/ws-stunnel"
         
         safe_update "common.sh"
         
-        dos2unix /usr/local/bin/* >/dev/null 2>&1
-        systemctl restart telegram-bot >/dev/null 2>&1
+        dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
+        systemctl restart telegram-bot algojo-expired wibu-daemon ws-stunnel >/dev/null 2>&1 || true
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
