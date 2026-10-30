@@ -398,7 +398,7 @@ defaults
     timeout client-fin 20s
     timeout server-fin 20s
 
-# Port 443 (TLS) - Multiplexing SNI Direct SSH & HTTP/Xray
+# ===================== TAHAP 1 =====================
 frontend ssl_sni
     bind *:443 ssl crt /etc/haproxy/certs/\${domain}.pem alpn h2,http/1.1
     mode tcp
@@ -407,14 +407,17 @@ frontend ssl_sni
     tcp-request content accept if HTTP
 
     acl is_raw_ssh req.payload(0,4) -m str SSH-
+    acl is_h2 ssl_fc_alpn -i h2
+    acl is_xray path_beg /vless /vmess /trojan
+    acl is_xray path_beg %2Fvless %2Fvmess %2Ftrojan
+    acl is_telehook path_beg /telehook
+
     use_backend dropbear_raw if is_raw_ssh
-    default_backend http_hub443_backend
+    use_backend bk_hub443 if is_h2
+    use_backend bk_hub443 if is_xray
+    use_backend bk_hub443 if is_telehook
+    default_backend ws_tunnel
 
-backend http_hub443_backend
-    mode tcp
-    server hub443 127.0.0.1:8444
-
-# Port 80 (Non-TLS) - Multiplexing Direct SSH & HTTP/Xray
 frontend port_80_front
     bind *:80
     mode tcp
@@ -423,17 +426,32 @@ frontend port_80_front
     tcp-request content accept if HTTP
 
     acl is_raw_ssh req.payload(0,4) -m str SSH-
-    use_backend dropbear_raw if is_raw_ssh
-    default_backend http_hub80_backend
+    acl is_xray_vless path_beg /vless-ntls
+    acl is_xray_vless path_beg %2Fvless-ntls
+    acl is_xray_vmess path_beg /vmess-ntls
+    acl is_xray_vmess path_beg %2Fvmess-ntls
 
-backend http_hub80_backend
-    mode tcp
-    server hub80 127.0.0.1:8445
+    use_backend dropbear_raw if is_raw_ssh
+    use_backend bk_hub80 if is_xray_vless || is_xray_vmess
+    default_backend ws_tunnel
 
 backend dropbear_raw
     mode tcp
     server local_dropbear 127.0.0.1:143 check
 
+backend ws_tunnel
+    mode tcp
+    server local_ws_stunnel 127.0.0.1:10015 check
+
+backend bk_hub443
+    mode tcp
+    server hub443 127.0.0.1:8444
+
+backend bk_hub80
+    mode tcp
+    server hub80 127.0.0.1:8445
+
+# ===================== TAHAP 2 =====================
 listen http_hub443
     bind 127.0.0.1:8444
     mode http
@@ -450,10 +468,6 @@ listen http_hub443
     acl is_vmess_ws path_beg %2Fvmess
     acl is_trojan_ws path_beg /trojan
     acl is_trojan_ws path_beg %2Ftrojan
-    acl is_ssh_ws path_beg /ssh-ws
-    acl is_ssh_ws path_beg %2Fssh-ws
-    acl is_ssh_ws path_beg /ssh
-    acl is_ssh_ws path_beg %2Fssh
     acl is_telehook path_beg /telehook
     acl is_telehook path_beg %2Ftelehook
     use_backend webhook_server if is_telehook
@@ -463,7 +477,6 @@ listen http_hub443
     use_backend xray_vless if is_vless_ws
     use_backend xray_vmess if is_vmess_ws
     use_backend xray_trojan if is_trojan_ws
-    default_backend ssh_ws_backend
 
 listen http_hub80
     bind 127.0.0.1:8445
@@ -473,13 +486,8 @@ listen http_hub80
     acl is_vless_ntls path_beg %2Fvless-ntls
     acl is_vmess_ntls path_beg /vmess-ntls
     acl is_vmess_ntls path_beg %2Fvmess-ntls
-    acl is_ssh_ntls path_beg /ssh-ws
-    acl is_ssh_ntls path_beg %2Fssh-ws
-    acl is_ssh_ntls path_beg /ssh
-    acl is_ssh_ntls path_beg %2Fssh
     use_backend xray_vless_ntls if is_vless_ntls
     use_backend xray_vmess_ntls if is_vmess_ntls
-    default_backend ssh_ws_backend
 
 backend xray_vless
     mode http

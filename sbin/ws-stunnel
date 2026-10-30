@@ -8,7 +8,7 @@ LISTENING_ADDR = '127.0.0.1'
 LISTENING_PORT = 10015
 BUFLEN = 4096 * 4
 TIMEOUT = 60
-DEFAULT_HOST = '127.0.0.1:109'
+DEFAULT_HOST = ('127.0.0.1', 109)
 RESPONSE = b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: foo\r\n\r\n'
 
 class ConnectionHandler(threading.Thread):
@@ -32,31 +32,52 @@ class ConnectionHandler(threading.Thread):
 
             self.client.sendall(RESPONSE)
 
-            # Connect to Dropbear
             target = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            target.connect(('127.0.0.1', 109))
+            target.connect(DEFAULT_HOST)
 
-            self.forward(self.client, target)
+            self.forward_clean(self.client, target)
         except Exception:
             pass
         finally:
             try: self.client.close()
             except Exception: pass
 
-    def forward(self, source, destination):
-        sockets = [source, destination]
+    def forward_clean(self, client, target):
+        client_ssh_started = False
+        client.setblocking(False)
+        target.setblocking(False)
+        sockets = [client, target]
+
         while True:
             r, _, _ = select.select(sockets, [], [], TIMEOUT)
             if not r:
                 break
             for s in r:
-                data = s.recv(BUFLEN)
-                if not data:
-                    return
-                if s is source:
-                    destination.sendall(data)
+                if s is target:
+                    try:
+                        data = target.recv(BUFLEN)
+                    except Exception:
+                        return
+                    if not data:
+                        return
+                    client.sendall(data)
                 else:
-                    source.sendall(data)
+                    try:
+                        data = client.recv(BUFLEN)
+                    except Exception:
+                        return
+                    if not data:
+                        return
+                    if not client_ssh_started:
+                        idx = data.find(b'SSH-')
+                        if idx != -1:
+                            client_ssh_started = True
+                            target.sendall(data[idx:])
+                        else:
+                            # Discard any HTTP junk / split payload before SSH handshake
+                            continue
+                    else:
+                        target.sendall(data)
 
 def main():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

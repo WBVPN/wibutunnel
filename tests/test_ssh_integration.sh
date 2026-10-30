@@ -83,6 +83,22 @@ nc -z -w 2 127.0.0.1 10015 || { echo "ASSERT_FAILED: ws-stunnel port 10015 not l
 # Test HAProxy port 80 Direct SSH multiplexing
 local_ssh_resp=$(echo "SSH-2.0-TestAssert" | nc -w 2 127.0.0.1 80 2>/dev/null | head -n 1)
 [[ "$local_ssh_resp" == SSH-2.0* ]] || { echo "ASSERT_FAILED: Port 80 did not route direct SSH payload to Dropbear"; exit 1; }
-echo "Network port listening & Direct SSH on port 80: PASS"
+
+# Test HAProxy port 80 Enhanced / WS Payload
+enhanced_test=$(python3 -c '
+import socket
+payload = b"GET / HTTP/1.1\r\nHost: edu.ruangguru.com\r\n\r\nPATCH / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\n\r\n"
+s = socket.create_connection(("127.0.0.1", 80))
+s.sendall(payload)
+resp = s.recv(1024)
+s.close()
+if b"101 Switching Protocols" in resp:
+    print("OK")
+else:
+    print("FAIL")
+')
+[[ "$enhanced_test" == "OK" ]] || { echo "ASSERT_FAILED: Port 80 enhanced payload failed"; exit 1; }
+
+echo "Network port listening, Direct SSH & Enhanced SSH on port 80: PASS"
 
 echo "ALL_SSH_INTEGRATION_ASSERTS_PASSED"
