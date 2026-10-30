@@ -25,7 +25,7 @@ fi
 find /etc/wibutunnel/tmp -type f \( -name "*.tmp.*" -o -name "xray_adu.*" \) -mmin +60 -delete 2>/dev/null || true
 
 # 3. Deduplicate entries in expiry files
-for exp_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf; do
+for exp_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf; do
     [[ -f "$exp_file" ]] || continue
     tmp_clean="${exp_file}.dedup.$$"
     if awk '!seen[$0]++' "$exp_file" > "$tmp_clean"; then

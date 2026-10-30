@@ -109,6 +109,7 @@ format_online_users() {
             if grep -q "^${usr}:" /etc/xray/vless_exp.conf 2>/dev/null; then proto="VLESS"
             elif grep -q "^${usr}:" /etc/xray/vmess_exp.conf 2>/dev/null; then proto="VMESS"
             elif grep -q "^${usr}:" /etc/xray/trojan_exp.conf 2>/dev/null; then proto="TROJAN"
+            elif ssh_user_exists "$usr" 2>/dev/null; then proto="SSH"
             else continue; fi
         fi
 
@@ -143,6 +144,41 @@ format_online_users() {
     echo -e "$MSG"
 }
 
+ssh_bot_config_message() {
+    local user="$1" pass="$2" exp="$3" lip="$4" lbw="$5"
+    local domain; domain=$(cat /etc/xray/domain 2>/dev/null)
+    [[ -z "$domain" ]] && domain="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+
+    local ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    local CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null)
+    [[ -z "$ISP" ]] && ISP="Unknown"; [[ -z "$CITY" ]] && CITY="Unknown"
+
+    local THICKLINE="━━━━━━━━━━━━━━━━━━━━"
+    local pesan="<b>VPN ACCOUNT - SSH</b>\n"
+    pesan+="${THICKLINE}\n"
+    pesan+="<b>Host        :</b> <code>${domain}</code>\n"
+    pesan+="<b>Username    :</b> <code>${user}</code>\n"
+    pesan+="<b>Password    :</b> <code>${pass}</code>\n"
+    pesan+="${THICKLINE}\n"
+    pesan+="<b>ISP         :</b> <code>${ISP}</code>\n"
+    pesan+="<b>Region      :</b> <code>${CITY}</code>\n"
+    pesan+="<b>Expired On  :</b> <code>${exp}</code>\n"
+    pesan+="${THICKLINE}\n"
+    pesan+="<b>TLS         :</b> <code>443</code>\n"
+    pesan+="<b>None TLS    :</b> <code>80</code>\n"
+    pesan+="<b>OpenSSH     :</b> <code>22</code>\n"
+    pesan+="<b>Dropbear    :</b> <code>109,143</code>\n"
+    pesan+="<b>WebSocket   :</b> <code>80,443</code>\n"
+    pesan+="<b>UDPGW       :</b> <code>7100-7600</code>\n"
+    pesan+="${THICKLINE}\n"
+    pesan+="<b>SNI / SSH-over-TLS</b>\n<code>${domain}:443@${user}:${pass}</code>\n\n"
+    pesan+="<b>WS / DIRECT</b>\n<code>${domain}:80@${user}:${pass}</code> (atau :443)\n"
+    pesan+="${THICKLINE}\n\n"
+    pesan+="<i>$(get_random_quote)</i>"
+    local kb='{"inline_keyboard":[[{"text":"🔙 Back to SSH Menu","callback_data":"menu_ssh"}]]}'
+    send_msg "$pesan" "$kb"
+}
+
 create_account() {
     local proto=$1
     local user=$2
@@ -152,6 +188,41 @@ create_account() {
 
     if [[ ! "$limit_ip" =~ ^[0-9]+$ ]]; then limit_ip=0; fi
     if [[ ! "$limit_bw" =~ ^[0-9]+$ ]]; then limit_bw=0; fi
+
+    # ===================== SSH TUNNEL =====================
+    if [[ "$proto" == "SSH" ]]; then
+        if ! ssh_valid_user "$user"; then
+            send_msg "❌ <b>Nama User Salah!</b>\nSSH hanya boleh huruf kecil, angka, strip (-) atau underscore (_). 3-32 karakter."
+            return
+        fi
+        if ssh_user_exists "$user"; then
+            send_msg "❌ <b>User '${user}' Sudah Ada!</b>"
+            return
+        fi
+        local pass
+        pass=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 10)
+        local val="${hari%[hmd]}"
+        local exp_date="" hari_days=1
+        [[ "$val" =~ ^[0-9]+$ && ${#val} -le 7 ]] || { send_msg "❌ Durasi tidak valid."; return 1; }
+        (( val > 0 && val <= 525600 )) || { send_msg "❌ Durasi maks 1 tahun."; return 1; }
+        case "$hari" in
+            *[mM]) exp_date=$(date -d "+${val} minutes" +"%Y-%m-%d %H:%M:%S") ;;
+            *[hH]) exp_date=$(date -d "+${val} hours"   +"%Y-%m-%d %H:%M:%S") ;;
+            *)     exp_date=$(date -d "+${val} days"    +"%Y-%m-%d %H:%M:%S"); hari_days="$val" ;;
+        esac
+        [[ -z "$exp_date" ]] && return 1
+        local out
+        if out=$(add_ssh_user "$user" "$pass" "$hari_days" "$limit_ip" "$limit_bw"); then
+            case "$hari" in
+                *[mMhH]) chage -E "$(date -d "$exp_date" +%Y-%m-%d)" -M $(( ( $(date -d "$exp_date" +%s) - $(date +%s) ) / 86400 + 1 )) -I 0 "$user" >/dev/null 2>&1
+                         db_set /etc/xray/ssh_exp.conf "$user" "$exp_date" ;;
+            esac
+            ssh_bot_config_message "$user" "$pass" "$exp_date" "$limit_ip" "$limit_bw"
+        else
+            send_msg "❌ <b>Gagal membuat akun SSH!</b>\n<code>${out}</code>"
+        fi
+        return
+    fi
 
     if [[ -n "${user//[a-zA-Z0-9_-]/}" ]]; then
         send_msg "❌ <b>Nama User Salah!</b>\nHanya boleh huruf, angka, dan strip (-)."
@@ -293,6 +364,20 @@ delete_account() {
     local proto=$2
     if [[ ! "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then return; fi
 
+    if [[ "$proto" == "SSH" ]]; then
+        if ! ssh_user_exists "$user"; then
+            send_msg "❌ <b>Gagal!</b>\nAkun SSH <code>${user}</code> tidak ditemukan."
+            return
+        fi
+        if del_ssh_user "$user"; then
+            local kb='{"inline_keyboard":[[{"text":"🔙 Back to SSH Menu","callback_data":"menu_ssh"}]]}'
+            send_msg "<b>Berhasil!</b>\nAkun SSH <code>${user}</code> telah dimusnahkan secara permanen." "$kb"
+        else
+            send_msg "❌ <b>Gagal menghapus akun SSH.</b>"
+        fi
+        return
+    fi
+
     if jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) == null' "$CONFIG_FILE" >/dev/null 2>&1; then
         send_msg "❌ <b>Gagal!</b>\nAkun <code>${user}</code> tidak ditemukan di database."
         return
@@ -352,6 +437,21 @@ renew_account() {
         return
     fi
 
+    if [[ "$proto" == "SSH" ]]; then
+        if ! ssh_user_exists "$user"; then
+            send_msg "❌ <b>Gagal!</b>\nAkun SSH <code>${user}</code> tidak ditemukan."
+            return
+        fi
+        local new_exp
+        if new_exp=$(renew_ssh_user "$user" "$hari"); then
+            local kb='{"inline_keyboard":[[{"text":"🔙 Back to SSH Menu","callback_data":"menu_ssh"}]]}'
+            send_msg "<b>Berhasil Perpanjang Akun SSH!</b>\n\n<b>User :</b> <code>${user}</code>\n<b>Ditambah :</b> ${hari} hari\n<b>Expired Baru :</b> <code>${new_exp}</code>" "$kb"
+        else
+            send_msg "❌ <b>Gagal memperpanjang akun SSH.</b>\n<code>${new_exp}</code>"
+        fi
+        return
+    fi
+
     if jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) == null' "$CONFIG_FILE" >/dev/null 2>&1; then
         send_msg "❌ <b>Gagal!</b>\nAkun <code>${user}</code> tidak ditemukan."
         return
@@ -408,6 +508,24 @@ change_limit() {
 
     if [[ ! "$limit_ip" =~ ^[0-9]+$ || ! "$limit_bw" =~ ^[0-9]+$ ]]; then
         send_msg "❌ <b>Format Limit Salah!</b>\nIP dan GB harus berupa angka."
+        return
+    fi
+
+    if [[ "$proto" == "SSH" ]]; then
+        if ! ssh_user_exists "$user"; then
+            send_msg "❌ <b>Gagal!</b>\nAkun SSH <code>${user}</code> tidak ditemukan."
+            return
+        fi
+        db_set /etc/wibutunnel/limit_ip.db "$user" "$limit_ip"
+        db_set /etc/wibutunnel/limit_bw.db "$user" "$limit_bw"
+        local locked; locked=$(db_get "$user" /etc/wibutunnel/locked_users.db)
+        if [[ -n "$locked" && "$(echo "$locked" | cut -d: -f4)" == "QUOTA" ]]; then
+            unlock_ssh_user "$user" >/dev/null 2>&1
+        fi
+        local ip_str="Bebas"; [[ "$limit_ip" -ne 0 ]] && ip_str="${limit_ip} IP"
+        local bw_str="Unlimited"; [[ "$limit_bw" -ne 0 ]] && bw_str="${limit_bw} GB"
+        local kb='{"inline_keyboard":[[{"text":"🔙 Back to SSH Menu","callback_data":"menu_ssh"}]]}'
+        send_msg "<b>Limit SSH Berhasil Diubah!</b>\n\n<b>User :</b> <code>${user}</code>\n<b>Limit IP :</b> ${ip_str}\n<b>Limit Kuota :</b> ${bw_str}" "$kb"
         return
     fi
 
@@ -475,6 +593,19 @@ list_account() {
             ((c++))
         done < /etc/xray/trojan_exp.conf
         [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
+    elif [[ "$target_proto" == "SSH" ]]; then
+        local c=0
+        while read -r usr; do
+            [[ -z "$usr" || "$usr" == dummy* ]] && continue
+            local lmt=$(get_limits "$usr")
+            local exp; exp=$(db_get "$usr" /etc/xray/ssh_exp.conf | cut -d: -f2- | awk '{print $1}')
+            [[ -z "$exp" ]] && exp="Lifetime"
+            local lock_tag=""
+            grep -q "^${usr}:" "$lock_db" 2>/dev/null && lock_tag=" [🔒LOCKED]"
+            msg+=" ├ <code>${usr}</code> (Exp: ${exp} | ${lmt})${lock_tag}\n"
+            ((c++))
+        done < <(ssh_list_users 2>/dev/null)
+        [[ "$c" -eq 0 ]] && msg+=" └ <i>Kosong</i>\n"
     fi
 
     msg+="\n━━━━━━━━━━━━━━━━━━━━"
@@ -489,7 +620,12 @@ lock_account() {
 
     local kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
 
-    if ! jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) != null' "$CONFIG_FILE" >/dev/null 2>&1; then
+    if [[ "$proto" == "SSH" ]]; then
+        if ! ssh_user_exists "$user"; then
+            send_msg "❌ <b>Gagal!</b>\nAkun SSH <code>${user}</code> tidak ditemukan di sistem." "$kb"
+            return
+        fi
+    elif ! jq -e --arg u "$user" '[.inbounds[].settings.clients[]?.email, .inbounds[].settings.clients[]?.password] | index($u) != null' "$CONFIG_FILE" >/dev/null 2>&1; then
         send_msg "❌ <b>Gagal!</b>\nAkun <code>${user}</code> tidak ditemukan di config Xray." "$kb"
         return
     fi
@@ -550,6 +686,8 @@ backup_vps() {
         etc/xray/vless_exp.conf \
         etc/xray/vmess_exp.conf \
         etc/xray/trojan_exp.conf \
+        etc/xray/ssh_exp.conf \
+        etc/wibutunnel/ssh_pass.db \
         etc/wibutunnel/limit_ip.db \
         etc/wibutunnel/limit_bw.db \
         etc/wibutunnel/locked_users.db \
@@ -615,6 +753,15 @@ detail_account() {
         proto="TROJAN"
         uuid=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[] | select(.email == $u) | .password' "$CONFIG_FILE" | head -n 1)
         exp_date=$(grep "^${user}:" /etc/xray/trojan_exp.conf | cut -d: -f2- | awk '{print $1}')
+    elif ssh_user_exists "$user"; then
+        local pass; pass=$(ssh_get_pass "$user")
+        [[ -z "$pass" ]] && pass="<tidak tersedia>"
+        local exp; exp=$(db_get "$user" /etc/xray/ssh_exp.conf | cut -d: -f2-)
+        [[ -z "$exp" ]] && exp="Lifetime"
+        local lip; lip=$(db_get "$user" /etc/wibutunnel/limit_ip.db | cut -d: -f2)
+        local lbw; lbw=$(db_get "$user" /etc/wibutunnel/limit_bw.db | cut -d: -f2)
+        ssh_bot_config_message "$user" "$pass" "$exp" "$lip" "$lbw"
+        return
     fi
 
     if [[ -z "$proto" || -z "$uuid" ]]; then
@@ -703,6 +850,28 @@ detail_account() {
 
 check_login() {
     local target_proto="$1"
+
+    if [[ "$target_proto" == "SSH" ]]; then
+        local ssh_data=""
+        while read -r u; do
+            [[ -z "$u" ]] && continue
+            local cnt; cnt=$(ssh_session_count "$u")
+            [[ -z "$cnt" || "$cnt" -eq 0 ]] && continue
+            local ips; ips=$(ssh_active_ips "$u" | tr ' ' ',')
+            [[ -z "$ips" ]] && ips="127.0.0.1"
+            ssh_data+="${u}|${cnt}|${ips}\n"
+        done < <(ssh_list_users 2>/dev/null)
+
+        local kb='{"inline_keyboard":[[{"text":"🔙 Back to SSH Menu","callback_data":"menu_ssh"}]]}'
+        if [[ -z "$ssh_data" ]]; then
+            send_msg "<b>ONLINE USERS (LIVE)</b>\n━━━━━━━━━━━━━━━━━━━━\n<i>Saat ini tidak ada user SSH yang aktif.</i>\n━━━━━━━━━━━━━━━━━━━━" "$kb"
+        else
+            local LOG_MSG; LOG_MSG=$(format_online_users "$(echo -e "$ssh_data")" "SSH")
+            send_msg "$LOG_MSG" "$kb"
+        fi
+        return
+    fi
+
     LOG_FILE="/var/log/xray/access.log"
     if [[ ! -s "$LOG_FILE" ]]; then
         send_msg "❌ <b>Belum ada data log aktif (kosong).</b>"
@@ -732,7 +901,8 @@ show_main_menu() {
 
     local kb='{"inline_keyboard":['
     kb+='[{"text":"🔹 VLESS","callback_data":"menu_vless"},{"text":"🔸 VMESS","callback_data":"menu_vmess"}],'
-    kb+='[{"text":"♦️ TROJAN","callback_data":"menu_trojan"},{"text":"⚙️ SYSTEM","callback_data":"menu_system"}]'
+    kb+='[{"text":"♦️ TROJAN","callback_data":"menu_trojan"},{"text":"🧱 SSH","callback_data":"menu_ssh"}],'
+    kb+='[{"text":"⚙️ SYSTEM","callback_data":"menu_system"}]'
     kb+=']}'
 
     if [[ -n "$msg_id" ]]; then

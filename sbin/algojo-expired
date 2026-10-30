@@ -5,7 +5,7 @@ source /usr/local/bin/common.sh 2>/dev/null || exit 1
 NOW=$(date -u +%s)
 deleted_any=""
 
-for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf; do
+for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf; do
     [[ ! -f "$proto_file" ]] && continue
     
     proto=$(basename "$proto_file" | cut -d_ -f1 | tr '[:lower:]' '[:upper:]')
@@ -69,6 +69,9 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
                         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
                     '
                     ;;
+                SSH)
+                    del_ssh_user "$user" >/dev/null 2>&1
+                    ;;
             esac
             
             # Delete from exp file
@@ -78,7 +81,9 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
             safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
             safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
             
-            xray_sync_user del "$proto" "$user"
+            if [[ "$proto" != "SSH" ]]; then
+                xray_sync_user del "$proto" "$user"
+            fi
         fi
     done < "$proto_file"
 done

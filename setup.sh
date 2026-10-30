@@ -227,7 +227,7 @@ EOF
 # INSTALL PAKET (dibersihkan dari bloat nginx/python3/socat)
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix
+apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3
 
 # [FIX] Enable iptables-persistent agar rules survive reboot
 systemctl enable netfilter-persistent >/dev/null 2>&1 || true
@@ -398,8 +398,44 @@ defaults
     timeout client-fin 20s
     timeout server-fin 20s
 
+# Port 443 (TLS) - Multiplexing SNI Direct SSH & HTTP/Xray
 frontend ssl_sni
-    bind *:443 ssl crt /etc/haproxy/certs/${domain}.pem alpn h2,http/1.1
+    bind *:443 ssl crt /etc/haproxy/certs/\${domain}.pem alpn h2,http/1.1
+    mode tcp
+    tcp-request inspect-delay 5s
+    tcp-request content accept if { req.payload(0,4) -m str SSH- }
+    tcp-request content accept if HTTP
+
+    acl is_raw_ssh req.payload(0,4) -m str SSH-
+    use_backend dropbear_raw if is_raw_ssh
+    default_backend http_hub443_backend
+
+backend http_hub443_backend
+    mode tcp
+    server hub443 127.0.0.1:8444
+
+# Port 80 (Non-TLS) - Multiplexing Direct SSH & HTTP/Xray
+frontend port_80_front
+    bind *:80
+    mode tcp
+    tcp-request inspect-delay 5s
+    tcp-request content accept if { req.payload(0,4) -m str SSH- }
+    tcp-request content accept if HTTP
+
+    acl is_raw_ssh req.payload(0,4) -m str SSH-
+    use_backend dropbear_raw if is_raw_ssh
+    default_backend http_hub80_backend
+
+backend http_hub80_backend
+    mode tcp
+    server hub80 127.0.0.1:8445
+
+backend dropbear_raw
+    mode tcp
+    server local_dropbear 127.0.0.1:143 check
+
+listen http_hub443
+    bind 127.0.0.1:8444
     mode http
     option forwardfor
     acl is_vless_grpc path_beg /vless/
@@ -414,6 +450,10 @@ frontend ssl_sni
     acl is_vmess_ws path_beg %2Fvmess
     acl is_trojan_ws path_beg /trojan
     acl is_trojan_ws path_beg %2Ftrojan
+    acl is_ssh_ws path_beg /ssh-ws
+    acl is_ssh_ws path_beg %2Fssh-ws
+    acl is_ssh_ws path_beg /ssh
+    acl is_ssh_ws path_beg %2Fssh
     acl is_telehook path_beg /telehook
     acl is_telehook path_beg %2Ftelehook
     use_backend webhook_server if is_telehook
@@ -423,43 +463,59 @@ frontend ssl_sni
     use_backend xray_vless if is_vless_ws
     use_backend xray_vmess if is_vmess_ws
     use_backend xray_trojan if is_trojan_ws
+    default_backend ssh_ws_backend
 
-backend xray_vless
-    mode http
-    server local_vless_ws 127.0.0.1:10086 send-proxy-v2 check
-backend xray_vless_grpc
-    mode http
-    server local_vless_grpc 127.0.0.1:10088 send-proxy-v2 proto h2 check
-backend xray_vmess
-    mode http
-    server local_vmess_ws 127.0.0.1:10089 send-proxy-v2 check
-backend xray_vmess_grpc
-    mode http
-    server local_vmess_grpc 127.0.0.1:10091 send-proxy-v2 proto h2 check
-backend xray_trojan
-    mode http
-    server local_trojan_ws 127.0.0.1:10092 send-proxy-v2 check
-backend xray_trojan_grpc
-    mode http
-    server local_trojan_grpc 127.0.0.1:10093 send-proxy-v2 proto h2 check
-
-frontend vless_ntls_front
-    bind *:80
+listen http_hub80
+    bind 127.0.0.1:8445
     mode http
     option forwardfor
     acl is_vless_ntls path_beg /vless-ntls
     acl is_vless_ntls path_beg %2Fvless-ntls
     acl is_vmess_ntls path_beg /vmess-ntls
     acl is_vmess_ntls path_beg %2Fvmess-ntls
+    acl is_ssh_ntls path_beg /ssh-ws
+    acl is_ssh_ntls path_beg %2Fssh-ws
+    acl is_ssh_ntls path_beg /ssh
+    acl is_ssh_ntls path_beg %2Fssh
     use_backend xray_vless_ntls if is_vless_ntls
     use_backend xray_vmess_ntls if is_vmess_ntls
+    default_backend ssh_ws_backend
+
+backend xray_vless
+    mode http
+    server local_vless_ws 127.0.0.1:10086 send-proxy-v2 check
+
+backend xray_vless_grpc
+    mode http
+    server local_vless_grpc 127.0.0.1:10088 send-proxy-v2 proto h2 check
+
+backend xray_vmess
+    mode http
+    server local_vmess_ws 127.0.0.1:10089 send-proxy-v2 check
+
+backend xray_vmess_grpc
+    mode http
+    server local_vmess_grpc 127.0.0.1:10091 send-proxy-v2 proto h2 check
+
+backend xray_trojan
+    mode http
+    server local_trojan_ws 127.0.0.1:10092 send-proxy-v2 check
+
+backend xray_trojan_grpc
+    mode http
+    server local_trojan_grpc 127.0.0.1:10093 send-proxy-v2 proto h2 check
 
 backend xray_vless_ntls
     mode http
     server vless_ntls_server 127.0.0.1:10087 send-proxy-v2 check
+
 backend xray_vmess_ntls
     mode http
     server vmess_ntls_server 127.0.0.1:10090 send-proxy-v2 check
+
+backend ssh_ws_backend
+    mode http
+    server local_ws_stunnel 127.0.0.1:10015 check
 
 backend webhook_server
     mode http
@@ -541,6 +597,7 @@ _need "menu/menu-lock.sh" "menu-lock"
 _need "menu/menu-unlock.sh" "menu-unlock"
 _need "menu/menu-recovery.sh" "menu-recovery"
 _need "menu/cek-trafik.sh" "cek-trafik"
+_need "menu/m-ssh.sh" "m-ssh"
 _need "common.sh" "common.sh"
 _need "menu/bot-daemon.sh" "bot-daemon"
 
@@ -561,6 +618,7 @@ _need "sbin/unlock-user" "unlock-user-dl"
 _need "sbin/unlocker-wibu" "unlocker-wibu-dl"
 _need "sbin/algojo-expired" "algojo-expired-dl"
 _need "sbin/algojo-expired-daemon" "algojo-expired-daemon"
+_need "sbin/ws-stunnel" "ws-stunnel"
 
 # Install sbin scripts
 for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu algojo-expired; do
@@ -654,6 +712,50 @@ User=root
 WantedBy=multi-user.target
 EOF
 
+cat << 'EOF' > /etc/systemd/system/dropbear.service
+[Unit]
+Description=Dropbear Enhanced (SSH Tunneling)
+After=network.target
+
+[Service]
+EnvironmentFile=-/etc/default/dropbear
+ExecStart=/usr/sbin/dropbear -F -E -p ${DROPBEAR_PORT} $DROPBEAR_EXTRA_ARGS
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat << 'EOF' > /etc/systemd/system/ws-stunnel.service
+[Unit]
+Description=SSH WebSocket Python Tunnel (ws-stunnel)
+After=network.target dropbear.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/ws-stunnel
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+mkdir -p /etc/dropbear /etc/wibutunnel
+echo "NO_START=0" > /etc/default/dropbear
+echo "DROPBEAR_PORT=143" >> /etc/default/dropbear
+echo 'DROPBEAR_EXTRA_ARGS="-b /etc/wibutunnel/ssh-banner -W 32768 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222"' >> /etc/default/dropbear
+echo 'DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"' >> /etc/default/dropbear
+echo "DROPBEAR_RECEIVE_WINDOW=65536" >> /etc/default/dropbear
+echo "<b>Welcome to WIBUTUNNEL SSH Server</b>" > /etc/wibutunnel/ssh-banner
+groupadd -f ssh_tunnel
+
+dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key 2>/dev/null || true
+dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key 2>/dev/null || true
+dropbearkey -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key 2>/dev/null || true
+
 chmod +x /usr/local/bin/wibu-daemon
 chmod +x /usr/local/sbin/algojo-wibu 2>/dev/null || true
 chmod +x /usr/local/sbin/algojo-kuota 2>/dev/null || true
@@ -666,8 +768,8 @@ sleep 2
 systemctl is-active --quiet wibu-daemon || { echo "wibu-daemon failed to start"; systemctl status wibu-daemon; exit 1; }
 
 systemctl daemon-reload
-systemctl enable telegram-bot.service >/dev/null 2>&1
-systemctl restart telegram-bot.service >/dev/null 2>&1
+systemctl enable telegram-bot.service dropbear.service ws-stunnel.service >/dev/null 2>&1
+systemctl restart telegram-bot.service dropbear.service ws-stunnel.service >/dev/null 2>&1
 systemctl enable algojo-expired.service >/dev/null 2>&1
 systemctl restart algojo-expired.service >/dev/null 2>&1
 

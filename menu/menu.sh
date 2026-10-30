@@ -50,9 +50,10 @@ echo -e "${LINE}"
 echo -e " ${GREEN}[1] Menu VLESS${NC}"
 echo -e " ${CYAN}[2] Menu VMESS${NC}"
 echo -e " ${YELLOW}[3] Menu TROJAN${NC}"
+echo -e " ${WHITE}[4] Menu SSH Tunnel${NC}"
 echo -e "${LINE}"
-echo -e " ${BLUE}[4] Setting Server${NC}"
-echo -e " ${CYAN}[5] Backup & Restore${NC}"
+echo -e " ${BLUE}[5] Setting Server${NC}"
+echo -e " ${CYAN}[6] Backup & Restore${NC}"
 echo -e " ${RED}[0] Keluar / Exit Terminal${NC}"
 echo -e "${LINE}"
 echo -e " ${CYAN}Client Name : ${GREEN}${CLIENT_NAME:-Unknown}${NC}"
@@ -67,8 +68,9 @@ while true; do
         1) exec m-vless ;;
         2) exec m-vmess ;;
         3) exec m-trojan ;;
-        4) exec m-setting ;;
-        5) exec m-backup ;;
+        4) exec m-ssh ;;
+        5) exec m-setting ;;
+        6) exec m-backup ;;
         0) clear; exit ;;
         *) echo -e "${RED}Pilihan tidak valid!${NC}"; sleep 1; exec menu ;;
     esac

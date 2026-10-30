@@ -5,7 +5,7 @@ source /usr/local/bin/common.sh 2>/dev/null || exit 1
 while true; do
     deleted_any=""
     
-    for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf; do
+    for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf; do
         [[ ! -f "$proto_file" ]] && continue
         
         proto=$(basename "$proto_file" | cut -d_ -f1 | tr '[:lower:]' '[:upper:]')
@@ -44,6 +44,9 @@ while true; do
                     jq -c --arg u "$user" --arg p "VMESS" '{user:$u, proto:$p, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 elif [[ "$proto" == "TROJAN" ]]; then
                     jq -c --arg u "$user" --arg p "TROJAN" '{user:$u, proto:$p, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                elif [[ "$proto" == "SSH" ]]; then
+                    ssh_pass=$(ssh_get_pass "$user" 2>/dev/null)
+                    echo "{\"user\":\"$user\",\"proto\":\"SSH\",\"pass\":\"$ssh_pass\"}" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 fi
                 [[ ! -s "/etc/wibutunnel/recovery/${user}.json" ]] && rm -f "/etc/wibutunnel/recovery/${user}.json"
 
@@ -84,6 +87,14 @@ while true; do
                         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
                     ' >/dev/null 2>&1
                     ;;
+                SSH)
+                    if [[ "$user" == trial-* ]]; then
+                        del_ssh_user "$user" >/dev/null 2>&1
+                    else
+                        passwd -l "$user" >/dev/null 2>&1
+                        pkill -u "$user" 2>/dev/null || true
+                    fi
+                    ;;
             esac
 
             # Cleanup: delete exp line
@@ -102,7 +113,9 @@ while true; do
                 db_set /etc/wibutunnel/locked_users.db "$user" "${now_ts}:0:EXPIRED"
             fi
 
-            xray_sync_user del "$proto" "$user"
+            if [[ "$proto" != "SSH" ]]; then
+                xray_sync_user del "$proto" "$user"
+            fi
         done < "$proto_file"
     done
     

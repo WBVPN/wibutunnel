@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+import socket
+import threading
+import select
+import sys
+
+LISTENING_ADDR = '127.0.0.1'
+LISTENING_PORT = 10015
+BUFLEN = 4096 * 4
+TIMEOUT = 60
+DEFAULT_HOST = '127.0.0.1:109'
+RESPONSE = b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: foo\r\n\r\n'
+
+class ConnectionHandler(threading.Thread):
+    def __init__(self, client_sock):
+        super().__init__(daemon=True)
+        self.client = client_sock
+
+    def run(self):
+        try:
+            req = b''
+            self.client.settimeout(10)
+            while b'\r\n\r\n' not in req and len(req) < 8192:
+                chunk = self.client.recv(1024)
+                if not chunk:
+                    break
+                req += chunk
+
+            if not req:
+                self.client.close()
+                return
+
+            self.client.sendall(RESPONSE)
+
+            # Connect to Dropbear
+            target = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            target.connect(('127.0.0.1', 109))
+
+            self.forward(self.client, target)
+        except Exception:
+            pass
+        finally:
+            try: self.client.close()
+            except Exception: pass
+
+    def forward(self, source, destination):
+        sockets = [source, destination]
+        while True:
+            r, _, _ = select.select(sockets, [], [], TIMEOUT)
+            if not r:
+                break
+            for s in r:
+                data = s.recv(BUFLEN)
+                if not data:
+                    return
+                if s is source:
+                    destination.sendall(data)
+                else:
+                    source.sendall(data)
+
+def main():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((LISTENING_ADDR, LISTENING_PORT))
+    server.listen(100)
+    while True:
+        try:
+            client, _ = server.accept()
+            ConnectionHandler(client).start()
+        except Exception:
+            break
+
+if __name__ == '__main__':
+    main()

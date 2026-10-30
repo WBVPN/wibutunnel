@@ -13,7 +13,13 @@ reason=$3   # IP_LIMIT atau QUOTA
 
 [[ -z "$user" ]] && exit 1
 
-safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= (. + [$u] | unique)'
+if ssh_user_exists "$user"; then
+    passwd -l "$user" >/dev/null 2>&1
+    pkill -u "$user" 2>/dev/null || true
+else
+    safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= (. + [$u] | unique)'
+    xray_sync_user del ALL "$user"
+fi
 
 now=$(date -u +%s)
 if [[ -n "$duration" && "$duration" != "0" ]]; then
@@ -23,8 +29,6 @@ else
 fi
 
 db_set /etc/wibutunnel/locked_users.db "$user" "$now:$unlock_time:$reason"
-
-xray_sync_user del ALL "$user"
 
 # === TELEGRAM NOTIFICATION ===
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then

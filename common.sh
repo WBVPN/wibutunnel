@@ -130,14 +130,39 @@ db_append() {
     ) 200>"$lockfile"
 }
 
-# db_get <file> <user>: ambil value terakhir, fixed-string prefix match
+# db_get <file> <user> atau db_get <user> <file>: ambil value terakhir, fixed-string prefix match
 db_get() {
-    awk -v u="$2" 'index($0, u ":") == 1 { sub(/^[^:]*:/, ""); v=$0 } END { if (v != "") print v }' "$1" 2>/dev/null
+    local file user
+    if [[ -f "$1" ]]; then
+        file="$1"; user="$2"
+    elif [[ -f "$2" ]]; then
+        file="$2"; user="$1"
+    else
+        file="$1"; user="$2"
+    fi
+    awk -v u="$user" 'index($0, u ":") == 1 { sub(/^[^:]*:/, ""); v=$0 } END { if (v != "") print v }' "$file" 2>/dev/null
 }
 
-# db_has <file> <user>: true jika entry ada
+# db_has <file> <user> atau db_has <user> <file>: true jika entry ada
 db_has() {
-    awk -v u="$2" 'index($0, u ":") == 1 {f=1} END {exit !f}' "$1" 2>/dev/null
+    local file user
+    if [[ -f "$1" ]]; then
+        file="$1"; user="$2"
+    elif [[ -f "$2" ]]; then
+        file="$2"; user="$1"
+    else
+        file="$1"; user="$2"
+    fi
+    awk -v u="$user" 'index($0, u ":") == 1 {f=1} END {exit !f}' "$file" 2>/dev/null
+}
+
+# db_delete alias untuk safe_sed_delete (support arg urut <file> <user> maupun <user> <file>)
+db_delete() {
+    if [[ -f "$1" ]]; then
+        safe_sed_delete "$2" "$1"
+    else
+        safe_sed_delete "$1" "$2"
+    fi
 }
 
 # xray_sync_user: sinkronisasi penambahan/penghapusan user via Xray API (port 10085)
@@ -288,4 +313,151 @@ live_ip_pairs() {
     [[ ! -s "$log" ]] && return 0
     thresh=$(date -d "${LIVE_IP_WINDOW:-120 seconds} ago" +'%Y/%m/%d %H:%M:%S')
     awk -v thresh="$thresh" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/ && /email: /){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; } } } } END { for (e in ips) print e, ips[e] }' <(tac "$log" 2>/dev/null) 2>/dev/null
+}
+
+# ==========================================
+# SSH TUNNEL (Dropbear) — backend account
+# ==========================================
+SSH_GROUP="${SSH_GROUP:-ssh_tunnel}"
+SSH_SHELL="${SSH_SHELL:-/bin/bash}"
+SSH_EXP_FILE="${SSH_EXP_FILE:-/etc/xray/ssh_exp.conf}"
+SSH_DB_PASS="${SSH_DB_PASS:-/etc/wibutunnel/ssh_pass.db}"
+
+ssh_init() {
+    getent group "$SSH_GROUP" >/dev/null 2>&1 || groupadd --system "$SSH_GROUP" >/dev/null 2>&1
+    mkdir -p /etc/xray /etc/wibutunnel/tmp
+    touch "$SSH_EXP_FILE" "$SSH_DB_PASS" /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/locked_users.db
+    chmod 600 "$SSH_DB_PASS" /etc/wibutunnel/*.db 2>/dev/null
+}
+
+ssh_valid_user() { [[ "$1" =~ ^[a-z_][a-z0-9_-]{2,31}$ ]]; }
+ssh_user_exists() { id "$1" >/dev/null 2>&1; }
+
+ssh_list_users() {
+    ssh_init
+    getent group "$SSH_GROUP" 2>/dev/null | cut -d: -f4 | tr ',' '\n' | sed '/^$/d' | sort
+}
+
+ssh_get_pass() {
+    [[ -f "$SSH_DB_PASS" ]] || return 1
+    db_get "$1" "$SSH_DB_PASS" | cut -d: -f2
+}
+
+ssh_session_count() {
+    local user="$1" count=0
+    count=$(ps -u "$user" -o comm= 2>/dev/null | grep -cE '^(dropbear|sshd|sh|bash)$' || true)
+    printf '%s' "$count"
+}
+
+ssh_active_ips() {
+    local user="$1" out=""
+    local pids
+    pids=$(pgrep -u "$user" 2>/dev/null || true)
+    [[ -z "$pids" ]] && return 0
+    while read -r line; do
+        out+="${line} "
+    done < <(ss -tnp 2>/dev/null | grep "haproxy" | grep ":443" | grep ESTAB | awk '{print $5}' | sed 's/:[0-9]*$//' | grep -vE '^(127\.0\.0\.1|::1)$' | sort -u)
+    printf '%s' "$out"
+}
+
+add_ssh_user() {
+    ssh_init
+    local user="$1" pass="$2" hari="$3" lip="${4:-0}" lbw="${5:-0}"
+    ssh_valid_user "$user" || { echo "username tidak valid (3-32 char: a-z 0-9 _ -)"; return 1; }
+    [[ -n "$pass" && ${#pass} -ge 6 ]] || { echo "password minimal 6 karakter"; return 1; }
+    [[ "$hari" =~ ^[0-9]+$ && "$hari" -ge 1 ]] || { echo "durasi hari tidak valid"; return 1; }
+    ssh_user_exists "$user" && { echo "user $user sudah ada"; return 1; }
+
+    useradd -m -s "$SSH_SHELL" -G "$SSH_GROUP" "$user" >/dev/null 2>&1 || { echo "gagal useradd"; return 1; }
+    if ! printf '%s:%s\n' "$user" "$pass" | chpasswd 2>/dev/null; then
+        userdel "$user" >/dev/null 2>&1; echo "gagal set password"; return 1
+    fi
+    local exp; exp=$(date -d "+${hari} days" +"%Y-%m-%d %H:%M:%S")
+    chage -E "$(date -d "+${hari} days" +%Y-%m-%d)" -M "$hari" -I 0 "$user" >/dev/null 2>&1
+
+    db_set "$SSH_EXP_FILE" "$user" "$exp"
+    db_set "$SSH_DB_PASS" "$user" "$pass"
+    db_set /etc/wibutunnel/limit_ip.db "$user" "$lip"
+    db_set /etc/wibutunnel/limit_bw.db "$user" "$lbw"
+    chmod 600 "$SSH_DB_PASS" /etc/wibutunnel/*.db 2>/dev/null
+    chown root:root "$SSH_DB_PASS" /etc/wibutunnel/*.db 2>/dev/null
+    return 0
+}
+
+del_ssh_user() {
+    local user="$1"
+    ssh_valid_user "$user" || { echo "username tidak valid"; return 1; }
+    ssh_user_exists "$user" || { echo "user $user tidak ada"; return 1; }
+    
+    local uid; uid=$(id -u "$user" 2>/dev/null)
+    pkill -u "$user" 2>/dev/null || true; sleep 0.5
+    userdel -r "$user" >/dev/null 2>&1 || userdel "$user" >/dev/null 2>&1
+    
+    if [[ -n "$uid" ]]; then
+        iptables -t mangle -D OUTPUT -m owner --uid-owner "$uid" -j ACCEPT 2>/dev/null || true
+        iptables -t mangle -D INPUT -m owner --uid-owner "$uid" -j ACCEPT 2>/dev/null || true
+    fi
+    
+    db_delete "$user" "$SSH_EXP_FILE"
+    db_delete "$user" "$SSH_DB_PASS"
+    db_delete "$user" /etc/wibutunnel/limit_ip.db
+    db_delete "$user" /etc/wibutunnel/limit_bw.db
+    db_delete "$user" /etc/wibutunnel/locked_users.db
+    db_delete "$user" /etc/wibutunnel/user_usage.db
+    return 0
+}
+
+renew_ssh_user() {
+    local user="$1" hari="$2" base new exp add_sec=0
+    ssh_valid_user "$user" || { echo "username tidak valid"; return 1; }
+    ssh_user_exists "$user" || { echo "user tidak ada"; return 1; }
+
+    local val="${hari%[mhd]}"
+    [[ "$val" =~ ^[0-9]+$ ]] || { echo "durasi tidak valid"; return 1; }
+    [[ ${#val} -le 7 ]] || { echo "durasi di luar batas (maks 1 tahun)"; return 1; }
+    (( val > 0 && val <= 525600 )) || { echo "durasi di luar batas (maks 1 tahun)"; return 1; }
+    case "$hari" in
+        *[mM]) add_sec=$(( val * 60 )) ;;
+        *[hH]) add_sec=$(( val * 3600 )) ;;
+        *[dD]|*[0-9]) add_sec=$(( val * 86400 )) ;;
+        *) echo "durasi tidak valid"; return 1 ;;
+    esac
+    [[ "$add_sec" -le 0 ]] && { echo "durasi tidak valid"; return 1; }
+
+    base=$(db_get "$user" "$SSH_EXP_FILE" | cut -d: -f2-)
+    if [[ -z "$base" ]]; then
+        base=$(chage -l "$user" 2>/dev/null | awk -F': ' '/Account expires/{print $2}')
+        [[ -z "$base" || "$base" == "never" ]] && base=$(date +"%Y-%m-%d %H:%M:%S")
+    fi
+    local base_sec; base_sec=$(date -d "$base" +%s 2>/dev/null)
+    [[ -z "$base_sec" ]] && base_sec=$(date +%s)
+    local new_sec=$(( base_sec + add_sec ))
+    new=$(date -d "@$new_sec" +"%Y-%m-%d %H:%M:%S")
+    [[ -z "$new" ]] && return 1
+
+    chage -E "$(date -d "$new" +%Y-%m-%d)" -M $(( ( $(date -d "$new" +%s) - $(date +%s) ) / 86400 + 1 )) -I 0 "$user" >/dev/null 2>&1
+    passwd -u "$user" >/dev/null 2>&1
+    mkdir -p "$(dirname "$SSH_EXP_FILE")" 2>/dev/null
+    db_set "$SSH_EXP_FILE" "$user" "$new"
+    db_delete "$user" /etc/wibutunnel/locked_users.db
+    printf '%s' "$new"
+    return 0
+}
+
+lock_ssh_user() {
+    local user="$1" reason="${2:-MANUAL}" now unlock
+    ssh_user_exists "$user" || { echo "user tidak ada"; return 1; }
+    passwd -l "$user" >/dev/null 2>&1
+    pkill -u "$user" 2>/dev/null || true
+    now=$(date +%s); unlock=0
+    db_set /etc/wibutunnel/locked_users.db "$user" "${now}:${unlock}:${reason}"
+    return 0
+}
+
+unlock_ssh_user() {
+    local user="$1"
+    ssh_user_exists "$user" || { echo "user tidak ada"; return 1; }
+    passwd -u "$user" >/dev/null 2>&1
+    db_delete "$user" /etc/wibutunnel/locked_users.db
+    return 0
 }
