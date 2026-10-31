@@ -1,35 +1,35 @@
 #!/bin/bash
-# Auto-delete expired accounts
+# Auto-delete expired accounts (one-shot batch)
 source /usr/local/bin/common.sh 2>/dev/null || exit 1
 
-NOW=$(date -u +%s)
+NOW_LOCAL=$(date +%s)
 deleted_any=""
 
 for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf; do
     [[ ! -f "$proto_file" ]] && continue
-    
     proto=$(basename "$proto_file" | cut -d_ -f1 | tr '[:lower:]' '[:upper:]')
     
     while IFS=: read -r user exp_str; do
-        [[ -z "$user" || -z "$exp_str" ]] && continue
-        [[ "$exp_str" == "Lifetime" ]] && continue
-        [[ "$exp_str" =~ ^[0-9]+$ || "$exp_str" == *EXPIRED* ]] && continue
+        [[ -z "$user" || -z "$exp_str" || "$exp_str" == "Lifetime" ]] && continue
+        [[ "$exp_str" =~ ^[0-9]+$ || "$exp_str" == *EXPIRED* || "$exp_str" == *QUOTA* ]] && continue
         
         # Parse exp_str as local timezone (VPS time), compare with local NOW
         exp_ts=$(date -d "$exp_str" +%s 2>/dev/null)
         [[ -z "$exp_ts" ]] && continue
         
-        NOW_LOCAL=$(date +%s)
-        
         if [[ $NOW_LOCAL -gt $exp_ts ]]; then
-            echo "[$(date)] Deleting expired: $user ($proto, exp: $exp_str)"
+            if [[ "$proto" == "SSH" ]] && ! ssh_valid_user "$user"; then
+                continue
+            fi
+
+            echo "[$(date)] Handling expired: $user ($proto, exp: $exp_str)"
 
             # Kill active connections via xray API
-            xray api stats --server=127.0.0.1:10085 | grep -i "email.*$user" | awk '{print $1}' | while read stat_name; do
+            xray api stats --server=127.0.0.1:10085 2>/dev/null | grep -i "email.*$user" | awk '{print $1}' | while read stat_name; do
                 xray api rmoutbound --server=127.0.0.1:10085 "$stat_name" 2>/dev/null
             done
 
-            # Trial account = send notification, regular = silent delete
+            # Trial account = send notification + delete permanen
             if [[ "$user" =~ ^trial- ]]; then
                 source /etc/wibutunnel/bot.conf 2>/dev/null
                 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
@@ -42,47 +42,97 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
                         -F "parse_mode=html" \
                         -F "text=${PESAN}" >/dev/null 2>&1 &
                 fi
-            fi
 
-            # Delete from config.json based on protocol
-            case "$proto" in
-                VLESS)
+                case "$proto" in
+                    VLESS)
+                        safe_jq_edit_args --arg u "$user" '
+                            .inbounds[1].settings.clients |= map(select(.email != $u)) |
+                            .inbounds[2].settings.clients |= map(select(.email != $u)) |
+                            .inbounds[3].settings.clients |= map(select(.email != $u)) |
+                            (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                        ' >/dev/null 2>&1
+                        xray_sync_user del "$proto" "$user"
+                        ;;
+                    VMESS)
+                        safe_jq_edit_args --arg u "$user" '
+                            .inbounds[4].settings.clients |= map(select(.email != $u)) |
+                            .inbounds[5].settings.clients |= map(select(.email != $u)) |
+                            .inbounds[6].settings.clients |= map(select(.email != $u)) |
+                            (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                        ' >/dev/null 2>&1
+                        xray_sync_user del "$proto" "$user"
+                        ;;
+                    TROJAN)
+                        safe_jq_edit_args --arg u "$user" '
+                            .inbounds[7].settings.clients |= map(select(.email != $u)) |
+                            .inbounds[8].settings.clients |= map(select(.email != $u)) |
+                            (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
+                        ' >/dev/null 2>&1
+                        xray_sync_user del "$proto" "$user"
+                        ;;
+                    SSH)
+                        del_ssh_user "$user" >/dev/null 2>&1
+                        ;;
+                esac
+                
+                safe_sed_delete "$user" "$proto_file"
+                safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
+                safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
+                safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+                safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+                rm -f "/etc/wibutunnel/recovery/${user}.json"
+            else
+                # Regular account = buat recovery sidecar & lock (tidak dihapus permanen!)
+                mkdir -p /etc/wibutunnel/recovery && chmod 700 /etc/wibutunnel/recovery
+                
+                if [[ "$proto" == "VLESS" ]]; then
+                    jq -c --arg u "$user" --arg p "VLESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                     safe_jq_edit_args --arg u "$user" '
                         .inbounds[1].settings.clients |= map(select(.email != $u)) |
                         .inbounds[2].settings.clients |= map(select(.email != $u)) |
                         .inbounds[3].settings.clients |= map(select(.email != $u)) |
                         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                    '
-                    ;;
-                VMESS)
+                    ' >/dev/null 2>&1
+                    xray_sync_user del "$proto" "$user"
+                elif [[ "$proto" == "VMESS" ]]; then
+                    jq -c --arg u "$user" --arg p "VMESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                     safe_jq_edit_args --arg u "$user" '
                         .inbounds[4].settings.clients |= map(select(.email != $u)) |
                         .inbounds[5].settings.clients |= map(select(.email != $u)) |
                         .inbounds[6].settings.clients |= map(select(.email != $u)) |
                         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                    '
-                    ;;
-                TROJAN)
+                    ' >/dev/null 2>&1
+                    xray_sync_user del "$proto" "$user"
+                elif [[ "$proto" == "TROJAN" ]]; then
+                    jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                     safe_jq_edit_args --arg u "$user" '
                         .inbounds[7].settings.clients |= map(select(.email != $u)) |
                         .inbounds[8].settings.clients |= map(select(.email != $u)) |
                         (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                    '
-                    ;;
-                SSH)
-                    del_ssh_user "$user" >/dev/null 2>&1
-                    ;;
-            esac
-            
-            # Delete from exp file
-            safe_sed_delete "$user" "$proto_file"
-            safe_sed_delete "$user" /etc/wibutunnel/limit_ip.db
-            safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
-            safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
-            safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
-            
-            if [[ "$proto" != "SSH" ]]; then
-                xray_sync_user del "$proto" "$user"
+                    ' >/dev/null 2>&1
+                    xray_sync_user del "$proto" "$user"
+                elif [[ "$proto" == "SSH" ]]; then
+                    ssh_pass=$(ssh_get_pass "$user" 2>/dev/null)
+                    echo "{\"user\":\"$user\",\"proto\":\"SSH\",\"pass\":\"$ssh_pass\",\"exp\":\"$exp_str\"}" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    passwd -l "$user" >/dev/null 2>&1
+                    pkill -u "$user" 2>/dev/null || true
+                fi
+
+                [[ ! -s "/etc/wibutunnel/recovery/${user}.json" ]] && rm -f "/etc/wibutunnel/recovery/${user}.json"
+
+                now_ts=$(date +%s)
+                db_set "$proto_file" "$user" "${now_ts}:0:EXPIRED"
+                db_set /etc/wibutunnel/locked_users.db "$user" "${now_ts}:0:EXPIRED"
+
+                source /etc/wibutunnel/bot.conf 2>/dev/null
+                if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+                    DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                    WAKTU=$(date '+%d %b %Y %H:%M WIB')
+                    PESAN=$(printf '💾 <b>USER PINDAH KE RECOVERY (EXPIRED)</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Expired\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Admin bisa restore via menu-recovery dengan limit baru.</i>' "$user" "$proto" "$WAKTU" "$DOMAIN")
+                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                        -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" \
+                        -F "parse_mode=HTML" -F "text=${PESAN}" >/dev/null 2>&1 &
+                fi
             fi
         fi
     done < "$proto_file"

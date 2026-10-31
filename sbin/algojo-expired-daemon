@@ -22,6 +22,10 @@ while true; do
             
             [[ $NOW_LOCAL -le $exp_ts ]] && continue
 
+            if [[ "$proto" == "SSH" ]] && ! ssh_valid_user "$user"; then
+                continue
+            fi
+
             # Trial account = notify + delete, Regular = notify + recovery
             if [[ "$user" == trial-* ]]; then
                 source /etc/wibutunnel/bot.conf 2>/dev/null
@@ -39,14 +43,14 @@ while true; do
                 
                 user_esc=$(escape_grep "$user")
                 if [[ "$proto" == "VLESS" ]]; then
-                    jq -c --arg u "$user" --arg p "VLESS" '{user:$u, proto:$p, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    jq -c --arg u "$user" --arg p "VLESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 elif [[ "$proto" == "VMESS" ]]; then
-                    jq -c --arg u "$user" --arg p "VMESS" '{user:$u, proto:$p, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    jq -c --arg u "$user" --arg p "VMESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 elif [[ "$proto" == "TROJAN" ]]; then
-                    jq -c --arg u "$user" --arg p "TROJAN" '{user:$u, proto:$p, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 elif [[ "$proto" == "SSH" ]]; then
                     ssh_pass=$(ssh_get_pass "$user" 2>/dev/null)
-                    echo "{\"user\":\"$user\",\"proto\":\"SSH\",\"pass\":\"$ssh_pass\"}" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    echo "{\"user\":\"$user\",\"proto\":\"SSH\",\"pass\":\"$ssh_pass\",\"exp\":\"$exp_str\"}" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 fi
                 [[ ! -s "/etc/wibutunnel/recovery/${user}.json" ]] && rm -f "/etc/wibutunnel/recovery/${user}.json"
 

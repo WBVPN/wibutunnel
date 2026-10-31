@@ -7,7 +7,7 @@ import sys
 LISTENING_ADDR = '127.0.0.1'
 LISTENING_PORT = 10015
 BUFLEN = 4096 * 4
-TIMEOUT = 60
+TIMEOUT = 300
 DEFAULT_HOST = ('127.0.0.1', 109)
 DEFAULT_RESPONSE = b'HTTP/1.1 101 <b><font color=blue>WIBUVPNSTORE</font></b>\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
 RESPONSE_FILE = '/etc/wibutunnel/ws-response'
@@ -47,6 +47,8 @@ class ConnectionHandler(threading.Thread):
             self.client.sendall(get_response())
 
             target = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            target.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            self.client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             target.connect(DEFAULT_HOST)
 
             self.forward_clean(self.client, target)

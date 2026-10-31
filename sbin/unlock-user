@@ -16,16 +16,56 @@ db_delete "$user" /etc/wibutunnel/locked_users.db
 
 if ssh_user_exists "$user"; then
     passwd -u "$user" >/dev/null 2>&1
+    rm -f "/etc/wibutunnel/recovery/${user}.json"
+    exp_flag=$(db_get "$user" /etc/xray/ssh_exp.conf 2>/dev/null)
+    if [[ "$exp_flag" =~ ^[0-9]+:0: || "$exp_flag" == *EXPIRED* || "$exp_flag" == *QUOTA* ]]; then
+        db_set /etc/xray/ssh_exp.conf "$user" "$(date -d "+1 days" +"%Y-%m-%d %H:%M:%S")"
+    fi
 else
     safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
 
+    # Jika user ada di recovery, pulihkan client ke inbounds
+    if [[ -f "/etc/wibutunnel/recovery/${user}.json" ]]; then
+        rec_proto=$(jq -r '.proto // empty' "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null)
+        client_data=$(jq -c '.client // empty' "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null)
+        rec_exp=$(jq -r '.exp // empty' "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null)
+
+        if [[ -n "$client_data" && "$client_data" != "null" ]]; then
+            if [[ "$rec_proto" == "VLESS" ]]; then
+                safe_jq_edit_args --argjson c "$client_data" '
+                    .inbounds[1].settings.clients += [$c] |
+                    .inbounds[2].settings.clients += [$c] |
+                    .inbounds[3].settings.clients += [$c]
+                '
+            elif [[ "$rec_proto" == "VMESS" ]]; then
+                safe_jq_edit_args --argjson c "$client_data" '
+                    .inbounds[4].settings.clients += [$c] |
+                    .inbounds[5].settings.clients += [$c] |
+                    .inbounds[6].settings.clients += [$c]
+                '
+            elif [[ "$rec_proto" == "TROJAN" ]]; then
+                safe_jq_edit_args --argjson c "$client_data" '
+                    .inbounds[7].settings.clients += [$c] |
+                    .inbounds[8].settings.clients += [$c]
+                '
+            fi
+
+            if [[ -n "$rec_exp" && "$rec_exp" != "null" && "$rec_exp" != *EXPIRED* && "$rec_exp" != *QUOTA* ]]; then
+                db_set "/etc/xray/${rec_proto,,}_exp.conf" "$user" "$rec_exp"
+            else
+                db_set "/etc/xray/${rec_proto,,}_exp.conf" "$user" "$(date -d "+1 days" +"%Y-%m-%d %H:%M:%S")"
+            fi
+        fi
+        rm -f "/etc/wibutunnel/recovery/${user}.json"
+    fi
+
     proto=""
     cred=""
-    if cred=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' "$XRAY_CONFIG" 2>/dev/null) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    if cred=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
         proto="VLESS"
-    elif cred=$(jq -r --arg u "$user" '.inbounds[4].settings.clients[]? | select(.email == $u) | .id' "$XRAY_CONFIG" 2>/dev/null) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    elif cred=$(jq -r --arg u "$user" '.inbounds[4].settings.clients[]? | select(.email == $u) | .id' "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
         proto="VMESS"
-    elif cred=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[]? | select(.email == $u) | .password' "$XRAY_CONFIG" 2>/dev/null) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    elif cred=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[]? | select(.email == $u) | .password' "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
         proto="TROJAN"
     fi
 

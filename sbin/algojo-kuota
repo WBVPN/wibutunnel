@@ -90,12 +90,16 @@ while read -r line; do
                 # 1. Buat sidecar untuk recovery
                 mkdir -p /etc/wibutunnel/recovery && chmod 700 /etc/wibutunnel/recovery
                 
+                orig_exp=""
                 if grep -q "^${user_esc}:" /etc/xray/vless_exp.conf 2>/dev/null; then
-                    jq -c --arg u "$user" --arg p "VLESS" '{user:$u, proto:$p, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    orig_exp=$(grep "^${user_esc}:" /etc/xray/vless_exp.conf | cut -d: -f2-)
+                    jq -c --arg u "$user" --arg p "VLESS" --arg exp "$orig_exp" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 elif grep -q "^${user_esc}:" /etc/xray/vmess_exp.conf 2>/dev/null; then
-                    jq -c --arg u "$user" --arg p "VMESS" '{user:$u, proto:$p, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    orig_exp=$(grep "^${user_esc}:" /etc/xray/vmess_exp.conf | cut -d: -f2-)
+                    jq -c --arg u "$user" --arg p "VMESS" --arg exp "$orig_exp" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 elif grep -q "^${user_esc}:" /etc/xray/trojan_exp.conf 2>/dev/null; then
-                    jq -c --arg u "$user" --arg p "TROJAN" '{user:$u, proto:$p, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    orig_exp=$(grep "^${user_esc}:" /etc/xray/trojan_exp.conf | cut -d: -f2-)
+                    jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$orig_exp" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 fi
                 [[ ! -s "/etc/wibutunnel/recovery/${user}.json" ]] && rm -f "/etc/wibutunnel/recovery/${user}.json"
 

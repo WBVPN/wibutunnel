@@ -678,13 +678,23 @@ echo "✓ Backup valid"
    - Telegram bot (`menu/bot-daemon.sh`) verifies license on daemon startup and on every incoming admin callback/command, rejecting expired instances and preventing bot abuse.
    - Created test suite `tests/test_license_enforcement.sh` covering unregistered, expired, future date, lifetime, and local VPS IP checks (8/8 test suites passing).
 
+9. **Enforcement Harmonization & Recovery Auto-Restore (`algojo-expired`, `unlock-user`, `ws-stunnel`)**
+   - Harmonized `algojo-expired` (one-shot batch called by `xp.sh`) with `algojo-expired-daemon`:
+     - Regular expired users now move to recovery (generating sidecar `/etc/wibutunnel/recovery/${user}.json` and setting flag) instead of being permanently wiped out at midnight.
+     - SSH user validation (`ssh_valid_user`) enforced before any `pkill -u` or `del_ssh_user` to prevent targeting system accounts.
+   - Updated `unlock-user`:
+     - When unlocking a user stored in recovery, it now automatically reads the client credentials and restores them back into `config.json` inbounds, cleans the sidecar JSON, unblocks routing, and syncs live with Xray API.
+   - Tuned `ws-stunnel`:
+     - Increased idle select timeout from 60s to 300s (5 minutes) and enabled `SO_KEEPALIVE` on client and target sockets, preventing Dropbear SSH WebSocket sessions from prematurely disconnecting during typing pauses.
+   - Verified via test suite (`test_expiry_and_xp.sh` assertion 5 passing: regular user expiry -> recovery -> unlock-user restore).
+
 ---
 
 ## Contact & Support
 
 **Original Author:** wibuvpnstore@gmail.com  
-**Version:** 4.0.4 KURUMI  
-**Last Audit:** 2026-10-31 (Strict License Expiry Enforcement & Bot Protection)  
-**Verified Commit:** 9554be6
+**Version:** 4.0.5 KURUMI  
+**Last Audit:** 2026-10-31 (Harmonization of Expiry Enforcement, Recovery Restore, WS Keepalive)  
+**Verified Commit:** b3c2f9b
 
 **AI Assistants:** This documentation updated untuk memudahkan context transfer antar session. Baca ini first sebelum perform operations.
