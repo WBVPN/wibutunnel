@@ -58,7 +58,9 @@ REGISTERED_IP=$(echo "$GET_DATA" | awk '{print $4}' | tr -d '\r' | tr -d ' ')
 if [[ "$MYIP" == "$REGISTERED_IP" ]]; then
     if [[ "${EXP_DATE,,}" != "lifetime" ]]; then
         DATE_NOW=$(date -u +%s)
-        DATE_EXP=$(date -u -d "$EXP_DATE" +%s 2>/dev/null)
+        exp_parse="$EXP_DATE"
+        [[ "$exp_parse" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && exp_parse="${exp_parse} 23:59:59"
+        DATE_EXP=$(date -u -d "$exp_parse" +%s 2>/dev/null)
         if [[ -z "$DATE_EXP" ]] || [[ $DATE_NOW -gt $DATE_EXP ]]; then
             clear
             echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"

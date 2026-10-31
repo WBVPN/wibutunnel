@@ -245,18 +245,61 @@ EOF
     fi
 }
 
+show_license_expired() {
+    local name="$1" exp="$2"
+    clear 2>/dev/null || true
+    echo -e "${LINE}"
+    echo -e "               ${RED}LISENSI KEDALUWARSA!${NC}"
+    echo -e "${LINE}"
+    echo -e " Klien       : ${YELLOW}${name}${NC}"
+    echo -e " IP VPS      : ${WHITE}${MYIP}${NC}"
+    echo -e " Expired On  : ${RED}${exp}${NC}"
+    echo -e "${LINE}"
+    echo -e " Silakan hubungi Admin untuk perpanjangan lisensi."
+    echo -e " WhatsApp : ${GREEN}087757315408${NC}"
+    echo -e " Telegram : ${CYAN}t.me/wibuvpn${NC}"
+    echo -e "${LINE}"
+}
+
+show_license_denied() {
+    local ip="$1"
+    clear 2>/dev/null || true
+    echo -e "${LINE}"
+    echo -e "                 ${RED}AKSES DITOLAK!${NC}"
+    echo -e "${LINE}"
+    echo -e " IP VPS Anda  : ${WHITE}${ip}${NC}"
+    echo -e " Status       : ${RED}Ilegal / Tidak Terdaftar${NC}"
+    echo -e "${LINE}"
+    echo -e " Silakan hubungi Admin untuk registrasi IP."
+    echo -e " WhatsApp : ${GREEN}087757315408${NC}"
+    echo -e " Telegram : ${CYAN}t.me/wibuvpn${NC}"
+    echo -e "${LINE}"
+}
+
 check_license() {
     local CACHE_FILE="/etc/wibutunnel/tmp/wibu_license.cache"
     local CACHE_TTL=3600
     local CURRENT_TIME=$(date -u +%s)
 
+    [[ -z "$MYIP" ]] && MYIP=$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null || curl -sS --max-time 3 ifconfig.me 2>/dev/null)
+
     # Cek Cache & Ekstrak Data (Format: STATUS|NAMA|EXPIRED)
     if [[ -f "$CACHE_FILE" ]]; then
-        local FILE_MOD_TIME=$(stat -c %Y "$CACHE_FILE")
+        local FILE_MOD_TIME=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)
         local TIME_DIFF=$((CURRENT_TIME - FILE_MOD_TIME))
         if [[ $TIME_DIFF -le $CACHE_TTL ]]; then
             IFS='|' read -r c_status c_name c_exp < "$CACHE_FILE"
-            if [[ "$c_status" == "VALID" && -n "$c_name" ]]; then
+            if [[ "$c_status" == "VALID" && -n "$c_name" && -n "$c_exp" ]]; then
+                if [[ "${c_exp,,}" != "lifetime" ]]; then
+                    local exp_parse="$c_exp"
+                    [[ "$exp_parse" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && exp_parse="${exp_parse} 23:59:59"
+                    local exp_sec; exp_sec=$(date -u -d "$exp_parse" +%s 2>/dev/null)
+                    if [[ -z "$exp_sec" || $CURRENT_TIME -gt $exp_sec ]]; then
+                        rm -f "$CACHE_FILE"
+                        show_license_expired "$c_name" "$c_exp"
+                        exit 1
+                    fi
+                fi
                 export CLIENT_NAME="$c_name"
                 export EXP_DATE="$c_exp"
                 return 0
@@ -264,28 +307,57 @@ check_license() {
         fi
     fi
 
-    # Jika cache tidak ada/expired, tarik dari GitHub
+    # Tarik dari GitHub (atau fallback local izin.txt)
     local LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
-    local GET_DATA=$(curl -sS --max-time 10 "$LINK_IZIN" | grep -w "$MYIP")
-    
+    local GET_DATA=""
+    if [[ -f "/etc/wibutunnel/izin.txt" ]] && grep -qw "$MYIP" "/etc/wibutunnel/izin.txt" 2>/dev/null; then
+        GET_DATA=$(grep -w "$MYIP" "/etc/wibutunnel/izin.txt")
+    elif [[ -f "./izin.txt" ]] && grep -qw "$MYIP" "./izin.txt" 2>/dev/null; then
+        GET_DATA=$(grep -w "$MYIP" "./izin.txt")
+    else
+        GET_DATA=$(curl -sS --max-time 7 "$LINK_IZIN" 2>/dev/null | grep -w "$MYIP")
+    fi
+
     if [[ -z "$GET_DATA" ]]; then
-        clear
-        echo -e "${LINE}\n                 ${RED}AKSES DITOLAK!${NC}\n${LINE}"
-        echo -e " IP VPS Anda  : ${WHITE}$MYIP${NC}"
-        echo -e " Status       : ${RED}Ilegal / Tidak Terdaftar${NC}\n${LINE}"
+        rm -f "$CACHE_FILE"
+        show_license_denied "$MYIP"
         exit 1
     fi
 
-    export CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}')
-    export EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}')
-    
-    # Simpan ke Cache dengan Format Baru
+    local c_name c_exp reg_ip
+    c_name=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
+    c_exp=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')
+    reg_ip=$(echo "$GET_DATA" | awk '{print $4}' | tr -d '\r' | tr -d ' ')
+
+    if [[ -n "$reg_ip" && "$reg_ip" != "$MYIP" ]]; then
+        rm -f "$CACHE_FILE"
+        show_license_denied "$MYIP"
+        exit 1
+    fi
+
+    if [[ "${c_exp,,}" != "lifetime" ]]; then
+        local exp_parse="$c_exp"
+        [[ "$exp_parse" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && exp_parse="${exp_parse} 23:59:59"
+        local exp_sec; exp_sec=$(date -u -d "$exp_parse" +%s 2>/dev/null)
+        if [[ -z "$exp_sec" || $CURRENT_TIME -gt $exp_sec ]]; then
+            rm -f "$CACHE_FILE"
+            show_license_expired "$c_name" "$c_exp"
+            exit 1
+        fi
+    fi
+
+    export CLIENT_NAME="$c_name"
+    export EXP_DATE="$c_exp"
+
+    # Simpan ke Cache
+    mkdir -p "$(dirname "$CACHE_FILE")"
     echo "VALID|${CLIENT_NAME}|${EXP_DATE}" > "$CACHE_FILE"
+    chmod 600 "$CACHE_FILE"
     return 0
 }
 
 check_license_silent() {
-    check_license >/dev/null 2>&1
+    ( check_license >/dev/null 2>&1 )
 }
 
 # Sanitasi user input — reject karakter berbahaya

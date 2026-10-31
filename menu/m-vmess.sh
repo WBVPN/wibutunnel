@@ -6,7 +6,7 @@
 
 source /usr/local/bin/common.sh
 if ! command -v jq &> /dev/null; then apt-get install -y jq &>/dev/null; fi
-check_license_silent
+check_license
 
 source /etc/wibutunnel/bot.conf 2>/dev/null
 CONFIG_FILE="/usr/local/etc/xray/config.json"

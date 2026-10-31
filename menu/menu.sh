@@ -4,7 +4,7 @@
 # ==========================================
 
 source /usr/local/bin/common.sh
-check_license_silent
+check_license
 
 IP_SERVER="${MYIP:-$(curl -sS ipv4.icanhazip.com)}"
 OS_SYSTEM=$(grep PRETTY_NAME /etc/os-release | awk -F '"' '{print $2}')

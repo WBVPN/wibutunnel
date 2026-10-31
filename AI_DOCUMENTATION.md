@@ -670,13 +670,21 @@ echo "✓ Backup valid"
    - Banner SSH editor restored in `m-ssh` [11] and `m-setting` [10] modifying `/etc/wibutunnel/ssh-banner` (default: HTML WIBU VPN STORE template).
    - Custom WebSocket HTTP response in `ws-stunnel` reading from `/etc/wibutunnel/ws-response` (default: `HTTP/1.1 101 <b><font color=blue>WIBUVPNSTORE</font></b>`) with edit menu in `m-ssh` [12].
 
+8. **Strict License Expiration Enforcement (`common.sh`, `menu/bot-daemon.sh`, `setup.sh`)**
+   - Added rigorous epoch timestamp comparison (`date -u -d "$exp 23:59:59" +%s`) in `common.sh:check_license()`.
+   - Previously only `setup.sh` checked expiration dates; `common.sh` only checked if the IP existed in `izin.txt`, allowing expired VPS to still run CLI menus.
+   - Any expired or unregistered IP now immediately blocks CLI script execution with standard red `LISENSI KEDALUWARSA!` / `AKSES DITOLAK!` banner and status code 1.
+   - Cache file `/etc/wibutunnel/tmp/wibu_license.cache` verifies cached expiration dates and invalidates itself when expired.
+   - Telegram bot (`menu/bot-daemon.sh`) verifies license on daemon startup and on every incoming admin callback/command, rejecting expired instances and preventing bot abuse.
+   - Created test suite `tests/test_license_enforcement.sh` covering unregistered, expired, future date, lifetime, and local VPS IP checks (8/8 test suites passing).
+
 ---
 
 ## Contact & Support
 
 **Original Author:** wibuvpnstore@gmail.com  
-**Version:** 4.0.3 KURUMI  
-**Last Audit:** 2026-10-31 (Custom WS Response, HTML Banner Default, Fresh Install Fixes)  
-**Verified Commit:** 0adb322
+**Version:** 4.0.4 KURUMI  
+**Last Audit:** 2026-10-31 (Strict License Expiry Enforcement & Bot Protection)  
+**Verified Commit:** 9554be6
 
 **AI Assistants:** This documentation updated untuk memudahkan context transfer antar session. Baca ini first sebelum perform operations.

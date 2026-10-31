@@ -981,6 +981,11 @@ fi
 # Delete webhook if exists
 curl -s "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null
 
+if ! check_license_silent; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Lisensi VPS tidak valid atau kedaluwarsa. Bot dinonaktifkan."
+    exit 1
+fi
+
 OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling bot started (offset: $OFFSET)"
 
@@ -1010,6 +1015,11 @@ while true; do
             curl -s "https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery?callback_query_id=${CB_ID}" >/dev/null &
             
             is_admin "$SENDER_ID" || { OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue; }
+            if ! check_license_silent; then
+                send_msg "⚠️ <b>LISENSI VPS KEDALUWARSA!</b>\n\nMasa aktif script pada IP ini telah habis.\nSilakan hubungi admin untuk perpanjangan." "" "$SENDER_ID"
+                OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"
+                continue
+            fi
             
             rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
 
@@ -1084,6 +1094,11 @@ while true; do
             [[ -z "$SENDER_ID" || -z "$TEXT" || "$SENDER_ID" == "null" || "$TEXT" == "null" ]] && { OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue; }
             
             is_admin "$SENDER_ID" || { OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue; }
+            if ! check_license_silent; then
+                send_msg "⚠️ <b>LISENSI VPS KEDALUWARSA!</b>\n\nMasa aktif script pada IP ini telah habis.\nSilakan hubungi admin untuk perpanjangan." "" "$SENDER_ID"
+                OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"
+                continue
+            fi
             
             if [[ -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}" && ! "$TEXT" =~ ^/ ]]; then
                 read -r action proto < "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
