@@ -688,13 +688,19 @@ echo "✓ Backup valid"
      - Increased idle select timeout from 60s to 300s (5 minutes) and enabled `SO_KEEPALIVE` on client and target sockets, preventing Dropbear SSH WebSocket sessions from prematurely disconnecting during typing pauses.
    - Verified via test suite (`test_expiry_and_xp.sh` assertion 5 passing: regular user expiry -> recovery -> unlock-user restore).
 
+10. **Early Idempotency Guards & Repo Hygiene (`algojo-*`, `.gitignore`)**
+    - Added pre-handler idempotency guard `grep -q "^${user}:" /etc/wibutunnel/locked_users.db 2>/dev/null && continue` at the entry point of `algojo-expired-daemon`, `algojo-expired`, and `algojo-kuota`.
+    - Eliminates race condition window where multiple daemons running concurrently could double-process users or send duplicate Telegram notifications.
+    - Purged stray backup file `menu/menu-recovery.sh.bak` and Python bytecode cache `sbin/__pycache__/` from repo.
+    - Updated `.gitignore` to strictly exclude `*.py[cod]`, `*$py.class`, `__pycache__/`, and `*.bak`.
+
 ---
 
 ## Contact & Support
 
 **Original Author:** wibuvpnstore@gmail.com  
-**Version:** 4.0.5 KURUMI  
-**Last Audit:** 2026-10-31 (Harmonization of Expiry Enforcement, Recovery Restore, WS Keepalive)  
-**Verified Commit:** b3c2f9b
+**Version:** 4.0.6 KURUMI  
+**Last Audit:** 2026-10-31 (Early Idempotency Guards & Clean Repo Hygiene)  
+**Verified Commit:** fb1ce58
 
 **AI Assistants:** This documentation updated untuk memudahkan context transfer antar session. Baca ini first sebelum perform operations.

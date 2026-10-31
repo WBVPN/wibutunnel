@@ -39,6 +39,9 @@ while read -r line; do
     [[ "$limit_gb" == "0" || -z "$limit_gb" ]] && continue
 
     user_esc=$(escape_grep "$user")
+    # Idempotency guard: lewati jika user sudah di-lock / ada di recovery
+    grep -q "^${user_esc}:" "$DB_LOCK" 2>/dev/null && continue
+
     total_bytes=$(grep "^${user_esc}:" "$DB_USAGE" | cut -d: -f2)
     [[ -z "$total_bytes" ]] && total_bytes=0
     usage_gb=$(echo "scale=2; $total_bytes / 1073741824" | bc)

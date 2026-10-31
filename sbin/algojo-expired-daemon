@@ -16,7 +16,10 @@ while true; do
             # Baris flag recovery ditulis sebagai user:<epoch>:0:EXPIRED. IFS=: membuat exp_str
             # = epoch saja, dan `date -d <epoch>` BERHASIL, sehingga baris itu dianggap expired
             # lagi setiap tick -> notif + restart xray tak berujung.
-            [[ "$exp_str" =~ ^[0-9]+$ ]] && continue
+            [[ "$exp_str" =~ ^[0-9]+$ || "$exp_str" == *EXPIRED* || "$exp_str" == *QUOTA* ]] && continue
+            
+            # Idempotency guard: jika user sudah di-lock / ada di recovery, lewati!
+            grep -q "^${user}:" /etc/wibutunnel/locked_users.db 2>/dev/null && continue
             
             exp_ts=$(date -d "$exp_str" +%s 2>/dev/null) || continue
             

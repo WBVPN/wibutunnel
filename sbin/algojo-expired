@@ -13,6 +13,9 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
         [[ -z "$user" || -z "$exp_str" || "$exp_str" == "Lifetime" ]] && continue
         [[ "$exp_str" =~ ^[0-9]+$ || "$exp_str" == *EXPIRED* || "$exp_str" == *QUOTA* ]] && continue
         
+        # Idempotency guard: jika user sudah di-lock / ada di recovery, lewati!
+        grep -q "^${user}:" /etc/wibutunnel/locked_users.db 2>/dev/null && continue
+        
         # Parse exp_str as local timezone (VPS time), compare with local NOW
         exp_ts=$(date -d "$exp_str" +%s 2>/dev/null)
         [[ -z "$exp_ts" ]] && continue
