@@ -694,13 +694,38 @@ echo "✓ Backup valid"
     - Purged stray backup file `menu/menu-recovery.sh.bak` and Python bytecode cache `sbin/__pycache__/` from repo.
     - Updated `.gitignore` to strictly exclude `*.py[cod]`, `*$py.class`, `__pycache__/`, and `*.bak`.
 
+11. **SSH Menu Streamlining & Legacy Stack Cleanup (`menu/m-ssh.sh`)**
+    - Removed obsolete `[99] Install / Repair SSH Stack` from `m-ssh.sh`.
+    - Removed legacy `ssh-tunnel-install` helper script from `/usr/local/bin`.
+    - Secured `unlock-user` expiry timestamp logic: when reviving users whose original expiry timestamp has already passed, automatically assign a fresh `+1 days` buffer to prevent immediate re-locking by background algojo daemon.
+
+12. **Live Service Monitoring Dashboard (`menu/menu.sh`)**
+    - Added multi-service monitoring in main menu dashboard:
+      - Line 1: Overall system status (`Online` vs `Degraded (Bad)`).
+      - Line 2: Real-time status badges for all 4 core stack services: `HAProxy [ON] • Xray [ON] • SSH [ON] • WS [ON]`.
+    - Formatted within standard 50-character border to prevent terminal line wrapping.
+
+13. **Auto-Repair & Diagnostic Engine (`sbin/wibu-repair`, `menu/m-setting.sh [1]`, `setup.sh`)**
+    - Standalone repair utility `/usr/local/sbin/wibu-repair` (and `/usr/local/bin/wibu-repair`).
+    - Performs 8 automated repair & diagnostic steps:
+      1. Kills & disables port 80/443 parasite services (Apache2/Nginx/Httpd).
+      2. Validates & auto-rebuilds HAProxy SSL certificate bundle (`${domain}.pem`) from LetsEncrypt or Xray certs.
+      3. Validates HAProxy syntax (`haproxy -c`) and auto-restores broken configs.
+      4. Validates Xray Core JSON syntax (`jq .`) and auto-restores from backup if corrupted.
+      5. Generates missing Dropbear SSH host keys (RSA, ED25519, ECDSA) and ensures custom SSH banner.
+      6. Ensures WS-Stunnel HTTP 101 WebSocket response template exists.
+      7. Validates flat-file databases (`*_exp.conf`, `*.db`).
+      8. Executes `systemctl reset-failed`, reloads systemd daemon, restarts stack in ordered dependency sequence, and waits for socket readiness.
+    - Added runnable test suite `tests/test_auto_repair.sh` (tested host key recreation, ws-response auto-generation, xray json corruption auto-restoration, live service & port listening verification).
+    - 9/9 test suites passing 100% across 5 consecutive rounds (45/45 tests passing).
+
 ---
 
 ## Contact & Support
 
 **Original Author:** wibuvpnstore@gmail.com  
 **Version:** 4.0.6 KURUMI  
-**Last Audit:** 2026-10-31 (Early Idempotency Guards & Clean Repo Hygiene)  
-**Verified Commit:** fb1ce58
+**Last Audit:** 2026-11-01 (Auto-Repair Engine & Service Monitoring Dashboard)  
+**Verified Commit:** 8fda589
 
 **AI Assistants:** This documentation updated untuk memudahkan context transfer antar session. Baca ini first sebelum perform operations.
