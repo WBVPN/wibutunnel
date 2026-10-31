@@ -9,7 +9,21 @@ LISTENING_PORT = 10015
 BUFLEN = 4096 * 4
 TIMEOUT = 60
 DEFAULT_HOST = ('127.0.0.1', 109)
-RESPONSE = b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: foo\r\n\r\n'
+DEFAULT_RESPONSE = b'HTTP/1.1 101 <b><font color=blue>WIBUVPNSTORE</font></b>\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
+RESPONSE_FILE = '/etc/wibutunnel/ws-response'
+
+def get_response():
+    try:
+        with open(RESPONSE_FILE, 'rb') as f:
+            data = f.read()
+            if data.strip():
+                data = data.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+                if not data.endswith(b'\r\n\r\n'):
+                    data = data.rstrip(b'\r\n') + b'\r\n\r\n'
+                return data
+    except Exception:
+        pass
+    return DEFAULT_RESPONSE
 
 class ConnectionHandler(threading.Thread):
     def __init__(self, client_sock):
@@ -30,7 +44,7 @@ class ConnectionHandler(threading.Thread):
                 self.client.close()
                 return
 
-            self.client.sendall(RESPONSE)
+            self.client.sendall(get_response())
 
             target = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             target.connect(DEFAULT_HOST)

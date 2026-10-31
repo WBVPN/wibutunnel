@@ -367,6 +367,30 @@ BEOF
     read -p "Tekan Enter..." dummy
 }
 
+edit_response_ws() {
+    clear; echo -e "${LINE}"; echo -e "        ${WHITE}EDIT RESPON HTTP WEBSOCKET${NC}"; echo -e "${LINE}"
+    local resp_file="/etc/wibutunnel/ws-response"
+    if [[ ! -f "$resp_file" ]]; then
+        mkdir -p /etc/wibutunnel
+        cat << 'REOF' > "$resp_file"
+HTTP/1.1 101 <b><font color=blue>WIBUVPNSTORE</font></b>
+Upgrade: websocket
+Connection: Upgrade
+REOF
+    fi
+    echo -e "${CYAN}Respon HTTP saat ini:${NC}"
+    echo -e "${LINE}"
+    cat "$resp_file"
+    echo -e "\n${LINE}"
+    echo -e "${YELLOW}Buka editor nano untuk mengubah respon server.${NC}"
+    echo -e "${YELLOW}Simpan: CTRL+O lalu Enter. Keluar: CTRL+X.${NC}"
+    read -p "Tekan Enter untuk membuka nano..." dummy
+    ${EDITOR:-nano} "$resp_file"
+    systemctl restart ws-stunnel
+    echo -e "\n${GREEN}Respon WS berhasil diperbarui & ws-stunnel direstart!${NC}"
+    read -p "Tekan Enter..." dummy
+}
+
 install_ssh_menu() {
     clear; echo -e "${LINE}"; echo -e "          ${WHITE}INSTALL SSH STACK${NC}"; echo -e "${LINE}"
     echo -e " ${CYAN}Memasang: dropbear 2019.78 + ws-stunnel + badvpn-udpgw${NC}"
@@ -399,6 +423,7 @@ echo -e " ${GREEN}[9]  Cek Login Online${NC}"
 echo -e "${LINE}"
 echo -e " ${RED}[10] Lock / Unlock Akun${NC}"
 echo -e " ${YELLOW}[11] Edit Banner SSH${NC}"
+echo -e " ${GREEN}[12] Edit Respon HTTP WS${NC}"
 echo -e " ${CYAN}[99] Install / Repair SSH Stack${NC}"
 echo -e " ${WHITE}[0]  Back to Menu Dashboard${NC}"
 echo -e "${LINE}"
@@ -418,6 +443,7 @@ case $sub_menu in
     9) /usr/local/bin/cek-trafik SSH ;;
     10) lock_unlock_ssh_menu; exec m-ssh ;;
     11) edit_banner_ssh; exec m-ssh ;;
+    12) edit_response_ws; exec m-ssh ;;
     0) exec menu ;;
     *) echo -e "${RED}Pilihan tidak valid!${NC}"; sleep 1; exec m-ssh ;;
 esac

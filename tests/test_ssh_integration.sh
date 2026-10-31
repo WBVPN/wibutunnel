@@ -92,7 +92,7 @@ s = socket.create_connection(("127.0.0.1", 80))
 s.sendall(payload)
 resp = s.recv(1024)
 s.close()
-if b"101 Switching Protocols" in resp:
+if b"101" in resp and b"WIBUVPNSTORE" in resp:
     print("OK")
 else:
     print("FAIL")

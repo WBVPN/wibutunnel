@@ -796,6 +796,11 @@ cat << 'BEOF' > /etc/wibutunnel/ssh-banner
 <font color='#0000ff'>===============================</font>
 </p>
 BEOF
+cat << 'REOF' > /etc/wibutunnel/ws-response
+HTTP/1.1 101 <b><font color=blue>WIBUVPNSTORE</font></b>
+Upgrade: websocket
+Connection: Upgrade
+REOF
 groupadd -f ssh_tunnel
 
 dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key 2>/dev/null || true
