@@ -30,8 +30,10 @@ RAM_TOTAL=$(free -m | awk '/Mem:/ { print $2 }')
 CPU_USAGE=$(grep -i '^cpu ' /proc/stat | awk '{print int(($2+$4)*100/($2+$4+$5))}')
 [[ -z "$CPU_USAGE" ]] && CPU_USAGE=0
 
-st_hap=$(systemctl is-active --quiet haproxy && echo "ON" || echo "OFF")
-st_xry=$(systemctl is-active --quiet xray && echo "ON" || echo "OFF")
+st_hap=$(systemctl is-active --quiet haproxy && echo -e "${GREEN}ON${NC}" || echo -e "${RED}OFF${NC}")
+st_xry=$(systemctl is-active --quiet xray && echo -e "${GREEN}ON${NC}" || echo -e "${RED}OFF${NC}")
+st_ssh=$(systemctl is-active --quiet dropbear && echo -e "${GREEN}ON${NC}" || echo -e "${RED}OFF${NC}")
+st_wss=$(systemctl is-active --quiet ws-stunnel && echo -e "${GREEN}ON${NC}" || echo -e "${RED}OFF${NC}")
 
 clear
 echo -e "${LINE}"
@@ -45,7 +47,7 @@ echo -e " ${CYAN}OS System  :${NC} ${WHITE}${OS_SYSTEM}${NC}"
 echo -e " ${CYAN}Uptime     :${NC} ${WHITE}${UPTIME}${NC}"
 echo -e " ${CYAN}RAM Use    :${NC} ${WHITE}${RAM_USED} MB / ${RAM_TOTAL} MB${NC}"
 echo -e " ${CYAN}CPU Use    :${NC} ${WHITE}${CPU_USAGE}%${NC}"
-echo -e " ${CYAN}Services   :${NC} HAProxy [${st_hap}] ${WHITE}•${NC} Xray [${st_xry}]"
+echo -e " ${CYAN}Services   :${NC} HAProxy [${st_hap}] ${WHITE}•${NC} Xray [${st_xry}] ${WHITE}•${NC} SSH [${st_ssh}] ${WHITE}•${NC} WS [${st_wss}]"
 echo -e "${LINE}"
 echo -e " ${GREEN}[1] VLESS${NC}"
 echo -e " ${CYAN}[2] VMESS${NC}"
