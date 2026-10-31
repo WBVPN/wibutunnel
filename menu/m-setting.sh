@@ -285,20 +285,52 @@ case $sub_setting in
         read -p " Pilih opsi [0-4]: " sub_bot
         case $sub_bot in
             1)
-                read -p "Masukkan BOT TOKEN : " input_token
-                read -p "Masukkan CHAT ID   : " input_chatid
-                if [[ -n "$input_token" && -n "$input_chatid" ]]; then
+                echo -e " ${YELLOW}Ketik [0] untuk batal.${NC}"
+                read -p " Masukkan BOT TOKEN : " input_token
+                [[ "$input_token" == "0" || -z "$input_token" ]] && { echo -e " ${YELLOW}Dibatalkan.${NC}"; read -n 1 -s -r -p "Tekan tombol apa saja..."; exec m-setting; }
+                read -p " Masukkan CHAT ID   : " input_chatid
+                [[ "$input_chatid" == "0" || -z "$input_chatid" ]] && { echo -e " ${YELLOW}Dibatalkan.${NC}"; read -n 1 -s -r -p "Tekan tombol apa saja..."; exec m-setting; }
+
+                input_token=$(echo "$input_token" | tr -d '[:space:]"')
+                input_chatid=$(echo "$input_chatid" | tr -d '[:space:]"')
+
+                echo -e "\n ${CYAN}[+] Memverifikasi token ke Telegram API...${NC}"
+                local bot_info
+                bot_info=$(curl -sS --max-time 7 "https://api.telegram.org/bot${input_token}/getMe" 2>/dev/null)
+                if ! echo "$bot_info" | jq -e '.ok == true' >/dev/null 2>&1; then
+                    echo -e " ${RED}[!] BOT TOKEN tidak valid atau server Telegram tidak merespon!${NC}"
+                    echo -e " ${YELLOW}    Periksa kembali token yang Anda dapatkan dari @BotFather.${NC}"
+                else
+                    local bot_user
+                    bot_user=$(echo "$bot_info" | jq -r '.result.username // empty' 2>/dev/null)
+                    echo -e " ${GREEN}[✓] Bot valid: @${bot_user}${NC}"
+
                     cat <<EOFBOT > /etc/wibutunnel/bot.conf
 BOT_TOKEN="${input_token}"
 CHAT_ID="${input_chatid}"
 EOFBOT
                     chmod 600 /etc/wibutunnel/bot.conf
+                    # Reset offset dan state lama agar sinkron dengan bot baru
+                    echo "0" > /etc/wibutunnel/tmp/bot_offset
+                    rm -f /etc/wibutunnel/tmp/bot_state_* 2>/dev/null
+
                     curl -s -X POST "https://api.telegram.org/bot${input_token}/deleteWebhook" >/dev/null 2>&1
                     systemctl restart telegram-bot >/dev/null 2>&1
-                    curl -s -X POST "https://api.telegram.org/bot${input_token}/sendMessage" \
+
+                    echo -e " ${CYAN}[+] Mengirim pesan konfirmasi koneksi...${NC}"
+                    local test_res
+                    test_res=$(curl -sS --max-time 7 -X POST "https://api.telegram.org/bot${input_token}/sendMessage" \
                         -d "chat_id=${input_chatid}" \
-                        -d "text=🤖 Bot Wibu Tunneling Berhasil Terhubung!" >/dev/null 2>&1
-                    echo -e "${GREEN}Bot berhasil disimpan dan diaktifkan!${NC}"
+                        -d "text=🤖 <b>Bot Wibu Tunneling Berhasil Terhubung!</b>%0ABot: @${bot_user}%0AAdmin: <code>${input_chatid}</code>" \
+                        -d "parse_mode=HTML" 2>/dev/null)
+
+                    if echo "$test_res" | jq -e '.ok == true' >/dev/null 2>&1; then
+                        echo -e " ${GREEN}[✓] Pesan tes berhasil diterima di Telegram Anda!${NC}"
+                    else
+                        echo -e " ${YELLOW}[!] Token tersimpan dan bot aktif, namun gagal mengirim pesan.${NC}"
+                        echo -e " ${YELLOW}    Pastikan Anda sudah klik /start di bot @${bot_user}!${NC}"
+                    fi
+                    echo -e "\n ${GREEN}Bot Telegram berhasil disimpan dan diaktifkan!${NC}"
                 fi
                 ;;
             2)
