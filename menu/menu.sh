@@ -35,6 +35,12 @@ st_xry=$(systemctl is-active --quiet xray && echo -e "${GREEN}ON${NC}" || echo -
 st_ssh=$(systemctl is-active --quiet dropbear && echo -e "${GREEN}ON${NC}" || echo -e "${RED}OFF${NC}")
 st_wss=$(systemctl is-active --quiet ws-stunnel && echo -e "${GREEN}ON${NC}" || echo -e "${RED}OFF${NC}")
 
+if systemctl is-active --quiet haproxy && systemctl is-active --quiet xray && systemctl is-active --quiet dropbear && systemctl is-active --quiet ws-stunnel; then
+    overall_status="${GREEN}Online${NC}"
+else
+    overall_status="${RED}Degraded (Bad)${NC}"
+fi
+
 clear
 echo -e "${LINE}"
 echo -e "               ${WHITE}WIBU TUNNELING${NC}"
@@ -47,7 +53,8 @@ echo -e " ${CYAN}OS System  :${NC} ${WHITE}${OS_SYSTEM}${NC}"
 echo -e " ${CYAN}Uptime     :${NC} ${WHITE}${UPTIME}${NC}"
 echo -e " ${CYAN}RAM Use    :${NC} ${WHITE}${RAM_USED} MB / ${RAM_TOTAL} MB${NC}"
 echo -e " ${CYAN}CPU Use    :${NC} ${WHITE}${CPU_USAGE}%${NC}"
-echo -e " ${CYAN}Services   :${NC} HAProxy [${st_hap}] ${WHITE}•${NC} Xray [${st_xry}] ${WHITE}•${NC} SSH [${st_ssh}] ${WHITE}•${NC} WS [${st_wss}]"
+echo -e " ${CYAN}Services   :${NC} ${overall_status}"
+echo -e " ${WHITE}HAProxy [${st_hap}${WHITE}] • Xray [${st_xry}${WHITE}] • SSH [${st_ssh}${WHITE}] • WS [${st_wss}${WHITE}]${NC}"
 echo -e "${LINE}"
 echo -e " ${GREEN}[1] VLESS${NC}"
 echo -e " ${CYAN}[2] VMESS${NC}"
