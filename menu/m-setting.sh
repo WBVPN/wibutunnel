@@ -89,7 +89,7 @@ echo -e "  ${CYAN}Auto Reboot  : ${NC}${STATUS_REBOOT}"
 echo -e "  ${CYAN}Auto Backup  : ${NC}${STATUS_BACKUP}"
 echo -e "  ${CYAN}Lock Duration: ${NC}${GREEN}${LOCK_DURATION} menit${NC}"
 echo -e "$LINE"
-echo -e " ${RED}[1] Restart Semua Service${NC}"
+echo -e " ${RED}[1] Auto-Repair & Restart Services${NC}"
 echo -e " ${GREEN}[2] Bersihkan Cache & RAM${NC}"
 echo -e " ${CYAN}[3] Speedtest VPS${NC}"
 echo -e " ${YELLOW}[4] Cek Bandwidth VPS (vnStat)${NC}"
@@ -107,9 +107,17 @@ read -r sub_setting
 
 case $sub_setting in
     1)
-        clear; echo -e "$LINE"; echo -e "         ${WHITE}MERESTART SERVICES...${NC}"; echo -e "$LINE"
-        systemctl restart xray haproxy cron
-        echo -e "${GREEN}Semua service berhasil direstart!${NC}"
+        clear
+        if [[ -x /usr/local/sbin/wibu-repair ]]; then
+            /usr/local/sbin/wibu-repair
+        elif [[ -x /usr/local/bin/wibu-repair ]]; then
+            /usr/local/bin/wibu-repair
+        else
+            echo -e "$LINE"; echo -e "         ${WHITE}MERESTART SERVICES...${NC}"; echo -e "$LINE"
+            systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon cron 2>/dev/null || true
+            echo -e "${GREEN}Semua service berhasil direstart!${NC}"
+        fi
+        echo ""
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
         ;;
@@ -257,6 +265,7 @@ case $sub_setting in
         safe_update "sbin/unlock-user"
         safe_update "sbin/unlocker-wibu"
         safe_update "sbin/ws-stunnel"
+        safe_update "sbin/wibu-repair"
         
         safe_update "common.sh"
         

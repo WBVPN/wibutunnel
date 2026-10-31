@@ -649,9 +649,10 @@ _need "sbin/unlocker-wibu" "unlocker-wibu-dl"
 _need "sbin/algojo-expired" "algojo-expired-dl"
 _need "sbin/algojo-expired-daemon" "algojo-expired-daemon"
 _need "sbin/ws-stunnel" "ws-stunnel"
+_need "sbin/wibu-repair" "wibu-repair-dl"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel; do
+for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
     fi

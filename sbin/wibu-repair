@@ -1,0 +1,225 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - wibu-repair (v4.0.6)
+# Deep Diagnostic & Auto-Repair Stack Engine
+# ==========================================
+
+source /usr/local/bin/common.sh 2>/dev/null || source "$(dirname "$0")/../common.sh" 2>/dev/null
+
+RED='\e[1;31m'
+GREEN='\e[1;32m'
+YELLOW='\e[1;33m'
+CYAN='\e[1;36m'
+WHITE='\e[1;37m'
+BLUE='\e[34m'
+NC='\e[0m'
+LINE="${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${RED}Error: Script ini harus dijalankan sebagai root!${NC}"
+    exit 1
+fi
+
+echo -e "$LINE"
+echo -e "         ${WHITE}AUTO-REPAIR & DIAGNOSTIC SYSTEM${NC}"
+echo -e "$LINE"
+
+domain=$(cat /etc/xray/domain 2>/dev/null || grep -s "^IP=" /var/lib/ipvps.conf | cut -d= -f2 || true)
+
+# 1. Bersihkan Parasit Port 80 & 443 (Apache2, Nginx, Httpd)
+echo -ne " [1/8] Memeriksa parasit port 80/443 (Apache/Nginx)... "
+parasite_found=0
+for s in apache2 nginx httpd; do
+    if systemctl is-active --quiet "$s" 2>/dev/null; then
+        systemctl stop "$s" 2>/dev/null || true
+        systemctl disable "$s" 2>/dev/null || true
+        parasite_found=1
+    fi
+done
+if [[ $parasite_found -eq 1 ]]; then
+    echo -e "${YELLOW}[DIBERSIHKAN]${NC}"
+else
+    echo -e "${GREEN}[OK]${NC}"
+fi
+
+# 2. Cek & Perbaiki Sertifikat SSL HAProxy
+echo -ne " [2/8] Memeriksa sertifikat SSL HAProxy... "
+mkdir -p /etc/haproxy/certs /etc/xray
+chmod 700 /etc/haproxy/certs
+ssl_ok=0
+if [[ -n "$domain" && -f "/etc/haproxy/certs/${domain}.pem" && -s "/etc/haproxy/certs/${domain}.pem" ]]; then
+    ssl_ok=1
+elif [[ -n "$domain" && -f "/etc/letsencrypt/live/${domain}/fullchain.pem" && -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]]; then
+    cat "/etc/letsencrypt/live/${domain}/fullchain.pem" "/etc/letsencrypt/live/${domain}/privkey.pem" > "/etc/haproxy/certs/${domain}.pem"
+    chmod 600 "/etc/haproxy/certs/${domain}.pem"
+    ssl_ok=1
+elif [[ -f "/etc/xray/xray.crt" && -f "/etc/xray/xray.key" ]]; then
+    target_pem="/etc/haproxy/certs/${domain:-default}.pem"
+    cat /etc/xray/xray.crt /etc/xray/xray.key > "$target_pem"
+    chmod 600 "$target_pem"
+    ssl_ok=1
+fi
+
+if [[ $ssl_ok -eq 1 ]]; then
+    echo -e "${GREEN}[OK]${NC}"
+else
+    echo -e "${YELLOW}[PERINGATAN: SSL BELUM LENGKAP]${NC}"
+fi
+
+# 3. Validasi & Perbaiki Konfigurasi HAProxy
+echo -ne " [3/8] Memeriksa konfigurasi HAProxy... "
+if haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1; then
+    echo -e "${GREEN}[OK]${NC}"
+else
+    echo -e "${YELLOW}[MEMPERBAIKI CONFIG]${NC}"
+    if [[ -f "/root/wibutunnel-repo/config/haproxy.cfg" ]]; then
+        sed "s/\${domain}/$domain/g" /root/wibutunnel-repo/config/haproxy.cfg > /etc/haproxy/haproxy.cfg
+    fi
+    if haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1; then
+        echo -e "       Config HAProxy berhasil dipulihkan: ${GREEN}[OK]${NC}"
+    else
+        echo -e "       Config HAProxy syntax error: ${RED}[FAIL]${NC}"
+    fi
+fi
+
+# 4. Validasi & Perbaiki Konfigurasi Xray Core
+echo -ne " [4/8] Memeriksa konfigurasi Xray JSON... "
+xray_json_ok=0
+if jq . /etc/xray/config.json >/dev/null 2>&1; then
+    xray_json_ok=1
+    echo -e "${GREEN}[OK]${NC}"
+else
+    echo -e "${YELLOW}[INVALID JSON - RESTORING]${NC}"
+    for b in /etc/xray/config.json.bak /etc/xray/config.json.bak.* /root/wibutunnel-repo/config/config.json; do
+        if [[ -f "$b" ]] && jq . "$b" >/dev/null 2>&1; then
+            cp -f "$b" /etc/xray/config.json
+            chmod 644 /etc/xray/config.json
+            xray_json_ok=1
+            echo -e "       Dipulihkan dari cadangan: ${GREEN}[$b]${NC}"
+            break
+        fi
+    done
+    if [[ $xray_json_ok -eq 0 ]]; then
+        echo -e "       ${RED}Gagal memulihkan config Xray! Simpan cadangan manual.${NC}"
+    fi
+fi
+mkdir -p /var/log/xray
+chown -R xray:xray /var/log/xray 2>/dev/null || true
+
+# 5. Cek & Perbaiki Host Key Dropbear & Banner
+echo -ne " [5/8] Memeriksa Dropbear SSH & Host Keys... "
+mkdir -p /etc/dropbear /etc/wibutunnel
+groupadd -f ssh_tunnel
+[[ -s /etc/dropbear/dropbear_rsa_host_key ]] || dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key >/dev/null 2>&1 || true
+[[ -s /etc/dropbear/dropbear_ed25519_host_key ]] || dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1 || true
+[[ -s /etc/dropbear/dropbear_ecdsa_host_key ]] || dropbearkey -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key >/dev/null 2>&1 || true
+
+cat << 'EOF' > /etc/default/dropbear
+NO_START=0
+DROPBEAR_PORT=143
+DROPBEAR_EXTRA_ARGS="-b /etc/wibutunnel/ssh-banner -W 32768 -w -g -K 60 -I 300 -p 109 -p 127.0.0.1:2222"
+DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"
+DROPBEAR_RECEIVE_WINDOW=65536
+EOF
+
+if [[ ! -s /etc/wibutunnel/ssh-banner ]]; then
+    echo -e "WIBU TUNNELING - SSH ACTIVE" > /etc/wibutunnel/ssh-banner
+fi
+echo -e "${GREEN}[OK]${NC}"
+
+# 6. Cek & Perbaiki WS-Stunnel (SSH WebSocket)
+echo -ne " [6/8] Memeriksa WS-Stunnel Python... "
+if [[ ! -s /etc/wibutunnel/ws-response ]]; then
+    cat << 'REOF' > /etc/wibutunnel/ws-response
+HTTP/1.1 101 <b><font color=blue>WIBUVPNSTORE</font></b>
+Upgrade: websocket
+Connection: Upgrade
+REOF
+fi
+chmod +x /usr/local/bin/ws-stunnel 2>/dev/null || true
+chmod +x /usr/local/sbin/ws-stunnel 2>/dev/null || true
+echo -e "${GREEN}[OK]${NC}"
+
+# 7. Cek Flat-File DB Expiry & Limit
+echo -ne " [7/8] Memeriksa integritas file database... "
+touch /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf
+chmod 644 /etc/xray/*_exp.conf
+touch /etc/wibutunnel/locked_users.db /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/user_usage.db
+chmod 600 /etc/wibutunnel/*.db
+mkdir -p /etc/wibutunnel/recovery
+echo -e "${GREEN}[OK]${NC}"
+
+# 8. Reset Failed & Restart Semua Service Stack
+echo -e " [8/8] Me-restart & sinkronisasi systemd services..."
+systemctl daemon-reload
+systemctl reset-failed 2>/dev/null || true
+
+for svc in xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon cron; do
+    systemctl enable "$svc" >/dev/null 2>&1 || true
+    systemctl restart "$svc" >/dev/null 2>&1 || true
+done
+
+source /etc/wibutunnel/bot.conf 2>/dev/null
+if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+    systemctl enable telegram-bot >/dev/null 2>&1 || true
+    systemctl restart telegram-bot >/dev/null 2>&1 || true
+fi
+
+# Verifikasi loop (tunggu maksimal 6 detik)
+echo -ne "       Menunggu layanan online"
+for i in {1..6}; do
+    echo -ne "."
+    sleep 1
+    if systemctl is-active --quiet xray && systemctl is-active --quiet haproxy && systemctl is-active --quiet dropbear && systemctl is-active --quiet ws-stunnel; then
+        break
+    fi
+done
+echo ""
+
+# Tampilkan Hasil Inspeksi Real-Time
+echo -e "$LINE"
+echo -e "             ${WHITE}STATUS SERVICE LIVE${NC}"
+echo -e "$LINE"
+
+check_svc() {
+    local name="$1"
+    local sname="$2"
+    if systemctl is-active --quiet "$sname"; then
+        printf " %-16s : ${GREEN}[AKTIF / ON]${NC}\n" "$name"
+    else
+        printf " %-16s : ${RED}[MATI / OFF]${NC}\n" "$name"
+    fi
+}
+
+check_svc "Xray Core" "xray"
+check_svc "HAProxy" "haproxy"
+check_svc "Dropbear (SSH)" "dropbear"
+check_svc "WS-Stunnel" "ws-stunnel"
+check_svc "Algojo Expiry" "algojo-expired"
+check_svc "Algojo Daemon" "wibu-daemon"
+check_svc "Cron" "cron"
+if [[ -n "$BOT_TOKEN" ]]; then
+    check_svc "Telegram Bot" "telegram-bot"
+fi
+
+echo -e "$LINE"
+echo -e "              ${WHITE}STATUS PORT LIVE${NC}"
+echo -e "$LINE"
+
+check_port() {
+    local label="$1"
+    local port="$2"
+    if ss -tlnp | grep -q -E ":${port}\b"; then
+        printf " Port %-11s : ${GREEN}[LISTENING]${NC}\n" "${port} ($label)"
+    else
+        printf " Port %-11s : ${RED}[OFF]${NC}\n" "${port} ($label)"
+    fi
+}
+
+check_port "HTTP/WS" "80"
+check_port "HTTPS/TLS" "443"
+check_port "SSH Direct" "109"
+check_port "SSH Direct" "143"
+check_port "SSH WS" "10015"
+check_port "Xray API" "10085"
+echo -e "$LINE"
