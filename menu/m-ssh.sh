@@ -97,7 +97,7 @@ ssh_config_message() {
 
 add_ssh_menu() {
     clear; echo -e "${LINE}"; echo -e "               ${WHITE}BUAT AKUN SSH${NC}"; echo -e "${LINE}"
-    if ! ssh_ready; then echo -e "${RED}ERROR: Dropbear belum terinstal! Pilih [99] Install dulu.${NC}"; read -p "Enter..." dummy; return; fi
+    if ! ssh_ready; then echo -e "${RED}ERROR: Dropbear belum terinstal! Jalankan setup.sh.${NC}"; read -p "Enter..." dummy; return; fi
 
     read -p "Masukkan Nama User : " user
     [[ -z "$user" ]] && return
@@ -391,19 +391,6 @@ REOF
     read -p "Tekan Enter..." dummy
 }
 
-install_ssh_menu() {
-    clear; echo -e "${LINE}"; echo -e "          ${WHITE}INSTALL SSH STACK${NC}"; echo -e "${LINE}"
-    echo -e " ${CYAN}Memasang: dropbear 2019.78 + ws-stunnel + badvpn-udpgw${NC}"
-    echo -e " ${CYAN}Mode: SNI 443 (HAProxy) + websocket 80 + UDP gateway${NC}\n"
-    if [[ -x /usr/local/bin/ssh-tunnel-install ]]; then
-        /usr/local/bin/ssh-tunnel-install
-    else
-        echo -e "${RED}Installer ssh-tunnel-install tidak ditemukan.${NC}"
-        echo -e "${YELLOW}Jalankan ulang setup.sh atau download dari repo.${NC}"
-    fi
-    read -p "Tekan Enter..." dummy
-}
-
 # ==========================================
 # MENU UTAMA
 # ==========================================
@@ -424,14 +411,12 @@ echo -e "${LINE}"
 echo -e " ${RED}[10] Lock / Unlock Akun${NC}"
 echo -e " ${YELLOW}[11] Edit Banner SSH${NC}"
 echo -e " ${GREEN}[12] Edit Respon HTTP WS${NC}"
-echo -e " ${CYAN}[99] Install / Repair SSH Stack${NC}"
 echo -e " ${WHITE}[0]  Back to Menu Dashboard${NC}"
 echo -e "${LINE}"
 echo -ne "${WHITE}Pilih menu: ${NC}"
 read -r sub_menu
 
 case $sub_menu in
-    99) install_ssh_menu; exec m-ssh ;;
     1) add_ssh_menu; exec m-ssh ;;
     2) trial_ssh_menu; exec m-ssh ;;
     3) delete_ssh_menu; exec m-ssh ;;
