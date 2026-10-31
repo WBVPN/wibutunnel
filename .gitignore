@@ -32,3 +32,4 @@ logs/
 *.bak
 *.backup
 *~
+__pycache__/
