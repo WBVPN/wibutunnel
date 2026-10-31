@@ -667,7 +667,8 @@ echo "✓ Backup valid"
      - `ws-stunnel` cleans HTTP split preamble before feeding valid SSH packets to Dropbear port 109.
    - Comprehensive SSH management in CLI menu (`m-ssh.sh`) and Telegram Bot (`menu/bot-daemon.sh`): create, trial, delete, renew, limit IP/BW, lock/unlock, and live login status.
    - Expiry daemon (`algojo-expired-daemon`) auto-purging expired SSH trials (`pkill -u` + `del_ssh_user`).
-   - Banner SSH editor restored in `m-ssh` [11] and `m-setting` [10] modifying `/etc/wibutunnel/ssh-banner`.
+   - Banner SSH editor restored in `m-ssh` [11] and `m-setting` [10] modifying `/etc/wibutunnel/ssh-banner` (default: HTML WIBU VPN STORE template).
+   - Custom WebSocket HTTP response in `ws-stunnel` reading from `/etc/wibutunnel/ws-response` (default: `HTTP/1.1 101 <b><font color=blue>WIBUVPNSTORE</font></b>`) with edit menu in `m-ssh` [12].
 
 ---
 
@@ -675,7 +676,7 @@ echo "✓ Backup valid"
 
 **Original Author:** wibuvpnstore@gmail.com  
 **Version:** 4.0.3 KURUMI  
-**Last Audit:** 2026-10-30 (SSH Tunnel, Enhanced Mode, Banner & Bot Upgrades)  
-**Verified Commit:** 69c28b7
+**Last Audit:** 2026-10-31 (Custom WS Response, HTML Banner Default, Fresh Install Fixes)  
+**Verified Commit:** 0adb322
 
 **AI Assistants:** This documentation updated untuk memudahkan context transfer antar session. Baca ini first sebelum perform operations.
