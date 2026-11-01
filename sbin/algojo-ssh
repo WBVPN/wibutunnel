@@ -1,8 +1,8 @@
 #!/bin/bash
 # ==========================================
 # WIBU TUNNELING - algojo-ssh (v4.0 Kurumi)
-# SSH IP Limit Enforcement + Login Check
-# Bandwidth tracking: symbolic only (DB update manual)
+# SSH IP Limit Enforcement
+# [FIX] Correct ss parsing + dropbear filter + 10# oktal guard
 # ==========================================
 source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
 source /etc/wibutunnel/bot.conf 2>/dev/null
@@ -31,28 +31,36 @@ fi
 declare -A user_ips
 
 while read -r line; do
-    # Parse: user:port local_ip:local_port remote_ip:remote_port
-    # Filter established SSH connections (port 22, 109, 143, or forwarded)
-    [[ -z "$line" ]] && continue
+    # Skip header
+    [[ "$line" =~ ^State|^Recv-Q ]] && continue
     
-    local_port=$(echo "$line" | awk '{print $4}' | cut -d: -f2)
-    # SSH-related ports
+    # Correct parsing: $3=Local $4=Peer $5=Process
+    local_addr=$(echo "$line" | awk '{print $3}')
+    peer_addr=$(echo "$line" | awk '{print $4}')
+    process=$(echo "$line" | awk '{print $5}')
+    
+    local_port=${local_addr##*:}
+    
+    # Filter SSH ports (22=openssh, 109/143=dropbear direct, 2222=dropbear loopback)
     [[ ! "$local_port" =~ ^(22|109|143|2222)$ ]] && continue
     
-    remote_full=$(echo "$line" | awk '{print $5}')
-    remote_ip=$(echo "$remote_full" | cut -d: -f1)
+    # Extract remote IP
+    remote_ip=${peer_addr%:*}
+    remote_ip=${remote_ip#[}  # strip IPv6 bracket if any
     
-    # Get owner UID, then username
-    uid=$(echo "$line" | awk '{print $6}' | grep -oP 'uid:\K\d+')
-    [[ -z "$uid" ]] && continue
+    # Extract pid from process column: users:(("dropbear",pid=12345,fd=6))
+    # If multiple PIDs (parent+child), take LAST one (client session)
+    pid=$(echo "$process" | grep -oP 'pid=\K[0-9]+' | tail -1)
+    [[ -z "$pid" ]] && continue
     
-    username=$(id -nu "$uid" 2>/dev/null)
-    [[ -z "$username" || "$username" == "root" ]] && continue
+    # Get username from pid
+    username=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+    [[ -z "$username" ]] && continue
     
     # Skip if user not in ssh_exp.conf
     grep -q "^${username}:" "$SSH_EXP" 2>/dev/null || continue
     
-    # Add IP to user's list
+    # Add IP to user's list (deduplicate)
     if [[ -n "${user_ips[$username]}" ]]; then
         if ! echo "${user_ips[$username]}" | grep -qw "$remote_ip"; then
             user_ips[$username]="${user_ips[$username]} $remote_ip"
@@ -60,7 +68,7 @@ while read -r line; do
     else
         user_ips[$username]="$remote_ip"
     fi
-done < <(ss -tnp state established 2>/dev/null | grep -E 'users:\(\("sshd"')
+done < <(ss -tnp state established 2>/dev/null | grep -E 'dropbear|sshd')
 
 # Check each user against IP limit
 for user in "${!user_ips[@]}"; do
@@ -71,7 +79,9 @@ for user in "${!user_ips[@]}"; do
     [[ "$max_ip" == "0" || -z "$max_ip" ]] && continue
     
     ip_count=$(echo "${user_ips[$user]}" | wc -w)
-    if (( ip_count > max_ip )); then
+    
+    # [FIX SSH-3] Guard against octal interpretation (08, 09, 010)
+    if (( 10#$ip_count > 10#$max_ip )); then
         locked_users["$user"]=1
         now=$(date -u +%s)
         unlock_time=$((now + (LOCK_DURATION * 60)))
@@ -82,8 +92,12 @@ for user in "${!user_ips[@]}"; do
         # Kill all user sessions
         pkill -u "$user" 2>/dev/null
         
-        # Lock Linux account
-        usermod -L "$user" 2>/dev/null
+        # [FIX SSH-5] Use lock_ssh_user if available, fallback to passwd -l
+        if type lock_ssh_user >/dev/null 2>&1; then
+            lock_ssh_user "$user"
+        else
+            usermod -L "$user" 2>/dev/null
+        fi
         
         # Telegram notification
         (
