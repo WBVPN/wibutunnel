@@ -1,9 +1,9 @@
-# 🦋 WIBU TUNNELING v4.0.3 KURUMI
+# 🦋 WIBU TUNNELING v4.0.6 KURUMI
 
 **Auto-install VPN script** berbasis Xray dengan Telegram bot monitoring. Satu command, VPN langsung jalan.
 
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)](https://github.com/WBVPN/wibutunnel)
-[![Version](https://img.shields.io/badge/Version-v4.0.3%20KURUMI-blue.svg)](https://github.com/WBVPN/wibutunnel)
+[![Version](https://img.shields.io/badge/Version-v4.0.6%20KURUMI-blue.svg)](https://github.com/WBVPN/wibutunnel)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)](https://github.com/WBVPN/wibutunnel)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -11,13 +11,16 @@
 
 ## ✨ Fitur Utama
 
-- 🔐 **3 Protokol + SSH**: VLESS, VMESS, TROJAN (WS-TLS, WS-NTLS, gRPC) & SSH Tunnel (Dropbear, WebSocket, Direct Port 80/443, Enhanced Split Payload)
-- 🤖 **Telegram Bot**: Buat/hapus akun, cek login, backup - semua dari HP
-- 🎯 **Auto Enforcement**: Kuota habis/expired = auto lock/delete + notif
+- 🔐 **3 Protokol + SSH**: VLESS, VMESS, TROJAN (WS-TLS, WS-NTLS, gRPC) & SSH Tunnel (Dropbear, WebSocket, Direct Port 80/443, Enhanced Split Payload `HTTP/ 69`)
+- 🛠️ **Auto-Repair Engine (`wibu-repair`)**: Self-healing stack otomatis — basmi parasit port 80/443 (Apache2/Nginx), perbaiki cert SSL HAProxy, cegah korupsi Xray JSON, auto-generate Dropbear keys & banner
+- ⚡ **Zero-Downtime Sync**: Tambah/hapus/kunci user secara live via gRPC API (`127.0.0.1:10085`) tanpa restart Xray service
+- 🔒 **Atomic DB Locking**: Proteksi flat-file database dengan `flock -w 10` anti-race condition
+- 🤖 **Telegram Bot**: Buat/hapus akun, lock/unlock user, cek login, backup - semua dari HP
+- 🎯 **Auto Enforcement**: Kuota habis/expired = auto lock/recovery + notif real-time
 - 🛡️ **IP Tracking**: Deteksi multi-device login real-time via live socket
 - ⚡ **Trial Account**: Hardcoded 1 jam, auto-delete setelah expire/habis kuota
-- 🔄 **Recovery System**: User expired/habis kuota disimpan, bisa restore dengan limit baru
-- 🌐 **HAProxy + Xray**: Port 80/443 langsung aktif
+- 🔄 **Recovery System**: User expired/habis kuota disimpan aman via sidecar JSON, auto-restore dengan limit baru
+- 🌐 **HAProxy + Xray**: Port 80/443 multiplexing langsung aktif
 - 🔒 **Auto SSL**: Let's Encrypt via certbot, auto-renew
 
 ---
@@ -89,16 +92,17 @@ Format username `trial-xxxx` otomatis:
 
 ### Menu Utama
 ```bash
-menu              # Dashboard utama
-m-ssh             # Kelola SSH accounts & tunnel (Edit Banner SSH: [11])
+menu              # Dashboard utama & status live stack
+m-ssh             # Kelola SSH accounts & tunnel (Edit Banner: [11], Respon WS: [12])
 m-vless           # Kelola VLESS accounts
 m-vmess           # Kelola VMESS accounts
 m-trojan          # Kelola TROJAN accounts
-m-setting         # System settings, update script, bot config, banner SSH: [10]
+m-setting         # Settings, update, bot config, auto reboot, auto-repair: [1]
 m-backup          # Backup/restore manual
 menu-recovery     # Restore user dari recovery room
 menu-lock         # Lock user manual
 menu-unlock       # Unlock user manual
+wibu-repair       # Diagnostic menyeluruh & auto-repair stack services
 ```
 
 ### Service Management
@@ -138,8 +142,12 @@ tail -f /var/log/xray/error.log
 /usr/local/sbin/
   ├── algojo-wibu           # IP limit enforcement daemon
   ├── algojo-kuota          # Bandwidth limit enforcement daemon
-  ├── algojo-expired        # Expiry check (one-shot)
-  └── algojo-expired-daemon # Expiry enforcement daemon
+  ├── algojo-expired        # Expiry check (one-shot batch)
+  ├── algojo-expired-daemon # Expiry enforcement daemon (real-time sweep)
+  ├── lock-user             # Lock user (zero-downtime routing & gRPC)
+  ├── unlock-user           # Unlock user & auto-restore dari sidecar
+  ├── ws-stunnel            # Python WebSocket SSH tunnel proxy
+  └── wibu-repair           # Deep diagnostic & auto-repair engine
 
 /var/log/xray/
   ├── access.log            # Connection logs
@@ -282,9 +290,28 @@ Internet → HAProxy (80/443)
 
 ---
 
-## 🐛 Troubleshooting
+## 🐛 Troubleshooting & Auto-Repair
 
-### Bot tidak respon
+Jika salah satu service OFF atau koneksi VPN bermasalah, gunakan **Auto-Repair Engine**:
+```bash
+wibu-repair
+```
+Atau melalui menu dashboard:
+```bash
+m-setting → [1] Auto-Repair & Restart Services
+```
+Fitur ini secara otomatis:
+1. Mematikan service parasit port 80/443 (Apache2/Nginx)
+2. Memverifikasi dan menyatukan ulang sertifikat SSL HAProxy (`${domain}.pem`)
+3. Memperbaiki konfigurasi HAProxy jika rusak/syntax error
+4. Memvalidasi Xray Core JSON syntax & memulihkan dari backup tanpa menghapus akun aktif
+5. Menghasilkan ulang SSH host keys Dropbear & banner jika hilang
+6. Memastikan respons HTTP WebSocket (`ws-stunnel`) aktif
+7. Me-reset systemd failed counter dan me-restart seluruh stack layanan secara berurutan
+
+### Manual Troubleshooting Commands
+
+#### Bot tidak respon
 ```bash
 # Check service
 systemctl status telegram-bot
@@ -300,7 +327,7 @@ source /etc/wibutunnel/bot.conf
 curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getMe" | jq .
 ```
 
-### User tidak bisa connect
+#### User tidak bisa connect
 ```bash
 # Check xray status
 systemctl status xray
@@ -315,7 +342,7 @@ tail -50 /var/log/xray/error.log
 jq '.inbounds[1].settings.clients[]? | .email' /etc/xray/config.json
 ```
 
-### IP limit tidak jalan
+#### IP limit tidak jalan
 ```bash
 # Check log level (harus "info")
 jq '.log.loglevel' /etc/xray/config.json
@@ -330,7 +357,7 @@ systemctl status wibu-daemon
 bash /usr/local/sbin/algojo-wibu
 ```
 
-### Trial tidak auto-delete
+#### Trial tidak auto-delete
 ```bash
 # Check daemon
 systemctl status algojo-expired
@@ -350,7 +377,30 @@ bash /usr/local/sbin/algojo-expired
 
 ## 📝 Changelog
 
-### v4.0 KURUMI (2026-10-26) - Latest
+### v4.0.6 KURUMI (2026-11-01) - Latest Stable Release
+
+**🛠️ Auto-Repair & Diagnostic Engine (`wibu-repair`):**
+- ✅ **Self-Healing Stack**: Perbaikan otomatis port parasit (Apache/Nginx), SSL HAProxy, Xray JSON corrupt, host keys Dropbear, dan template WebSocket response.
+- ✅ **Anti-Wipe Safety Guard**: Validasi ketat backup Xray; menolak template repo kosong demi mencegah akun pelanggan terhapus saat repair.
+- ✅ **Dynamic HAProxy Template**: Template HAProxy dinamis (`${__DOMAIN__}`) di `/etc/wibutunnel/templates/haproxy.cfg`, bebas dari hardcode domain lama.
+
+**⚡ Zero-Downtime & Real-time Enforcement:**
+- ✅ **Zero-Downtime User Sync**: Sinkronisasi user live tanpa restart Xray service via gRPC API (`127.0.0.1:10085`).
+- ✅ **Atomic DB Locking**: Implementasi `flock -w 10` di semua operasi tulis flat-file database untuk mencegah race condition.
+- ✅ **Enforcement Harmonization**: User reguler yang expired otomatis dipindah ke recovery room (sidecar JSON atomik + retry 3x) dan akun trial di-purge permanen.
+- ✅ **Auto-Restore Unlock**: Perintah `unlock-user` memulihkan kredensial dari recovery sidecar, unblock routing, dan memberikan perpanjangan +1 hari secara transparan bila expired.
+
+**🔒 SSH Module & Security Enforcement:**
+- ✅ **SSH Tunneling Stack**: Dropbear (port 109 & 143), WebSocket Python proxy (`ws-stunnel` port 10015), Direct SSH port 80 & 443 via HAProxy two-stage multiplexer.
+- ✅ **Enhanced Split-Payload Support**: Mendukung injeksi payload HTTP custom (`HTTP/ 69`) dan custom response WebSocket.
+- ✅ **Strict License Expiration**: Validasi epoch tanggal lisensi ketat di `common.sh`, `setup.sh`, dan `bot-daemon.sh`.
+
+**📊 Dashboard & UX Improvements:**
+- ✅ **Multi-Service Live Monitor**: Tampilan status multi-baris rapi di `menu` (`HAProxy`, `Xray`, `SSH`, `WS`) dengan indikator `Online` vs `Degraded (Bad)`.
+- ✅ **Clean SSH Menu**: Eliminasi opsi install usang `[99]` di `m-ssh.sh` dan penghapusan script usang.
+- ✅ **Comprehensive Automated Tests**: 9 test suites pengujian end-to-end terintegrasi di `tests/`.
+
+### v4.0 KURUMI (2026-10-26)
 
 **🐛 Critical Bug Fixes:**
 - ✅ **Setup abort on download failure** - Installer sekarang abort jika file gagal download, tidak lanjut dengan state broken
