@@ -1009,13 +1009,18 @@ while true; do
         # Handle callback query
         CB_ID=$(echo "$update" | jq -r ".callback_query.id // empty" 2>/dev/null)
         if [[ -n "$CB_ID" ]]; then
-            SENDER_ID=$(echo "$update" | jq -r ".callback_query.message.chat.id" 2>/dev/null)
+            SENDER_ID=$(echo "$update" | jq -r ".callback_query.from.id // .callback_query.message.chat.id" 2>/dev/null)
             MSG_ID=$(echo "$update" | jq -r ".callback_query.message.message_id" 2>/dev/null)
             DATA=$(echo "$update" | jq -r ".callback_query.data" 2>/dev/null)
             
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Callback update #$update_id from $SENDER_ID: data='$DATA'"
             curl -s "https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery?callback_query_id=${CB_ID}" >/dev/null &
             
-            is_admin "$SENDER_ID" || { OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue; }
+            if ! is_admin "$SENDER_ID"; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Callback ditolak: ID $SENDER_ID bukan admin."
+                send_msg "⚠️ <b>AKSES DITOLAK!</b>\n\nID Telegram Anda: <code>${SENDER_ID}</code>\nAnda belum terdaftar sebagai Admin di VPS ini." "" "$SENDER_ID"
+                OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue
+            fi
             if ! check_license_silent; then
                 send_msg "⚠️ <b>LISENSI VPS KEDALUWARSA!</b>\n\nMasa aktif script pada IP ini telah habis.\nSilakan hubungi admin untuk perpanjangan." "" "$SENDER_ID"
                 OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"
@@ -1089,14 +1094,21 @@ while true; do
             fi
         else
             # Handle text message
-            SENDER_ID=$(echo "$update" | jq -r ".message.chat.id // empty" 2>/dev/null)
+            SENDER_ID=$(echo "$update" | jq -r ".message.from.id // .message.chat.id // empty" 2>/dev/null)
+            CHAT_TARGET=$(echo "$update" | jq -r ".message.chat.id // empty" 2>/dev/null)
             TEXT=$(echo "$update" | jq -r ".message.text // empty" 2>/dev/null)
             
             [[ -z "$SENDER_ID" || -z "$TEXT" || "$SENDER_ID" == "null" || "$TEXT" == "null" ]] && { OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue; }
             
-            is_admin "$SENDER_ID" || { OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue; }
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Message update #$update_id from $SENDER_ID (chat $CHAT_TARGET): text='$TEXT'"
+
+            if ! is_admin "$SENDER_ID"; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pesan ditolak: ID $SENDER_ID bukan admin."
+                send_msg "⚠️ <b>AKSES DITOLAK!</b>\n\nID Telegram Anda: <code>${SENDER_ID}</code>\nAnda belum terdaftar sebagai Admin di VPS ini.\n\nSilakan daftarkan ID ini di menu VPS: <code>m-setting</code> -> Opsi [1]." "" "$CHAT_TARGET"
+                OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"; continue
+            fi
             if ! check_license_silent; then
-                send_msg "⚠️ <b>LISENSI VPS KEDALUWARSA!</b>\n\nMasa aktif script pada IP ini telah habis.\nSilakan hubungi admin untuk perpanjangan." "" "$SENDER_ID"
+                send_msg "⚠️ <b>LISENSI VPS KEDALUWARSA!</b>\n\nMasa aktif script pada IP ini telah habis.\nSilakan hubungi admin untuk perpanjangan." "" "$CHAT_TARGET"
                 OFFSET=$((update_id+1)); echo "$OFFSET">"$OFFSET_FILE"
                 continue
             fi
@@ -1109,7 +1121,7 @@ while true; do
                     create)
                         read -r user hari ip gb <<< "$TEXT"
                         if [[ -z "$gb" ]]; then
-                            send_msg "❌ Format salah! Harap masukkan:\n<code>nama hari limit_ip limit_gb</code>" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+                            send_msg "❌ Format salah! Harap masukkan:\n<code>nama hari limit_ip limit_gb</code>" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}' "$CHAT_TARGET"
                         else
                             create_account "$proto" "$user" "$hari" "$ip" "$gb"
                         fi
@@ -1124,7 +1136,7 @@ while true; do
                     renew)
                         read -r user hari <<< "$TEXT"
                         if [[ -z "$hari" ]]; then
-                            send_msg "❌ Format salah! Harap masukkan:\n<code>nama hari</code>" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+                            send_msg "❌ Format salah! Harap masukkan:\n<code>nama hari</code>" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}' "$CHAT_TARGET"
                         else
                             renew_account "$user" "$hari" "$proto"
                         fi
@@ -1132,7 +1144,7 @@ while true; do
                     limit)
                         read -r user ip gb <<< "$TEXT"
                         if [[ -z "$gb" ]]; then
-                            send_msg "❌ Format salah! Harap masukkan:\n<code>nama limit_ip limit_gb</code>" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
+                            send_msg "❌ Format salah! Harap masukkan:\n<code>nama limit_ip limit_gb</code>" '{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}' "$CHAT_TARGET"
                         else
                             change_limit "$user" "$ip" "$gb" "$proto"
                         fi
@@ -1150,8 +1162,11 @@ while true; do
             else
                 rm -f "/etc/wibutunnel/tmp/bot_state_${SENDER_ID}"
                 case "$TEXT" in
-                    /start|/menu)
-                        show_main_menu "$SENDER_ID" ""
+                    /start*|/menu*|menu|Menu|help|Help|tes|Tes|ping|Ping)
+                        show_main_menu "$CHAT_TARGET" ""
+                        ;;
+                    *)
+                        send_msg "🤖 Halo Admin! Silakan gunakan menu panel berikut:" '{"inline_keyboard":[[{"text":"📋 Buka Menu Panel","callback_data":"main_menu"}]]}' "$CHAT_TARGET"
                         ;;
                 esac
             fi
