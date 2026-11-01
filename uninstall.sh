@@ -73,6 +73,7 @@ rm -f /etc/systemd/system/telegram-bot.service
 rm -f /etc/systemd/system/algojo-expired.service
 rm -f /etc/systemd/system/network-tune.service
 rm -f /etc/systemd/system/ws-stunnel.service
+rm -f /etc/systemd/system/dropbear.service
 rm -f /etc/systemd/system/telegram-webhook.socket
 rm -f /etc/systemd/system/telegram-webhook@.service
 rm -rf /etc/systemd/system/haproxy.service.d
