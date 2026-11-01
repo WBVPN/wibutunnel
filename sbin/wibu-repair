@@ -58,6 +58,20 @@ elif [[ -f "/etc/xray/xray.crt" && -f "/etc/xray/xray.key" ]]; then
     cat /etc/xray/xray.crt /etc/xray/xray.key > "$target_pem"
     chmod 600 "$target_pem"
     ssl_ok=1
+elif [[ -n "$domain" ]]; then
+    # Buatkan temporary self-signed cert agar HAProxy tidak gagal bind saat start
+    mkdir -p /etc/haproxy/certs
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "/etc/haproxy/certs/${domain}.pem.key" \
+        -out "/etc/haproxy/certs/${domain}.pem.crt" \
+        -days 30 -subj "/CN=${domain}" >/dev/null 2>&1 || true
+    if [[ -f "/etc/haproxy/certs/${domain}.pem.crt" ]]; then
+        cat "/etc/haproxy/certs/${domain}.pem.crt" "/etc/haproxy/certs/${domain}.pem.key" > "/etc/haproxy/certs/${domain}.pem"
+        rm -f "/etc/haproxy/certs/${domain}.pem.crt" "/etc/haproxy/certs/${domain}.pem.key"
+        chmod 600 "/etc/haproxy/certs/${domain}.pem"
+        ssl_ok=1
+        echo -e "${YELLOW}[SELF-SIGNED TEMPORARY DIHASILKAN]${NC}"
+    fi
 fi
 
 if [[ $ssl_ok -eq 1 ]]; then
@@ -72,8 +86,10 @@ if haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1; then
     echo -e "${GREEN}[OK]${NC}"
 else
     echo -e "${YELLOW}[MEMPERBAIKI CONFIG]${NC}"
-    if [[ -f "/root/wibutunnel-repo/config/haproxy.cfg" ]]; then
-        sed "s/\${domain}/$domain/g" /root/wibutunnel-repo/config/haproxy.cfg > /etc/haproxy/haproxy.cfg
+    if [[ -f "/etc/wibutunnel/templates/haproxy.cfg" ]]; then
+        sed "s/\${__DOMAIN__}/$domain/g" /etc/wibutunnel/templates/haproxy.cfg > /etc/haproxy/haproxy.cfg
+    elif [[ -f "/root/wibutunnel-repo/config/haproxy.cfg" ]]; then
+        sed -e "s/\${__DOMAIN__}/$domain/g" -e "s/wibu\.priasawit\.web\.id/$domain/g" /root/wibutunnel-repo/config/haproxy.cfg > /etc/haproxy/haproxy.cfg
     fi
     if haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1; then
         echo -e "       Config HAProxy berhasil dipulihkan: ${GREEN}[OK]${NC}"
@@ -90,17 +106,35 @@ if jq . /etc/xray/config.json >/dev/null 2>&1; then
     echo -e "${GREEN}[OK]${NC}"
 else
     echo -e "${YELLOW}[INVALID JSON - RESTORING]${NC}"
-    for b in /etc/xray/config.json.bak /etc/xray/config.json.bak.* /root/wibutunnel-repo/config/config.json; do
+    # Prioritaskan restore dari cadangan yang memiliki akun/clients
+    for b in /etc/xray/config.json.bak /etc/xray/config.json.bak.* /etc/wibutunnel/recovery/config.json.*; do
         if [[ -f "$b" ]] && jq . "$b" >/dev/null 2>&1; then
-            cp -f "$b" /etc/xray/config.json
-            chmod 644 /etc/xray/config.json
-            xray_json_ok=1
-            echo -e "       Dipulihkan dari cadangan: ${GREEN}[$b]${NC}"
-            break
+            cnt=$(jq '[.inbounds[].settings.clients[]?] | length' "$b" 2>/dev/null || echo 0)
+            if [[ "$cnt" -gt 0 ]]; then
+                cp -f "$b" /etc/xray/config.json
+                chmod 644 /etc/xray/config.json
+                xray_json_ok=1
+                echo -e "       Dipulihkan dari cadangan (${cnt} akun): ${GREEN}[$b]${NC}"
+                break
+            fi
         fi
     done
+
+    # Fallback ke .bak valid lainnya jika ada
     if [[ $xray_json_ok -eq 0 ]]; then
-        echo -e "       ${RED}Gagal memulihkan config Xray! Simpan cadangan manual.${NC}"
+        for b in /etc/xray/config.json.bak /etc/xray/config.json.bak.*; do
+            if [[ -f "$b" ]] && jq . "$b" >/dev/null 2>&1; then
+                cp -f "$b" /etc/xray/config.json
+                chmod 644 /etc/xray/config.json
+                xray_json_ok=1
+                echo -e "       Dipulihkan dari cadangan lokal: ${YELLOW}[$b]${NC}"
+                break
+            fi
+        done
+    fi
+
+    if [[ $xray_json_ok -eq 0 ]]; then
+        echo -e "       ${RED}Gagal memulihkan config Xray! Tidak ada cadangan valid. Template repo ditolak untuk mencegah user terhapus.${NC}"
     fi
 fi
 mkdir -p /var/log/xray
@@ -114,6 +148,7 @@ groupadd -f ssh_tunnel
 [[ -s /etc/dropbear/dropbear_ed25519_host_key ]] || dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1 || true
 [[ -s /etc/dropbear/dropbear_ecdsa_host_key ]] || dropbearkey -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key >/dev/null 2>&1 || true
 
+if [[ ! -s /etc/default/dropbear ]] || ! grep -q "DROPBEAR_PORT" /etc/default/dropbear 2>/dev/null; then
 cat << 'EOF' > /etc/default/dropbear
 NO_START=0
 DROPBEAR_PORT=143
@@ -121,6 +156,7 @@ DROPBEAR_EXTRA_ARGS="-b /etc/wibutunnel/ssh-banner -W 32768 -w -g -K 60 -I 300 -
 DROPBEAR_BANNER="/etc/wibutunnel/ssh-banner"
 DROPBEAR_RECEIVE_WINDOW=65536
 EOF
+fi
 
 if [[ ! -s /etc/wibutunnel/ssh-banner ]]; then
     echo -e "WIBU TUNNELING - SSH ACTIVE" > /etc/wibutunnel/ssh-banner

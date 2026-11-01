@@ -12,6 +12,8 @@ mode=$2   # AUTO atau MANUAL
 
 [[ -z "$user" ]] && exit 1
 
+EXP_EXTENDED=0
+
 db_delete "$user" /etc/wibutunnel/locked_users.db
 
 if ssh_user_exists "$user"; then
@@ -20,6 +22,7 @@ if ssh_user_exists "$user"; then
     exp_flag=$(db_get "$user" /etc/xray/ssh_exp.conf 2>/dev/null)
     if [[ "$exp_flag" =~ ^[0-9]+:0: || "$exp_flag" == *EXPIRED* || "$exp_flag" == *QUOTA* ]]; then
         db_set /etc/xray/ssh_exp.conf "$user" "$(date -d "+1 days" +"%Y-%m-%d %H:%M:%S")"
+        EXP_EXTENDED=1
     fi
 else
     safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
@@ -62,6 +65,7 @@ else
                 db_set "/etc/xray/${rec_proto,,}_exp.conf" "$user" "$rec_exp"
             else
                 db_set "/etc/xray/${rec_proto,,}_exp.conf" "$user" "$(date -d "+1 days" +"%Y-%m-%d %H:%M:%S")"
+                EXP_EXTENDED=1
             fi
         fi
         rm -f "/etc/wibutunnel/recovery/${user}.json"
@@ -95,13 +99,19 @@ if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         CARA="Manual oleh Admin"
     fi
 
+    if [[ "$EXP_EXTENDED" -eq 1 ]]; then
+        EXP_NOTE="\n<b>Catatan  :</b> Masa aktif sudah lewat, otomatis diperpanjang <b>+1 hari</b>."
+    else
+        EXP_NOTE=""
+    fi
+
     PESAN="
 🔓 <b>USER DIBUKA KEMBALI</b>
 
 <b>User     :</b> <code>${user}</code>
 <b>Cara     :</b> ${CARA}
 <b>Waktu    :</b> ${WAKTU}
-<b>Domain   :</b> <code>${DOMAIN}</code>
+<b>Domain   :</b> <code>${DOMAIN}</code>${EXP_NOTE}
 
 <i>User sudah bisa login kembali.</i>
 "

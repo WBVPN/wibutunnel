@@ -41,21 +41,34 @@ while true; do
                         -F "parse_mode=HTML" -F "text=${PESAN}" >/dev/null 2>&1 &
                 fi
             else
-                # Regular account = create recovery sidecar
+                # Regular account = create recovery sidecar (atomik + verifikasi)
                 mkdir -p /etc/wibutunnel/recovery && chmod 700 /etc/wibutunnel/recovery
-                
+
                 user_esc=$(escape_grep "$user")
-                if [[ "$proto" == "VLESS" ]]; then
-                    jq -c --arg u "$user" --arg p "VLESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
-                elif [[ "$proto" == "VMESS" ]]; then
-                    jq -c --arg u "$user" --arg p "VMESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
-                elif [[ "$proto" == "TROJAN" ]]; then
-                    jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
-                elif [[ "$proto" == "SSH" ]]; then
-                    ssh_pass=$(ssh_get_pass "$user" 2>/dev/null)
-                    echo "{\"user\":\"$user\",\"proto\":\"SSH\",\"pass\":\"$ssh_pass\",\"exp\":\"$exp_str\"}" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                SC="/etc/wibutunnel/recovery/${user}.json"
+                SC_TMP="${SC}.tmp.$$"
+                for _try in 1 2 3; do
+                    rm -f "$SC_TMP"
+                    if [[ "$proto" == "VLESS" ]]; then
+                        jq -c --arg u "$user" --arg p "VLESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
+                    elif [[ "$proto" == "VMESS" ]]; then
+                        jq -c --arg u "$user" --arg p "VMESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
+                    elif [[ "$proto" == "TROJAN" ]]; then
+                        jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
+                    elif [[ "$proto" == "SSH" ]]; then
+                        ssh_pass=$(ssh_get_pass "$user" 2>/dev/null)
+                        printf '{"user":"%s","proto":"SSH","pass":"%s","exp":"%s"}\n' "$user" "$ssh_pass" "$exp_str" > "$SC_TMP" 2>/dev/null
+                    fi
+                    [[ -s "$SC_TMP" ]] && jq -e . "$SC_TMP" >/dev/null 2>&1 && break
+                    sleep 0.2
+                done
+                if [[ -s "$SC_TMP" ]] && jq -e . "$SC_TMP" >/dev/null 2>&1; then
+                    mv -f "$SC_TMP" "$SC"
+                else
+                    rm -f "$SC_TMP"
+                    echo "[$(date)] SKIP lock $user: gagal membuat recovery sidecar" >> /etc/wibutunnel/tmp/recovery_error.log 2>/dev/null || true
+                    continue
                 fi
-                [[ ! -s "/etc/wibutunnel/recovery/${user}.json" ]] && rm -f "/etc/wibutunnel/recovery/${user}.json"
 
                 # Send notification
                 source /etc/wibutunnel/bot.conf 2>/dev/null

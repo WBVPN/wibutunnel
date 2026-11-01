@@ -545,6 +545,13 @@ backend webhook_server
     server local_webhook 127.0.0.1:8443
 HFEOF
 
+# Simpan template haproxy ber-placeholder agar wibu-repair bisa rebuild tanpa
+# bergantung pada folder repo (yang tidak ada di VPS hasil install).
+mkdir -p /etc/wibutunnel/templates
+sed "s|/etc/haproxy/certs/${domain}\.pem|/etc/haproxy/certs/\${__DOMAIN__}.pem|" \
+    /etc/haproxy/haproxy.cfg > /etc/wibutunnel/templates/haproxy.cfg
+chmod 644 /etc/wibutunnel/templates/haproxy.cfg
+
 # Bypass GitHub 429 Rate Limit menggunakan GHProxy
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
 

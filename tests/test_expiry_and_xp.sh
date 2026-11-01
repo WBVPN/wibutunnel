@@ -141,4 +141,26 @@ safe_sed_delete "$REG_USER" /etc/wibutunnel/locked_users.db
 xray_sync_user del VLESS "$REG_USER" >/dev/null 2>&1 || true
 echo "Regular expiry recovery & unlock-user restore: PASS"
 
+echo "6. Testing no-lock-without-sidecar guard (anti credential loss)..."
+# User expired TANPA client di config.json -> jq tetap menghasilkan sidecar valid,
+# jadi jalur ini harus tetap membuat sidecar. Guard diuji dengan config.json rusak
+# sesaat: algojo TIDAK boleh mengunci user tanpa sidecar.
+GUARD_USER="reg-exp-guard-$$"
+db_set /etc/xray/vless_exp.conf "$GUARD_USER" "2020-01-01 00:00:00"
+cp -f /usr/local/etc/xray/config.json /tmp/wibu_cfg_guard.bak
+echo "NOT_JSON" > /usr/local/etc/xray/config.json
+bash /usr/local/sbin/algojo-expired >/dev/null 2>&1 || true
+locked_guard=0
+grep -q "^${GUARD_USER}:" /etc/wibutunnel/locked_users.db 2>/dev/null && locked_guard=1
+cp -f /tmp/wibu_cfg_guard.bak /usr/local/etc/xray/config.json
+rm -f /tmp/wibu_cfg_guard.bak
+if [[ "$locked_guard" -eq 1 && ! -s "/etc/wibutunnel/recovery/${GUARD_USER}.json" ]]; then
+    echo "ASSERT_FAILED: user locked without recovery sidecar (credential loss risk)"
+    exit 1
+fi
+safe_sed_delete "$GUARD_USER" /etc/xray/vless_exp.conf
+safe_sed_delete "$GUARD_USER" /etc/wibutunnel/locked_users.db
+rm -f "/etc/wibutunnel/recovery/${GUARD_USER}.json"
+echo "No-lock-without-sidecar guard: PASS"
+
 echo "ALL_EXPIRY_AND_XP_ASSERTS_PASSED"
