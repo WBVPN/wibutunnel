@@ -650,6 +650,7 @@ chmod 600 /etc/wibutunnel/*.db
 # Download sbin scripts (source of truth — patched versions)
 _need "sbin/algojo-wibu" "algojo-wibu-dl"
 _need "sbin/algojo-kuota" "algojo-kuota-dl"
+_need "sbin/algojo-ssh" "algojo-ssh-dl"
 _need "sbin/lock-user" "lock-user-dl"
 _need "sbin/unlock-user" "unlock-user-dl"
 _need "sbin/unlocker-wibu" "unlocker-wibu-dl"
@@ -657,9 +658,10 @@ _need "sbin/algojo-expired" "algojo-expired-dl"
 _need "sbin/algojo-expired-daemon" "algojo-expired-daemon"
 _need "sbin/ws-stunnel" "ws-stunnel"
 _need "sbin/wibu-repair" "wibu-repair-dl"
+_need "sbin/wibu-daemon" "wibu-daemon-dl"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair; do
+for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
     fi
@@ -692,17 +694,7 @@ if [[ ! -s /etc/wibutunnel/bot.conf ]]; then
     fi
 fi
 
-# WIBU DAEMON
-cat << 'WDEOF' > /usr/local/bin/wibu-daemon
-#!/bin/bash
-while true; do
-    /usr/local/sbin/algojo-wibu >/dev/null 2>&1
-    /usr/local/sbin/algojo-kuota >/dev/null 2>&1
-    sleep 60
-done
-WDEOF
-chmod +x /usr/local/bin/wibu-daemon
-
+# WIBU DAEMON SERVICE
 cat << 'EOF' > /etc/systemd/system/wibu-daemon.service
 [Unit]
 Description=Wibu Tunneling Real-Time Algojo Daemon
@@ -827,9 +819,6 @@ dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key 2>/dev/null ||
 dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key 2>/dev/null || true
 dropbearkey -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key 2>/dev/null || true
 
-chmod +x /usr/local/bin/wibu-daemon
-chmod +x /usr/local/sbin/algojo-wibu 2>/dev/null || true
-chmod +x /usr/local/sbin/algojo-kuota 2>/dev/null || true
 chmod +x /usr/local/bin/bot-daemon
 
 systemctl daemon-reload
