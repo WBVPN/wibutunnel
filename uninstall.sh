@@ -7,8 +7,8 @@
 echo -e "\e[33mMemulai proses uninstall WIBU TUNNELING...\e[0m"
 
 # Hentikan semua layanan
-systemctl stop xray haproxy wibu-daemon network-tune 2>/dev/null
-systemctl disable xray haproxy wibu-daemon network-tune 2>/dev/null
+systemctl stop xray haproxy wibu-daemon network-tune ws-stunnel dropbear 2>/dev/null
+systemctl disable xray haproxy wibu-daemon network-tune ws-stunnel dropbear 2>/dev/null
 systemctl stop telegram-bot.service algojo-expired.service 2>/dev/null
 systemctl disable telegram-bot.service algojo-expired.service 2>/dev/null
 systemctl stop telegram-webhook.socket 2>/dev/null
@@ -54,13 +54,14 @@ systemctl disable netfilter-persistent >/dev/null 2>&1
 # Hapus file executable menu & daemon
 rm -f /usr/local/sbin/algojo-wibu /usr/local/sbin/algojo-kuota /usr/local/sbin/unlocker-wibu /usr/local/sbin/algojo-expired
 rm -f /usr/local/bin/algojo-expired-daemon
-rm -f /usr/local/sbin/network-tune.sh
-rm -f /usr/local/bin/menu /usr/local/bin/m-vless /usr/local/bin/m-vmess /usr/local/bin/m-trojan
+rm -f /usr/local/sbin/network-tune.sh /usr/local/sbin/wibu-repair
+rm -f /usr/local/bin/menu /usr/local/bin/m-vless /usr/local/bin/m-vmess /usr/local/bin/m-trojan /usr/local/bin/m-ssh
 rm -f /usr/local/bin/m-setting /usr/local/bin/m-backup /usr/local/bin/menu-lock /usr/local/bin/menu-unlock
 rm -f /usr/local/bin/menu-recovery /usr/local/bin/cek-trafik /usr/local/bin/xp
 rm -f /usr/local/bin/lock-user /usr/local/bin/unlock-user
 rm -f /usr/local/bin/bot-daemon /usr/local/bin/bot-webhook /usr/local/bin/bot-daemon-new /usr/local/bin/bot-webhook-handler
 rm -f /usr/local/bin/wibu-daemon /usr/local/bin/watchdog.sh /usr/local/bin/renew-cert-wibu.sh
+rm -f /usr/local/bin/ws-stunnel /usr/local/sbin/ws-stunnel
 rm -f /usr/local/bin/common.sh /usr/local/bin/common.sh.bak* /usr/local/bin/common.sh.before-lib-split
 
 # Bersihkan Cron Jobs bawaan Wibu Tunneling
@@ -71,6 +72,7 @@ rm -f /etc/systemd/system/wibu-daemon.service
 rm -f /etc/systemd/system/telegram-bot.service
 rm -f /etc/systemd/system/algojo-expired.service
 rm -f /etc/systemd/system/network-tune.service
+rm -f /etc/systemd/system/ws-stunnel.service
 rm -f /etc/systemd/system/telegram-webhook.socket
 rm -f /etc/systemd/system/telegram-webhook@.service
 rm -rf /etc/systemd/system/haproxy.service.d
@@ -105,7 +107,7 @@ rm -f /swapfile
 # Run 'iptables -F && netfilter-persistent save' to reset if needed
 
 # Uninstall paket bawaan (opsional)
-apt-get remove --purge -y haproxy vnstat >/dev/null 2>&1
+apt-get remove --purge -y haproxy vnstat dropbear >/dev/null 2>&1
 apt-get autoremove -y >/dev/null 2>&1
 
 echo -e "\e[32mUninstalasi Selesai! VPS sudah bersih dari WIBU TUNNELING.\e[0m"
