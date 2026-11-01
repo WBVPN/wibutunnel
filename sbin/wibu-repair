@@ -180,7 +180,7 @@ echo -e "${GREEN}[OK]${NC}"
 echo -ne " [7/8] Memeriksa integritas file database... "
 touch /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf
 chmod 644 /etc/xray/*_exp.conf
-touch /etc/wibutunnel/locked_users.db /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/user_usage.db
+touch /etc/wibutunnel/locked_users.db /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/user_usage.db /etc/wibutunnel/ssh_pass.db
 chmod 600 /etc/wibutunnel/*.db
 mkdir -p /etc/wibutunnel/recovery
 echo -e "${GREEN}[OK]${NC}"

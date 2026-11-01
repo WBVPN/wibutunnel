@@ -692,6 +692,7 @@ backup_vps() {
         etc/wibutunnel/limit_bw.db \
         etc/wibutunnel/locked_users.db \
         etc/wibutunnel/user_usage.db \
+        etc/wibutunnel/recovery \
         etc/xray/domain 2>/dev/null
 
     if [[ -f "$backup_file" ]]; then

@@ -642,7 +642,7 @@ _need "menu/bot-daemon.sh" "bot-daemon"
 # =========================================================
 # SISTEM RECOVERY CENTER & ALGOJO MONITOR (v4.0 PERFECT)
 # =========================================================
-touch /etc/wibutunnel/locked_users.db /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/user_usage.db
+touch /etc/wibutunnel/locked_users.db /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/user_usage.db /etc/wibutunnel/ssh_pass.db
 chmod 600 /etc/wibutunnel/*.db
 
 

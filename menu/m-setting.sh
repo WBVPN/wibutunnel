@@ -304,13 +304,11 @@ case $sub_setting in
                 input_chatid=$(echo "$input_chatid" | tr -d '[:space:]"')
 
                 echo -e "\n ${CYAN}[+] Memverifikasi token ke Telegram API...${NC}"
-                local bot_info
                 bot_info=$(curl -sS --max-time 7 "https://api.telegram.org/bot${input_token}/getMe" 2>/dev/null)
                 if ! echo "$bot_info" | jq -e '.ok == true' >/dev/null 2>&1; then
                     echo -e " ${RED}[!] BOT TOKEN tidak valid atau server Telegram tidak merespon!${NC}"
                     echo -e " ${YELLOW}    Periksa kembali token yang Anda dapatkan dari @BotFather.${NC}"
                 else
-                    local bot_user
                     bot_user=$(echo "$bot_info" | jq -r '.result.username // empty' 2>/dev/null)
                     echo -e " ${GREEN}[✓] Bot valid: @${bot_user}${NC}"
 
@@ -327,7 +325,6 @@ EOFBOT
                     systemctl restart telegram-bot >/dev/null 2>&1
 
                     echo -e " ${CYAN}[+] Mengirim pesan konfirmasi koneksi...${NC}"
-                    local test_res
                     test_res=$(curl -sS --max-time 7 -X POST "https://api.telegram.org/bot${input_token}/sendMessage" \
                         -d "chat_id=${input_chatid}" \
                         -d "text=🤖 <b>Bot Wibu Tunneling Berhasil Terhubung!</b>%0ABot: @${bot_user}%0AAdmin: <code>${input_chatid}</code>" \

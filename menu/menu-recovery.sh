@@ -9,9 +9,9 @@ LINE="${BLUE}━━━━━━━━━━━━━━━━━━━━━━�
 
 DB_LOCK="/etc/wibutunnel/locked_users.db"
 
-if [[ -n "$1" ]] && [[ "$1" =~ ^(VLESS|VMESS|TROJAN)$ ]]; then
+if [[ -n "$1" ]] && [[ "$1" =~ ^(VLESS|VMESS|TROJAN|SSH)$ ]]; then
     FILTER_PROTO="$1"; proto_lower="${FILTER_PROTO,,}"
-    proto_color="${GREEN}"; [[ "$FILTER_PROTO" == "VMESS" ]] && proto_color="${CYAN}"; [[ "$FILTER_PROTO" == "TROJAN" ]] && proto_color="${YELLOW}"
+    proto_color="${GREEN}"; [[ "$FILTER_PROTO" == "VMESS" ]] && proto_color="${CYAN}"; [[ "$FILTER_PROTO" == "TROJAN" ]] && proto_color="${YELLOW}"; [[ "$FILTER_PROTO" == "SSH" ]] && proto_color="${WHITE}"
 else FILTER_PROTO=""; fi
 
 clear
@@ -31,9 +31,9 @@ if [[ -n "$FILTER_PROTO" ]]; then
         [[ -n "$u" && "$u" != *"dummy"* ]] && { USER_EXPS["$u"]="$e_clean"; USER_PROTOS["$u"]="$FILTER_PROTO"; }
     done < "$proto_conf"
 else
-    for conf in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf; do
+    for conf in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf; do
         [[ ! -f "$conf" ]] && continue
-        [[ "$conf" == *"vless"* ]] && proto="VLESS"; [[ "$conf" == *"vmess"* ]] && proto="VMESS"; [[ "$conf" == *"trojan"* ]] && proto="TROJAN"
+        [[ "$conf" == *"vless"* ]] && proto="VLESS"; [[ "$conf" == *"vmess"* ]] && proto="VMESS"; [[ "$conf" == *"trojan"* ]] && proto="TROJAN"; [[ "$conf" == *"ssh"* ]] && proto="SSH"
         while IFS= read -r line; do
             [[ -z "$line" ]] && continue; u="${line%%:*}"; e_full="${line#*:}"; e_clean="${e_full%% *}"
             [[ -n "$u" && "$u" != *"dummy"* ]] && { USER_EXPS["$u"]="$e_clean"; USER_PROTOS["$u"]="$proto"; }
@@ -97,6 +97,9 @@ if [[ "$target" == "deleteallusers" ]]; then
         safe_sed_delete "$user" /etc/wibutunnel/limit_bw.db
         safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
         safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+        if [[ "${USER_PROTOS[$user]}" == "SSH" ]]; then
+            del_ssh_user "$user" >/dev/null 2>&1
+        fi
         rm -f "/etc/wibutunnel/recovery/${user}.json"
     done
     > /etc/wibutunnel/locked_users.db
@@ -121,40 +124,51 @@ read -p " Limit Kuota GB (0=Unli): " bw_baru; [[ ! "$bw_baru" =~ ^[0-9]+$ ]] && 
 new_exp=$(date -d "+${hari_baru} days" +"%Y-%m-%d %H:%M:%S"); proto="${USER_PROTOS[$user]}"
 
 # Restore client dari sidecar (UUID/password asli)
-if [[ -f "/etc/wibutunnel/recovery/${user}.json" ]]; then
-    client_data=$(jq -r '.client' "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null)
-    if [[ -n "$client_data" && "$client_data" != "null" ]]; then
-        if [[ "$proto" == "VLESS" ]]; then
-            safe_jq_edit_args --argjson c "$client_data" '.inbounds[1].settings.clients += [$c] | .inbounds[2].settings.clients += [$c] | .inbounds[3].settings.clients += [$c]'
-        elif [[ "$proto" == "VMESS" ]]; then
-            safe_jq_edit_args --argjson c "$client_data" '.inbounds[4].settings.clients += [$c] | .inbounds[5].settings.clients += [$c] | .inbounds[6].settings.clients += [$c]'
-        elif [[ "$proto" == "TROJAN" ]]; then
-            safe_jq_edit_args --argjson c "$client_data" '.inbounds[7].settings.clients += [$c] | .inbounds[8].settings.clients += [$c]'
+if [[ "$proto" == "SSH" ]]; then
+    db_set /etc/xray/ssh_exp.conf "$user" "$new_exp"
+    db_set /etc/wibutunnel/limit_ip.db "$user" "$ip_baru"
+    db_set /etc/wibutunnel/limit_bw.db "$user" "$bw_baru"
+    safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+    safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+    unlock_ssh_user "$user" >/dev/null 2>&1
+    exp_sec=$(date -d "$new_exp" +%s 2>/dev/null || echo 0)
+    chage -E "$(date -d "@$exp_sec" +%Y-%m-%d)" -M "$hari_baru" -I 0 "$user" >/dev/null 2>&1
+else
+    if [[ -f "/etc/wibutunnel/recovery/${user}.json" ]]; then
+        client_data=$(jq -r '.client' "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null)
+        if [[ -n "$client_data" && "$client_data" != "null" ]]; then
+            if [[ "$proto" == "VLESS" ]]; then
+                safe_jq_edit_args --argjson c "$client_data" '.inbounds[1].settings.clients += [$c] | .inbounds[2].settings.clients += [$c] | .inbounds[3].settings.clients += [$c]'
+            elif [[ "$proto" == "VMESS" ]]; then
+                safe_jq_edit_args --argjson c "$client_data" '.inbounds[4].settings.clients += [$c] | .inbounds[5].settings.clients += [$c] | .inbounds[6].settings.clients += [$c]'
+            elif [[ "$proto" == "TROJAN" ]]; then
+                safe_jq_edit_args --argjson c "$client_data" '.inbounds[7].settings.clients += [$c] | .inbounds[8].settings.clients += [$c]'
+            fi
         fi
+        rm -f "/etc/wibutunnel/recovery/${user}.json"
     fi
-    rm -f "/etc/wibutunnel/recovery/${user}.json"
+
+    [[ "$proto" == "VLESS" ]]  && db_set /etc/xray/vless_exp.conf "$user" "$new_exp"
+    [[ "$proto" == "VMESS" ]]  && db_set /etc/xray/vmess_exp.conf "$user" "$new_exp"
+    [[ "$proto" == "TROJAN" ]] && db_set /etc/xray/trojan_exp.conf "$user" "$new_exp"
+
+    db_set /etc/wibutunnel/limit_ip.db "$user" "$ip_baru"
+    db_set /etc/wibutunnel/limit_bw.db "$user" "$bw_baru"
+    safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
+
+    safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
+    safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
+
+    cred=""
+    if [[ "$proto" == "VLESS" ]]; then
+        cred=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' "$CONFIG_FILE" 2>/dev/null | head -n1)
+    elif [[ "$proto" == "VMESS" ]]; then
+        cred=$(jq -r --arg u "$user" '.inbounds[4].settings.clients[]? | select(.email == $u) | .id' "$CONFIG_FILE" 2>/dev/null | head -n1)
+    elif [[ "$proto" == "TROJAN" ]]; then
+        cred=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[]? | select(.email == $u) | .password' "$CONFIG_FILE" 2>/dev/null | head -n1)
+    fi
+    [[ -n "$cred" && "$cred" != "null" ]] && xray_sync_user add "$proto" "$user" "$cred" || systemctl restart xray >/dev/null 2>&1
 fi
-
-[[ "$proto" == "VLESS" ]]  && db_set /etc/xray/vless_exp.conf "$user" "$new_exp"
-[[ "$proto" == "VMESS" ]]  && db_set /etc/xray/vmess_exp.conf "$user" "$new_exp"
-[[ "$proto" == "TROJAN" ]] && db_set /etc/xray/trojan_exp.conf "$user" "$new_exp"
-
-db_set /etc/wibutunnel/limit_ip.db "$user" "$ip_baru"
-db_set /etc/wibutunnel/limit_bw.db "$user" "$bw_baru"
-safe_sed_delete "$user" /etc/wibutunnel/user_usage.db
-
-safe_jq_edit_args --arg u "$user" '(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
-safe_sed_delete "$user" /etc/wibutunnel/locked_users.db
-
-cred=""
-if [[ "$proto" == "VLESS" ]]; then
-    cred=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' "$CONFIG_FILE" 2>/dev/null | head -n1)
-elif [[ "$proto" == "VMESS" ]]; then
-    cred=$(jq -r --arg u "$user" '.inbounds[4].settings.clients[]? | select(.email == $u) | .id' "$CONFIG_FILE" 2>/dev/null | head -n1)
-elif [[ "$proto" == "TROJAN" ]]; then
-    cred=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[]? | select(.email == $u) | .password' "$CONFIG_FILE" 2>/dev/null | head -n1)
-fi
-[[ -n "$cred" && "$cred" != "null" ]] && xray_sync_user add "$proto" "$user" "$cred" || systemctl restart xray >/dev/null 2>&1
 
 # Send full account details to Telegram
 source /etc/wibutunnel/bot.conf 2>/dev/null
@@ -259,6 +273,29 @@ if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
 
 <b>LINK TROJAN GRPC</b>
 <code>${link_grpc}</code>
+━━━━━━━━━━━━━━━━━━━━
+
+<i>\"Seseorang akan menjadi kuat jika melindungi seseorang yang dicintainya.\" - Haku</i>"
+    elif [[ "$proto" == "SSH" ]]; then
+        pass=$(ssh_get_pass "$user")
+        [[ -z "$pass" ]] && pass="<unchanged>"
+        PESAN="<b>VPN ACCOUNT - SSH TUNNEL</b>
+━━━━━━━━━━━━━━━━━━━━
+<b>Remarks    :</b> <code>${user}</code>
+<b>Domain     :</b> <code>${domain}</code>
+<b>ISP        :</b> <code>${ISP}</code>
+<b>City       :</b> <code>${CITY}</code>
+<b>Expired On :</b> <code>${new_exp}</code>
+━━━━━━━━━━━━━━━━━━━━
+<b>CONFIG DETAILS</b>
+<b>Username   :</b> <code>${user}</code>
+<b>Password   :</b> <code>${pass}</code>
+<b>TLS Port   :</b> <code>443</code>
+<b>NTLS Port  :</b> <code>80</code>
+<b>Dropbear   :</b> <code>109, 143</code>
+<b>OpenSSH    :</b> <code>22</code>
+<b>WS Port    :</b> <code>80, 443</code>
+<b>UDPGW      :</b> <code>7100-7600</code>
 ━━━━━━━━━━━━━━━━━━━━
 
 <i>\"Seseorang akan menjadi kuat jika melindungi seseorang yang dicintainya.\" - Haku</i>"

@@ -409,8 +409,9 @@ echo -e " ${CYAN}[8]  Ganti Limit Kuota GB${NC}"
 echo -e " ${GREEN}[9]  Cek Login Online${NC}"
 echo -e "${LINE}"
 echo -e " ${RED}[10] Lock / Unlock Akun${NC}"
-echo -e " ${YELLOW}[11] Edit Banner SSH${NC}"
-echo -e " ${GREEN}[12] Edit Respon HTTP WS${NC}"
+echo -e " ${GREEN}[11] Recovery Akun${NC}"
+echo -e " ${YELLOW}[12] Edit Banner SSH${NC}"
+echo -e " ${GREEN}[13] Edit Respon HTTP WS${NC}"
 echo -e " ${WHITE}[0]  Back to Menu Dashboard${NC}"
 echo -e "${LINE}"
 echo -ne "${WHITE}Pilih menu: ${NC}"
@@ -427,8 +428,9 @@ case $sub_menu in
     8) change_bw_ssh_menu; exec m-ssh ;;
     9) /usr/local/bin/cek-trafik SSH ;;
     10) lock_unlock_ssh_menu; exec m-ssh ;;
-    11) edit_banner_ssh; exec m-ssh ;;
-    12) edit_response_ws; exec m-ssh ;;
+    11) exec menu-recovery SSH ;;
+    12) edit_banner_ssh; exec m-ssh ;;
+    13) edit_response_ws; exec m-ssh ;;
     0) exec menu ;;
     *) echo -e "${RED}Pilihan tidak valid!${NC}"; sleep 1; exec m-ssh ;;
 esac

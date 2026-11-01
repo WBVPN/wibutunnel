@@ -10,12 +10,15 @@ DB="/etc/wibutunnel/locked_users.db"
 [[ ! -f "$DB" ]] && exit 0
 
 now=$(date -u +%s)
+users_to_unlock=()
 
-while read -r line; do
-    user=$(echo "$line" | cut -d: -f1)
-    unlock_time=$(echo "$line" | cut -d: -f3)
-    
-    if [[ "$unlock_time" != "0" && "$now" -ge "$unlock_time" ]]; then
-        /usr/local/bin/unlock-user "$user" "AUTO" >/dev/null 2>&1
+while IFS=: read -r user now_lock unlock_time reason; do
+    [[ -z "$user" ]] && continue
+    if [[ "$unlock_time" =~ ^[0-9]+$ && "$unlock_time" -gt 0 && "$now" -ge "$unlock_time" ]]; then
+        users_to_unlock+=("$user")
     fi
 done < "$DB"
+
+for u in "${users_to_unlock[@]}"; do
+    /usr/local/sbin/unlock-user "$u" "AUTO" >/dev/null 2>&1 || /usr/local/bin/unlock-user "$u" "AUTO" >/dev/null 2>&1
+done

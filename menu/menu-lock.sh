@@ -15,12 +15,13 @@ DB_IP="/etc/wibutunnel/limit_ip.db"
 DB_LOCK="/etc/wibutunnel/locked_users.db"
 
 # Detect protocol mode
-if [[ -n "$1" ]] && [[ "$1" =~ ^(VLESS|VMESS|TROJAN)$ ]]; then
+if [[ -n "$1" ]] && [[ "$1" =~ ^(VLESS|VMESS|TROJAN|SSH)$ ]]; then
     FILTER_PROTO="$1"
     proto_lower="${FILTER_PROTO,,}"
     proto_color="${GREEN}"
     [[ "$FILTER_PROTO" == "VMESS" ]] && proto_color="${CYAN}"
     [[ "$FILTER_PROTO" == "TROJAN" ]] && proto_color="${YELLOW}"
+    [[ "$FILTER_PROTO" == "SSH" ]] && proto_color="${WHITE}"
 else
     FILTER_PROTO=""
 fi
@@ -34,6 +35,7 @@ get_user_proto() {
     if grep -q "^${u}:" /etc/xray/vless_exp.conf 2>/dev/null; then echo "VLESS"
     elif grep -q "^${u}:" /etc/xray/vmess_exp.conf 2>/dev/null; then echo "VMESS"
     elif grep -q "^${u}:" /etc/xray/trojan_exp.conf 2>/dev/null; then echo "TROJAN"
+    elif grep -q "^${u}:" /etc/xray/ssh_exp.conf 2>/dev/null; then echo "SSH"
     else echo "UNKNOWN"; fi
 }
 
@@ -76,7 +78,7 @@ if [[ -n "$FILTER_PROTO" ]]; then
         exec "m-${proto_lower}"
     fi
 else
-    if ! user_json_exists "$user"; then
+    if ! user_json_exists "$user" && ! ssh_user_exists "$user"; then
         echo -e "\n ${RED}User '$user' tidak ditemukan di system!${NC}"
         read -p " Tekan Enter..."
         exec menu-lock

@@ -43,10 +43,13 @@ if [[ "$1" == "auto" ]]; then
         etc/xray/vless_exp.conf \
         etc/xray/vmess_exp.conf \
         etc/xray/trojan_exp.conf \
+        etc/xray/ssh_exp.conf \
+        etc/wibutunnel/ssh_pass.db \
         etc/wibutunnel/limit_ip.db \
         etc/wibutunnel/limit_bw.db \
         etc/wibutunnel/locked_users.db \
         etc/wibutunnel/user_usage.db \
+        etc/wibutunnel/recovery \
         etc/xray/domain 2>/dev/null
 
     if [[ ! -f "$BACKUP_FILE" ]]; then
@@ -109,10 +112,13 @@ do_backup() {
         etc/xray/vless_exp.conf \
         etc/xray/vmess_exp.conf \
         etc/xray/trojan_exp.conf \
+        etc/xray/ssh_exp.conf \
+        etc/wibutunnel/ssh_pass.db \
         etc/wibutunnel/limit_ip.db \
         etc/wibutunnel/limit_bw.db \
         etc/wibutunnel/locked_users.db \
         etc/wibutunnel/user_usage.db \
+        etc/wibutunnel/recovery \
         etc/xray/domain 2>/dev/null
 
     if [[ ! -f "$BACKUP_FILE" ]]; then
@@ -220,11 +226,25 @@ do_restore() {
     cp -a "${BACKUP_DIR}/restore-tmp/usr/local/etc/xray/config.json" /usr/local/etc/xray/ 2>/dev/null
     cp -a "${BACKUP_DIR}/restore-tmp/etc/xray/"*.conf /etc/xray/ 2>/dev/null
     cp -a "${BACKUP_DIR}/restore-tmp/etc/wibutunnel/"*.db /etc/wibutunnel/ 2>/dev/null
+    [[ -d "${BACKUP_DIR}/restore-tmp/etc/wibutunnel/recovery" ]] && cp -a "${BACKUP_DIR}/restore-tmp/etc/wibutunnel/recovery" /etc/wibutunnel/ 2>/dev/null
     cp -a "${BACKUP_DIR}/restore-tmp/etc/xray/domain" /etc/xray/ 2>/dev/null
     chmod 600 /etc/wibutunnel/*.db 2>/dev/null
+
+    # Pulihkan akun SSH ke sistem Linux jika ada data ssh_pass.db
+    if [[ -f /etc/wibutunnel/ssh_pass.db ]]; then
+        groupadd -f ssh_tunnel 2>/dev/null || true
+        while IFS=: read -r s_u s_p; do
+            [[ -z "$s_u" || -z "$s_p" ]] && continue
+            if ! id "$s_u" >/dev/null 2>&1; then
+                useradd -m -s /bin/bash -G ssh_tunnel "$s_u" >/dev/null 2>&1 || useradd -m -s /bin/bash "$s_u" >/dev/null 2>&1
+                printf '%s:%s\n' "$s_u" "$s_p" | chpasswd 2>/dev/null || true
+            fi
+        done < /etc/wibutunnel/ssh_pass.db
+    fi
+
     rm -rf "${BACKUP_DIR}/restore-tmp"
 
-    systemctl restart xray haproxy cron >/dev/null 2>&1
+    systemctl restart xray haproxy dropbear ws-stunnel cron >/dev/null 2>&1
     rm -f "${BACKUP_DIR}/restore.zip"
 
     echo -e "${GREEN}[+] RESTORE BERHASIL! Semua data berhasil dikembalikan.${NC}"

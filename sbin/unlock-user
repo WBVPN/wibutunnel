@@ -53,9 +53,9 @@ else
                 '
             fi
 
-            local is_past=0
+            is_past=0
             if [[ -n "$rec_exp" && "$rec_exp" != "null" && "$rec_exp" != *EXPIRED* && "$rec_exp" != *QUOTA* ]]; then
-                local rec_ts; rec_ts=$(date -d "$rec_exp" +%s 2>/dev/null || echo 0)
+                rec_ts=$(date -d "$rec_exp" +%s 2>/dev/null || echo 0)
                 [[ $(date +%s) -ge "$rec_ts" ]] && is_past=1
             else
                 is_past=1
