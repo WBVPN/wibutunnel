@@ -426,7 +426,26 @@ case $sub_menu in
     6) detail_ssh_menu; exec m-ssh ;;
     7) change_ip_ssh_menu; exec m-ssh ;;
     8) change_bw_ssh_menu; exec m-ssh ;;
-    9) /usr/local/bin/cek-trafik SSH ;;
+    9)
+        clear
+        echo -e "${LINE}\n ${CYAN}SSH ONLINE (real-time)${NC}\n${LINE}"
+        found=0
+        while IFS= read -r uline; do
+            [[ -z "$uline" ]] && continue
+            u="${uline%%:*}"
+            [[ -z "$u" || "$u" == *dummy* ]] && continue
+            n=$(ssh_session_count "$u")
+            if [[ "$n" -gt 0 ]]; then
+                printf " ${GREEN}%-15s${NC} : %s sesi aktif\n" "$u" "$n"
+                found=1
+            fi
+        done < "$SSH_EXP_FILE"
+        if [[ "$found" -eq 0 ]]; then
+            echo -e " ${YELLOW}Tidak ada user SSH online.${NC}"
+        fi
+        echo -e "${LINE}"
+        read -p " Tekan Enter..."
+        exec m-ssh ;;
     10) lock_unlock_ssh_menu; exec m-ssh ;;
     11) exec menu-recovery SSH ;;
     12) edit_banner_ssh; exec m-ssh ;;
