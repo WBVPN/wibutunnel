@@ -1,0 +1,112 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - algojo-ssh (v4.0 Kurumi)
+# SSH IP Limit Enforcement + Login Check
+# Bandwidth tracking: symbolic only (DB update manual)
+# ==========================================
+source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
+source /etc/wibutunnel/bot.conf 2>/dev/null
+
+DB_IP="/etc/wibutunnel/limit_ip.db"
+DB_LOCK="/etc/wibutunnel/locked_users.db"
+SSH_EXP="/etc/xray/ssh_exp.conf"
+LOCK_DURATION=15
+
+[[ ! -f "$SSH_EXP" ]] && exit 0
+
+# ==========================================
+# SSH IP LIMIT ENFORCEMENT
+# ==========================================
+declare -A locked_users=()
+
+# Load locked users
+if [[ -f "$DB_LOCK" ]]; then
+    while IFS=: read -r lu _; do
+        [[ -n "$lu" ]] && locked_users["$lu"]=1
+    done < "$DB_LOCK"
+fi
+
+# Get active SSH sessions per user with unique IPs
+# Use 'ss' for accurate connection tracking
+declare -A user_ips
+
+while read -r line; do
+    # Parse: user:port local_ip:local_port remote_ip:remote_port
+    # Filter established SSH connections (port 22, 109, 143, or forwarded)
+    [[ -z "$line" ]] && continue
+    
+    local_port=$(echo "$line" | awk '{print $4}' | cut -d: -f2)
+    # SSH-related ports
+    [[ ! "$local_port" =~ ^(22|109|143|2222)$ ]] && continue
+    
+    remote_full=$(echo "$line" | awk '{print $5}')
+    remote_ip=$(echo "$remote_full" | cut -d: -f1)
+    
+    # Get owner UID, then username
+    uid=$(echo "$line" | awk '{print $6}' | grep -oP 'uid:\K\d+')
+    [[ -z "$uid" ]] && continue
+    
+    username=$(id -nu "$uid" 2>/dev/null)
+    [[ -z "$username" || "$username" == "root" ]] && continue
+    
+    # Skip if user not in ssh_exp.conf
+    grep -q "^${username}:" "$SSH_EXP" 2>/dev/null || continue
+    
+    # Add IP to user's list
+    if [[ -n "${user_ips[$username]}" ]]; then
+        if ! echo "${user_ips[$username]}" | grep -qw "$remote_ip"; then
+            user_ips[$username]="${user_ips[$username]} $remote_ip"
+        fi
+    else
+        user_ips[$username]="$remote_ip"
+    fi
+done < <(ss -tnp state established 2>/dev/null | grep -E 'users:\(\("sshd"')
+
+# Check each user against IP limit
+for user in "${!user_ips[@]}"; do
+    [[ -n "${locked_users[$user]:-}" ]] && continue
+    
+    user_esc=$(escape_grep "$user")
+    max_ip=$(grep "^${user_esc}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
+    [[ "$max_ip" == "0" || -z "$max_ip" ]] && continue
+    
+    ip_count=$(echo "${user_ips[$user]}" | wc -w)
+    if (( ip_count > max_ip )); then
+        locked_users["$user"]=1
+        now=$(date -u +%s)
+        unlock_time=$((now + (LOCK_DURATION * 60)))
+        
+        # Add to lock DB
+        echo "${user}:${now}:${unlock_time}:SSH_IP_LIMIT" >> "$DB_LOCK"
+        
+        # Kill all user sessions
+        pkill -u "$user" 2>/dev/null
+        
+        # Lock Linux account
+        usermod -L "$user" 2>/dev/null
+        
+        # Telegram notification
+        (
+            DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+            WAKTU=$(date '+%d %b %Y %H:%M WIB')
+            IPS="${user_ips[$user]}"
+            PESAN="🔒 <b>SSH USER DIKUNCI OTOMATIS</b>
+
+<b>User     :</b> <code>${user}</code>
+<b>Alasan   :</b> Melebihi Limit IP (${ip_count}/${max_ip})
+<b>IP Aktif :</b> <code>${IPS}</code>
+<b>Durasi   :</b> ${LOCK_DURATION} menit
+<b>Waktu    :</b> ${WAKTU}
+<b>Domain   :</b> <code>${DOMAIN}</code>
+
+<i>Account akan otomatis dibuka setelah durasi habis.</i>"
+            curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                -F "chat_id=${CHAT_ID}" \
+                -F "disable_web_page_preview=true" \
+                -F "parse_mode=html" \
+                -F "text=${PESAN}" >/dev/null 2>&1
+        ) &
+    fi
+done
+
+exit 0

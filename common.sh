@@ -535,3 +535,43 @@ unlock_ssh_user() {
     db_delete "$user" /etc/wibutunnel/locked_users.db
     return 0
 }
+
+# ==========================================
+# SSH LOGIN CHECK
+# ==========================================
+ssh_check_login() {
+    local user="$1"
+    [[ -z "$user" ]] && return 1
+    
+    # Get active SSH connections for this user
+    local count=0
+    local ips=""
+    
+    # Parse ss output for established SSH connections
+    while read -r line; do
+        [[ -z "$line" ]] && continue
+        
+        local_port=$(echo "$line" | awk '{print $4}' | cut -d: -f2)
+        [[ ! "$local_port" =~ ^(22|109|143|2222)$ ]] && continue
+        
+        remote_full=$(echo "$line" | awk '{print $5}')
+        remote_ip=$(echo "$remote_full" | cut -d: -f1)
+        
+        uid=$(echo "$line" | awk '{print $6}' | grep -oP 'uid:\K\d+')
+        [[ -z "$uid" ]] && continue
+        
+        username=$(id -nu "$uid" 2>/dev/null)
+        [[ "$username" != "$user" ]] && continue
+        
+        ((count++))
+        if [[ -n "$ips" ]]; then
+            ips="$ips $remote_ip"
+        else
+            ips="$remote_ip"
+        fi
+    done < <(ss -tnp state established 2>/dev/null | grep -E 'users:\(\("sshd"')
+    
+    echo "$count"
+    echo "$ips"
+    return 0
+}

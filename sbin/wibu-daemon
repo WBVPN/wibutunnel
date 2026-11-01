@@ -1,0 +1,7 @@
+#!/bin/bash
+while true; do
+    /usr/local/sbin/algojo-wibu >/dev/null 2>&1
+    /usr/local/sbin/algojo-kuota >/dev/null 2>&1
+    /usr/local/sbin/algojo-ssh >/dev/null 2>&1
+    sleep 60
+done
