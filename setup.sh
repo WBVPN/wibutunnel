@@ -707,7 +707,7 @@ cat << 'EOF' > /etc/systemd/system/wibu-daemon.service
 [Unit]
 Description=Wibu Tunneling Real-Time Algojo Daemon
 After=network.target xray.service
-Requires=xray.service
+Wants=xray.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
 

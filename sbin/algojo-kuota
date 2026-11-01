@@ -44,16 +44,18 @@ while read -r line; do
     user=$(echo "$line" | cut -d: -f1)
     limit_gb=$(echo "$line" | cut -d: -f2)
     [[ "$limit_gb" == "0" || -z "$limit_gb" ]] && continue
+    [[ ! "$limit_gb" =~ ^[0-9]+$ ]] && continue
 
     user_esc=$(escape_grep "$user")
     # Idempotency guard: lewati jika user sudah di-lock / ada di recovery
     [[ -n "${_LOCKED_USERS[$user]:-}" ]] && continue
 
     total_bytes=$(grep "^${user_esc}:" "$DB_USAGE" | cut -d: -f2)
-    [[ -z "$total_bytes" ]] && total_bytes=0
+    [[ -z "$total_bytes" || ! "$total_bytes" =~ ^[0-9]+$ ]] && total_bytes=0
 
     # P1-3: integer math - hindari fork bc dan aman dari locale desimal (koma)
-    if (( total_bytes >= limit_gb * 1073741824 )); then
+    # Gunakan 10# untuk mencegah bash salah tafsir angka berawalan 0 sebagai oktal (REG-1)
+    if (( 10#$total_bytes >= 10#$limit_gb * 1073741824 )); then
         # Sudah ditangani sebelumnya (user sudah tidak ada di config) -> jangan notif ulang
         if ! jq -e --arg u "$user" '[.inbounds[].settings.clients[]? | (.email // .password)] | index($u) != null' "$XRAY_CONFIG" >/dev/null 2>&1; then
             continue

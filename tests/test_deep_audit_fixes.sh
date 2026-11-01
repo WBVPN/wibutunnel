@@ -73,4 +73,21 @@ python3 -m py_compile "$REPO_DIR/sbin/ws-stunnel"
 grep -q "if target:" "$REPO_DIR/sbin/ws-stunnel" || { echo "FAIL: ws-stunnel missing target cleanup"; exit 1; }
 echo "PASS: ws-stunnel verified"
 
+echo "=== [6/7] Testing REG-1 (octal base 10# in algojo-kuota) ==="
+grep -q '10#\$limit_gb' "$REPO_DIR/sbin/algojo-kuota" || { echo "FAIL: algojo-kuota missing 10# base guard"; exit 1; }
+# Direct arithmetic test with leading zero strings
+total_b="08000000000"
+limit_g="08"
+res=$(bash -c "if (( 10#$total_b >= 10#$limit_g * 1073741824 )); then echo 'MATCH'; else echo 'NOMATCH'; fi")
+[[ "$res" == "NOMATCH" ]] || { echo "FAIL: arithmetic mismatch"; exit 1; }
+echo "PASS: REG-1 octal base guard verified"
+
+echo "=== [7/7] Testing REG-2 (wibu-daemon does not use Requires=xray.service) ==="
+if grep -q "Requires=xray.service" "$REPO_DIR/setup.sh"; then
+    echo "FAIL: setup.sh still contains Requires=xray.service for wibu-daemon"
+    exit 1
+fi
+grep -q "Wants=xray.service" "$REPO_DIR/setup.sh" || { echo "FAIL: setup.sh missing Wants=xray.service"; exit 1; }
+echo "PASS: REG-2 systemd dependency verified"
+
 echo "ALL DEEP AUDIT CHECKS PASSED!"
