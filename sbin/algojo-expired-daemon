@@ -5,6 +5,13 @@ source /usr/local/bin/common.sh 2>/dev/null || exit 1
 while true; do
     deleted_any=""
     
+    declare -A _LOCKED_USERS=()
+    if [[ -f /etc/wibutunnel/locked_users.db ]]; then
+        while IFS=: read -r _lu _; do
+            [[ -n "$_lu" ]] && _LOCKED_USERS["$_lu"]=1
+        done < /etc/wibutunnel/locked_users.db
+    fi
+
     for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf; do
         [[ ! -f "$proto_file" ]] && continue
         
@@ -19,11 +26,13 @@ while true; do
             [[ "$exp_str" =~ ^[0-9]+$ || "$exp_str" == *EXPIRED* || "$exp_str" == *QUOTA* ]] && continue
             
             # Idempotency guard: jika user sudah di-lock / ada di recovery, lewati!
-            grep -q "^${user}:" /etc/wibutunnel/locked_users.db 2>/dev/null && continue
+            [[ -n "${_LOCKED_USERS[$user]:-}" ]] && continue
             
             exp_ts=$(date -d "$exp_str" +%s 2>/dev/null) || continue
             
             [[ $NOW_LOCAL -le $exp_ts ]] && continue
+
+            _LOCKED_USERS["$user"]=1
 
             if [[ "$proto" == "SSH" ]] && ! ssh_valid_user "$user"; then
                 continue

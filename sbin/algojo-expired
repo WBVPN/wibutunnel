@@ -5,6 +5,13 @@ source /usr/local/bin/common.sh 2>/dev/null || exit 1
 NOW_LOCAL=$(date +%s)
 deleted_any=""
 
+declare -A _LOCKED_USERS=()
+if [[ -f /etc/wibutunnel/locked_users.db ]]; then
+    while IFS=: read -r _lu _; do
+        [[ -n "$_lu" ]] && _LOCKED_USERS["$_lu"]=1
+    done < /etc/wibutunnel/locked_users.db
+fi
+
 for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf; do
     [[ ! -f "$proto_file" ]] && continue
     proto=$(basename "$proto_file" | cut -d_ -f1 | tr '[:lower:]' '[:upper:]')
@@ -14,13 +21,14 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
         [[ "$exp_str" =~ ^[0-9]+$ || "$exp_str" == *EXPIRED* || "$exp_str" == *QUOTA* ]] && continue
         
         # Idempotency guard: jika user sudah di-lock / ada di recovery, lewati!
-        grep -q "^${user}:" /etc/wibutunnel/locked_users.db 2>/dev/null && continue
+        [[ -n "${_LOCKED_USERS[$user]:-}" ]] && continue
         
         # Parse exp_str as local timezone (VPS time), compare with local NOW
         exp_ts=$(date -d "$exp_str" +%s 2>/dev/null)
         [[ -z "$exp_ts" ]] && continue
         
         if [[ $NOW_LOCAL -gt $exp_ts ]]; then
+            _LOCKED_USERS["$user"]=1
             if [[ "$proto" == "SSH" ]] && ! ssh_valid_user "$user"; then
                 continue
             fi

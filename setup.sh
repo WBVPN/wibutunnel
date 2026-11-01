@@ -708,11 +708,13 @@ cat << 'EOF' > /etc/systemd/system/wibu-daemon.service
 Description=Wibu Tunneling Real-Time Algojo Daemon
 After=network.target xray.service
 Requires=xray.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 ExecStart=/usr/local/bin/wibu-daemon
-Restart=always
-RestartSec=3
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -722,12 +724,14 @@ cat << 'EOF' > /etc/systemd/system/algojo-expired.service
 [Unit]
 Description=Real-time VPN Account Expiry Enforcement
 After=xray.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/algojo-expired-daemon
-Restart=always
-RestartSec=3
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -737,11 +741,13 @@ cat << 'EOF' > /etc/systemd/system/telegram-bot.service
 [Unit]
 Description=Telegram Bot Polling Daemon
 After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/bot-daemon
-Restart=always
+Restart=on-failure
 RestartSec=5
 User=root
 
@@ -753,12 +759,14 @@ cat << 'EOF' > /etc/systemd/system/dropbear.service
 [Unit]
 Description=Dropbear Enhanced (SSH Tunneling)
 After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 EnvironmentFile=-/etc/default/dropbear
 ExecStart=/usr/sbin/dropbear -F -E -p ${DROPBEAR_PORT} $DROPBEAR_EXTRA_ARGS
-Restart=always
-RestartSec=3
+Restart=on-failure
+RestartSec=5
 LimitNOFILE=65536
 
 [Install]
@@ -769,12 +777,14 @@ cat << 'EOF' > /etc/systemd/system/ws-stunnel.service
 [Unit]
 Description=SSH WebSocket Python Tunnel (ws-stunnel)
 After=network.target dropbear.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 /usr/local/bin/ws-stunnel
-Restart=always
-RestartSec=3
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -846,9 +856,7 @@ cat << 'LREOF' > /etc/logrotate.d/xray
     notifempty
     compress
     delaycompress
-    postrotate
-        systemctl restart xray > /dev/null 2>&1
-    endscript
+    copytruncate
 }
 LREOF
 
@@ -864,7 +872,7 @@ systemctl enable cron >/dev/null 2>&1
 crontab -l 2>/dev/null | grep -v -E "xp|reboot|watchdog|algojo|unlocker|drop_caches|renew-cert-wibu" | crontab -
 (crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/watchdog.sh") | crontab -
 (crontab -l 2>/dev/null; echo "0 0 * * * /usr/local/bin/xp") | crontab -
-(crontab -l 2>/dev/null; echo "0 0 * * * sync; echo 3 > /proc/sys/vm/drop_caches && swapoff -a && swapon -a") | crontab -
+# DIHAPUS: drop_caches + swapoff/on tiap 00:00 menyebabkan OOM-kill xray
 (crontab -l 2>/dev/null; echo "* * * * * /usr/local/sbin/unlocker-wibu") | crontab -
 
 # SSL Auto Renewal
@@ -889,12 +897,18 @@ mkdir -p /etc/systemd/system/haproxy.service.d /etc/systemd/system/xray.service.
 cat <<EOF > /etc/systemd/system/haproxy.service.d/override.conf
 [Unit]
 After=xray.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Restart=on-failure
 RestartSec=5s
 EOF
 cat <<EOF > /etc/systemd/system/xray.service.d/override.conf
+[Unit]
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
 [Service]
 Restart=on-failure
 RestartSec=5s

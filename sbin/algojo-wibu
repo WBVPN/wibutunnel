@@ -16,6 +16,13 @@ if [ -f "$LOCK_CONF" ]; then source "$LOCK_CONF"; fi
 # [MATA ELANG V3] asosiasi user<->IP dari log, liveness dari socket ESTABLISHED :443
 LOGIN_DATA=$(live_ip_pairs)
 USERS_TO_LOCK=()
+declare -A _LOCKED_USERS=()
+if [[ -f "$DB_LOCK" ]]; then
+    while IFS=: read -r _lu _; do
+        [[ -n "$_lu" ]] && _LOCKED_USERS["$_lu"]=1
+    done < "$DB_LOCK"
+fi
+
 while read -r email ip_list; do
     if [[ -z "$email" || -z "$ip_list" ]]; then continue; fi
     email_esc=$(escape_grep "$email")
@@ -24,7 +31,8 @@ while read -r email ip_list; do
 
     ip_count=$(echo "$ip_list" | wc -w)
     if [[ $ip_count -gt $max_ip ]]; then
-        if ! grep -q "^${email_esc}:" "$DB_LOCK" 2>/dev/null; then
+        if [[ -z "${_LOCKED_USERS[$email]:-}" ]]; then
+            _LOCKED_USERS["$email"]=1
             proto="UNKNOWN"
             grep -q "^${email_esc}:" /etc/xray/vless_exp.conf 2>/dev/null && proto="VLESS"
             grep -q "^${email_esc}:" /etc/xray/vmess_exp.conf 2>/dev/null && proto="VMESS"
