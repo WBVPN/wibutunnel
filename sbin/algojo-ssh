@@ -86,18 +86,14 @@ for user in "${!user_ips[@]}"; do
         now=$(date -u +%s)
         unlock_time=$((now + (LOCK_DURATION * 60)))
         
-        # Add to lock DB
-        echo "${user}:${now}:${unlock_time}:SSH_IP_LIMIT" >> "$DB_LOCK"
-        
         # Kill all user sessions
         pkill -u "$user" 2>/dev/null
         
-        # [FIX SSH-5] Use lock_ssh_user if available, fallback to passwd -l
-        if type lock_ssh_user >/dev/null 2>&1; then
-            lock_ssh_user "$user"
-        else
-            usermod -L "$user" 2>/dev/null
-        fi
+        # Lock password (jangan pakai lock_ssh_user - itu hardcode unlock=0 permanen)
+        passwd -l "$user" 2>/dev/null || usermod -L "$user" 2>/dev/null
+        
+        # Add to lock DB AFTER lock (timed entry)
+        echo "${user}:${now}:${unlock_time}:SSH_IP_LIMIT" >> "$DB_LOCK"
         
         # Telegram notification
         (
