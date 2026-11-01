@@ -237,8 +237,11 @@ bash setup.sh    # Re-run aman, tidak hapus data user
 ## 🗑️ Uninstall
 
 ```bash
-cd /root/wibutunnel-repo
-bash uninstall.sh
+# Menggunakan link raw GitHub:
+curl -sS -L https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh | bash
+
+# Atau langsung dari repository lokal:
+cd /root/wibutunnel-repo && bash uninstall.sh
 ```
 
 **Yang dihapus:**
