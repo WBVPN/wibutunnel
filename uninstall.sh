@@ -52,7 +52,7 @@ fi
 systemctl disable netfilter-persistent >/dev/null 2>&1
 
 # Hapus file executable menu & daemon
-rm -f /usr/local/sbin/algojo-wibu /usr/local/sbin/algojo-kuota /usr/local/sbin/unlocker-wibu /usr/local/sbin/algojo-expired
+rm -f /usr/local/sbin/algojo-wibu /usr/local/sbin/algojo-kuota /usr/local/sbin/unlocker-wibu /usr/local/sbin/algojo-expired /usr/local/sbin/algojo-expired-daemon
 rm -f /usr/local/bin/algojo-expired-daemon
 rm -f /usr/local/sbin/network-tune.sh /usr/local/sbin/wibu-repair
 rm -f /usr/local/bin/menu /usr/local/bin/m-vless /usr/local/bin/m-vmess /usr/local/bin/m-trojan /usr/local/bin/m-ssh
@@ -84,7 +84,7 @@ systemctl daemon-reload
 rm -f /etc/logrotate.d/xray
 
 # Bersihkan .profile
-sed -i '/^clear$/d; /^menu$/d' /root/.profile 2>/dev/null
+sed -i '/Auto-start menu/d; /^clear$/d; /^menu$/d' /root/.profile 2>/dev/null
 
 # Bersihkan fstab entries
 sed -i '/\/var\/log\/xray/d' /etc/fstab 2>/dev/null
