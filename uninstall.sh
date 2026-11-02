@@ -59,7 +59,7 @@ rm -f /usr/local/bin/menu /usr/local/bin/m-vless /usr/local/bin/m-vmess /usr/loc
 rm -f /usr/local/bin/m-setting /usr/local/bin/m-backup /usr/local/bin/menu-lock /usr/local/bin/menu-unlock
 rm -f /usr/local/bin/menu-recovery /usr/local/bin/cek-trafik /usr/local/bin/xp
 rm -f /usr/local/bin/lock-user /usr/local/bin/unlock-user
-rm -f /usr/local/bin/bot-daemon /usr/local/bin/bot-webhook /usr/local/bin/bot-daemon-new /usr/local/bin/bot-webhook-handler
+rm -f /usr/local/bin/bot-daemon
 rm -f /usr/local/bin/wibu-daemon /usr/local/bin/watchdog.sh /usr/local/bin/renew-cert-wibu.sh
 rm -f /usr/local/bin/ws-stunnel /usr/local/sbin/ws-stunnel
 rm -f /usr/local/bin/common.sh /usr/local/bin/common.sh.bak* /usr/local/bin/common.sh.before-lib-split

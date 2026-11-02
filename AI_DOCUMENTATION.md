@@ -35,7 +35,6 @@ wibutunnel-repo/
 │   ├── menu-recovery.sh   # Recovery system UI
 │   ├── cek-trafik.sh      # Traffic monitoring
 │   ├── bot-daemon.sh      # Telegram bot service
-│   └── bot-webhook.sh     # Bot webhook handler
 └── sbin/                   # System daemons
     ├── algojo-wibu         # Login tracking daemon
     ├── algojo-kuota        # Quota enforcement daemon
