@@ -259,12 +259,14 @@ case $sub_setting in
 
         safe_update "sbin/algojo-kuota"
         safe_update "sbin/algojo-wibu"
+        safe_update "sbin/algojo-ssh"
         safe_update "sbin/algojo-expired"
         safe_update "sbin/algojo-expired-daemon"
         safe_update "sbin/lock-user"
         safe_update "sbin/unlock-user"
         safe_update "sbin/unlocker-wibu"
         safe_update "sbin/ws-stunnel"
+        safe_update "sbin/wibu-daemon"
         safe_update "sbin/wibu-repair"
         
         safe_update "common.sh"
