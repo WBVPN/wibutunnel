@@ -75,8 +75,34 @@ Menu **[5] Update Script (Safe Mode)** diuji langsung: **25/25 berkas sukses**, 
 melalui unduh → verifikasi `SHA256SUMS` (fail-closed) → `bash -n` → cadangan ke
 `/usr/local/share/wibutunnel/backup/` → pasang. Tidak ada berkas yang berubah tanpa verifikasi.
 
+## 6b. Update menu [5] sesudahnya: 27 berkas + temuan CDN
+
+Berkas firewall & network-tune dijadikan berkas repo (bukan heredoc) supaya bisa dikirim lewat update.
+
+| Uji | Hasil |
+|---|---|
+| Update menu (daftar 27) | **27 sukses / 0 gagal**; verifikasi akhir sha256 tiap berkas: **27 cocok / 0 beda** |
+| Symlink kompatibilitas | `/usr/local/sbin/wibutunnel-firewall.sh -> wibutunnel-firewall` (unit lama tetap jalan) |
+| `network-tune` | probe CLASSIFY ada; `iptables: Invalid argument` = **0** (sebelumnya 4 tiap boot) |
+| `wibutunnel-firewall` | dedupe ada; aturan `:10085` = **1** |
+| Izin | exp **600** - config **640** - izin.txt **600** |
+| Lisensi | `LOLOS STAGING exp 2026-12-15` |
+
+**Temuan penting: CDN `raw.githubusercontent.com` menyajikan `SHA256SUMS` LAMA untuk tag yang dipindah.**
+
+```
+raw.githubusercontent.com/<tag>/SHA256SUMS?cb=<unik>   -> 55 entri  (LAMA)
+api.github.com/.../contents/SHA256SUMS?ref=<tag>       -> 57 entri  (benar)
+berkas terpisah lewat raw                              -> sudah baru
+```
+
+Update fail-closed jadi **menolak berkas yang sebenarnya sudah ada**. Cache-buster `?cb=` **tidak menolong**
+(CDN mengabaikan query untuk path itu). Perbaikan akhir: `SHA256SUMS` diambil **dari API GitHub lebih dulu**,
+raw hanya cadangan; bila hash berkas tidak cocok, berkas diunduh ulang lewat API lalu diverifikasi lagi.
+
 ## 7. Sisa yang belum diuji
 
 - **Siklus reboot nyata** setelah perbaikan dedupe firewall (bukti statis + uji jalankan-2× sudah ada).
 - **Koneksi klien dari perangkat nyata** (VLESS/VMESS/Trojan/SSH) — pemilik VPS melaporkan akun sudah konek.
 - **Layanan bot Telegram** hanya diuji dengan satu bot uji (`@bansoswibu_bot`).
+- **Siklus reboot** setelah semua perbaikan (butuh akses root di VPS uji).
