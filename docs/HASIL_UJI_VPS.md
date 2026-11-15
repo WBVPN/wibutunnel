@@ -170,3 +170,28 @@ start dengan konfigurasi bawaan paket sebelum installer menulis konfigurnya -> d
 
 **Batas yang belum diuji:** beban banyak klien paralel (load test). Reboot VPS Debian 12 **sudah** diuji:
 BOOT_ID berubah, 8/8 layanan naik sendiri, aturan `:10085` tetap 1, sertifikat & akun utuh.
+
+
+---
+
+## 8. Uji lapangan: Ubuntu 22.04 (jammy) - 2026-11-15
+
+VPS: `103.150.60.84` di-rebuild ke Ubuntu 22.04.5 LTS (kernel 5.15, 957 MB RAM, 18 GB disk), instalasi dari
+aset Release (tag v4.1.7/v4.1.8) tanpa penyesuaian manual.
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Penjaga OS | `[+] OS terdeteksi: Ubuntu 22.04.5 LTS (22.04)` |
+| Galat apt/dpkg | **0** |
+| HAProxy | **2.4.30** - `Configuration file is valid`, 0 baris mencurigakan di config |
+| certbot | **1.21.0**, sertifikat berlaku s/d 2027-02-13 |
+| dropbear 2020.81 | **0 kegagalan start** (tambahan `NO_START` sebelum apt bekerja; bandingkan Debian 12: 3-14) |
+| Layanan | 8/8 `active` + `enabled`; port 80/443/143/109 (+10015/10085 lokal) |
+| Reboot | BOOT_ID berubah, 8/8 naik sendiri, aturan `:10085` tetap 1, akun & sertifikat utuh |
+| Keamanan | config 640 root:xray, exp 600, dir 700, non-root ke API ditolak, lisensi LOLOS |
+| **Koneksi klien nyata** | **BERHASIL** - akun `uji-vless` dihubungkan pemilik dari perangkatnya |
+| Uji klien internal | Xray sebagai klien (VLESS TLS+WS, path `/vless`, SNI domain) -> `curl` lewat SOCKS keluar sukses |
+
+**Temuan khas jammy:** image minimal tidak menyertakan `systemd-timesyncd` (NTP tidak aktif, jam tidak sinkron).
+Diperbaiki: dipasang lebih dulu bila belum ada, **non-fatal** agar konflik paket `ntp`/`chrony` tidak membatalkan
+instalasi. Sesudah perbaikan: `System clock synchronized: yes` dan bertahan setelah reboot.
