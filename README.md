@@ -198,6 +198,10 @@ Backup otomatis ke `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum hapus.
 
 ---
 
+> **Audit akun:** `wibu-audit-akun` memeriksa klien di config Xray yang **tidak punya catatan masa aktif**
+> (akun seperti itu tidak akan pernah kedaluwarsa). Laporan: `wibu-audit-akun`. Perbaiki dengan karantina lewat
+> mesin recovery yang ada: `wibu-audit-akun --fix`. Hasil pemeriksaan juga muncul di Setting → [1] Auto-Repair.
+
 ### 🔄 Memperbarui pin installer Xray
 
 Installer Xray di-pin (`XRAY_INSTALL_SHA256`) supaya hulu XTLS yang diretas tidak otomatis jadi root di VPS Anda.

@@ -120,6 +120,8 @@ t "uninstall membersihkan timer" "grep -q 'wibutunnel-firewall.timer' \"\$REPO/u
 t "menu keluar rapi saat EOF (bukan loop)"    "grep -q 'read -r sub_menu || exit 0' \"\$REPO/menu/m-vless.sh\" && grep -q 'read -r sub_br || exit 0' \"\$REPO/menu/m-backup.sh\" && grep -q 'read -r sub_setting || exit 0' \"\$REPO/menu/m-setting.sh\""
 t "restore memperbaiki pemilik config (Xray bisa membaca)" "grep -q 'chown root:xray /usr/local/etc/xray/config.json' \"\$REPO/menu/m-backup.sh\""
 t "backup menyertakan bot.conf" "grep -q 'etc/wibutunnel/bot.conf' \"\$REPO/menu/m-backup.sh\""
+t "ada pemeriksa akun tanpa exp" "test -x \"\$REPO/sbin/wibu-audit-akun\" && grep -q 'AKUN TANPA EXP' \"\$REPO/sbin/wibu-audit-akun\""
+t "audit dipanggil dari auto-repair & bisa di-update" "grep -q 'wibu-audit-akun' \"\$REPO/menu/m-setting.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""
