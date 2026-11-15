@@ -1,88 +1,90 @@
 #!/bin/bash
-# ==========================================
+# ==========================================================================
 # TEST AUTO-REPAIR SYSTEM
-# ==========================================
+# Perbaikan penting vs versi lama:
+#  - Semua berkas yang "dirusak" untuk pengujian dipulihkan lewat trap, jadi
+#    kegagalan di tengah TIDAK meninggalkan VPS tanpa host key / config rusak.
+#  - Uji host key tidak lagi khusus ed25519: dropbear Ubuntu 20.04 (2020.81)
+#    TIDAK mendukung `-t ed25519`, sehingga uji lama selalu gagal & meninggalkan
+#    berkas .testbak (host key hilang). Sekarang: minimal satu host key pulih.
+#  - Path config Xray diambil dari common.sh (bukan /etc/xray/ yang bisa kosong).
+# ==========================================================================
 set -e
+REPO="${REPO:-$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)}"
+[[ -d "$REPO/sbin" ]] || REPO="/root/wibutunnel-repo"
+
+XRAY_CFG="/usr/local/etc/xray/config.json"
+[[ -f "$XRAY_CFG" ]] || XRAY_CFG="/etc/xray/config.json"
+
+KEYS=(/etc/dropbear/dropbear_ed25519_host_key /etc/dropbear/dropbear_ecdsa_host_key /etc/dropbear/dropbear_rsa_host_key)
+HAPROXY_CFG="/etc/haproxy/haproxy.cfg"
+
+restore_all() {
+    for k in "${KEYS[@]}"; do
+        [[ -f "$k.testbak" && ! -s "$k" ]] && mv "$k.testbak" "$k"
+        rm -f "$k.testbak" 2>/dev/null || true
+    done
+    [[ -f /etc/wibutunnel/ws-response.testbak && ! -s /etc/wibutunnel/ws-response ]] && mv /etc/wibutunnel/ws-response.testbak /etc/wibutunnel/ws-response
+    [[ -f "$XRAY_CFG.testbak" ]] && { mv "$XRAY_CFG.testbak" "$XRAY_CFG"; rm -f "$XRAY_CFG.bak"; }
+    [[ -f "$HAPROXY_CFG.testbak" ]] && { mv "$HAPROXY_CFG.testbak" "$HAPROXY_CFG"; }
+    rm -rf /tmp/wibu_test_hide_bak
+}
+trap restore_all EXIT
 
 echo "=== 1. Testing wibu-repair syntax and executable ==="
-bash -n /root/wibutunnel-repo/sbin/wibu-repair
+bash -n "$REPO/sbin/wibu-repair"
 [[ -x /usr/local/sbin/wibu-repair ]] || { echo "ASSERT_FAILED: /usr/local/sbin/wibu-repair not executable"; exit 1; }
 [[ -x /usr/local/bin/wibu-repair ]] || { echo "ASSERT_FAILED: /usr/local/bin/wibu-repair not executable"; exit 1; }
 
-echo "=== 2. Testing Dropbear hostkey auto-recovery ==="
-# Backup key, delete, run repair, verify recreation
-KEY_BAK="/etc/dropbear/dropbear_ed25519_host_key.testbak"
-if [[ -f /etc/dropbear/dropbear_ed25519_host_key ]]; then
-    mv /etc/dropbear/dropbear_ed25519_host_key "$KEY_BAK"
-fi
-
-/usr/local/sbin/wibu-repair >/dev/null 2>&1
-
-[[ -s /etc/dropbear/dropbear_ed25519_host_key ]] || { echo "ASSERT_FAILED: Dropbear hostkey was not recreated"; exit 1; }
-rm -f "$KEY_BAK"
-echo "Dropbear hostkey auto-recovery: PASS"
+echo "=== 2. Testing Dropbear host key auto-recovery ==="
+for k in "${KEYS[@]}"; do [[ -f "$k" ]] && mv "$k" "$k.testbak"; rm -f "$k"; done
+/usr/local/sbin/wibu-repair >/dev/null 2>&1 || true
+ADA=0
+for k in "${KEYS[@]}"; do [[ -s "$k" ]] && ADA=$((ADA+1)); done
+if [[ $ADA -lt 1 ]]; then echo "ASSERT_FAILED: tidak ada host key dropbear yang dipulihkan"; exit 1; fi
+echo "Dropbear host key auto-recovery: PASS ($ADA tipe pulih)"
 
 echo "=== 3. Testing WS-Response auto-recovery ==="
-RESP_BAK="/etc/wibutunnel/ws-response.testbak"
-if [[ -f /etc/wibutunnel/ws-response ]]; then
-    mv /etc/wibutunnel/ws-response "$RESP_BAK"
-fi
-
-/usr/local/sbin/wibu-repair >/dev/null 2>&1
-
+if [[ -f /etc/wibutunnel/ws-response ]]; then mv /etc/wibutunnel/ws-response /etc/wibutunnel/ws-response.testbak; fi
+/usr/local/sbin/wibu-repair >/dev/null 2>&1 || true
 [[ -s /etc/wibutunnel/ws-response ]] || { echo "ASSERT_FAILED: ws-response was not recreated"; exit 1; }
 grep -qi "websocket" /etc/wibutunnel/ws-response || { echo "ASSERT_FAILED: invalid ws-response content"; exit 1; }
-rm -f "$RESP_BAK"
 echo "WS-Response auto-recovery: PASS"
 
-echo "=== 4. Testing Xray config corruption recovery ==="
-# Backup valid config, corrupt it, test recovery
-cp -f /etc/xray/config.json /etc/xray/config.json.testbak
-cp -f /etc/xray/config.json /etc/xray/config.json.bak
-echo "CORRUPTED_JSON_NOT_VALID" > /etc/xray/config.json
-
-/usr/local/sbin/wibu-repair >/dev/null 2>&1
-
-jq . /etc/xray/config.json >/dev/null 2>&1 || { echo "ASSERT_FAILED: Corrupted Xray config was not restored"; exit 1; }
-rm -f /etc/xray/config.json.testbak
+echo "=== 4. Testing Xray config corruption recovery ($XRAY_CFG) ==="
+cp -f "$XRAY_CFG" "$XRAY_CFG.testbak"
+cp -f "$XRAY_CFG" "$XRAY_CFG.bak"
+echo "CORRUPTED_JSON_NOT_VALID" > "$XRAY_CFG"
+/usr/local/sbin/wibu-repair >/dev/null 2>&1 || true
+jq . "$XRAY_CFG" >/dev/null 2>&1 || { echo "ASSERT_FAILED: Corrupted Xray config was not restored"; exit 1; }
 echo "Xray config corruption recovery: PASS"
 
 echo "=== 5. Testing Xray blank-template protection when no .bak exists ==="
-# Sembunyikan semua file backup
 mkdir -p /tmp/wibu_test_hide_bak
-mv /etc/xray/config.json.bak* /tmp/wibu_test_hide_bak/ 2>/dev/null || true
-echo "CORRUPTED_WITHOUT_BAK" > /etc/xray/config.json
-
-/usr/local/sbin/wibu-repair >/dev/null 2>&1
-
-# Pastikan tidak tertimpa oleh template kosong repo
-if cmp -s /etc/xray/config.json /root/wibutunnel-repo/config/config.json; then
+mv "$XRAY_CFG".bak* /tmp/wibu_test_hide_bak/ 2>/dev/null || true
+echo "CORRUPTED_WITHOUT_BAK" > "$XRAY_CFG"
+/usr/local/sbin/wibu-repair >/dev/null 2>&1 || true
+if [[ -f "$REPO/config/config.json" ]] && cmp -s "$XRAY_CFG" "$REPO/config/config.json"; then
     echo "ASSERT_FAILED: Empty repo template was restored, risking silent user wipe"
-    mv /tmp/wibu_test_hide_bak/* /etc/xray/ 2>/dev/null || true
-    rm -rf /tmp/wibu_test_hide_bak
     exit 1
 fi
-# Pulihkan file backup
-mv /tmp/wibu_test_hide_bak/* /etc/xray/ 2>/dev/null || true
+mv /tmp/wibu_test_hide_bak/* "$XRAY_CFG".bak 2>/dev/null || true
 rm -rf /tmp/wibu_test_hide_bak
-/usr/local/sbin/wibu-repair >/dev/null 2>&1
+/usr/local/sbin/wibu-repair >/dev/null 2>&1 || true
 echo "Xray blank-template protection: PASS"
 
 echo "=== 6. Testing HAProxy config corruption and domain placeholder recovery ==="
-cp -f /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.testbak
-echo "CORRUPTED_HAPROXY_CONFIG" > /etc/haproxy/haproxy.cfg
-
-/usr/local/sbin/wibu-repair >/dev/null 2>&1
-
-haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1 || { echo "ASSERT_FAILED: HAProxy config repair failed syntax check"; exit 1; }
-if grep -q '\${__DOMAIN__}' /etc/haproxy/haproxy.cfg; then
-    echo "ASSERT_FAILED: HAProxy config contains unreplaced \${__DOMAIN__} placeholder"; exit 1;
+cp -f "$HAPROXY_CFG" "$HAPROXY_CFG.testbak"
+echo "CORRUPTED_HAPROXY_CONFIG" > "$HAPROXY_CFG"
+/usr/local/sbin/wibu-repair >/dev/null 2>&1 || true
+haproxy -c -f "$HAPROXY_CFG" >/dev/null 2>&1 || { echo "ASSERT_FAILED: HAProxy config repair failed syntax check"; exit 1; }
+if grep -q '\${__DOMAIN__}' "$HAPROXY_CFG"; then
+    echo "ASSERT_FAILED: HAProxy config contains unreplaced \${__DOMAIN__} placeholder"; exit 1
 fi
 cur_domain=$(cat /etc/xray/domain 2>/dev/null || true)
-if [[ -n "$cur_domain" ]] && ! grep -q "$cur_domain" /etc/haproxy/haproxy.cfg; then
-    echo "ASSERT_FAILED: HAProxy config missing current domain: $cur_domain"; exit 1;
+if [[ -n "$cur_domain" ]] && ! grep -q "$cur_domain" "$HAPROXY_CFG"; then
+    echo "ASSERT_FAILED: HAProxy config missing current domain: $cur_domain"; exit 1
 fi
-rm -f /etc/haproxy/haproxy.cfg.testbak
 echo "HAProxy config corruption and domain placeholder recovery: PASS"
 
 echo "=== 7. Testing Live Service Status after Repair ==="

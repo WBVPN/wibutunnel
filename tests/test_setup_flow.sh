@@ -116,11 +116,11 @@ done
 echo "All _need files exist check: PASS"
 
 echo "7. Checking HAProxy config heredoc in setup.sh for unescaped \${domain}.pem..."
-if grep -q 'bind \*:443 ssl crt /etc/haproxy/certs/\\${domain}\.pem' "$SETUP_FILE"; then
+if grep -q 'bind \(0\.0\.0\.0\|\*\):443 ssl crt /etc/haproxy/certs/\\${domain}\.pem' "$SETUP_FILE"; then
     echo "ASSERT_FAILED: setup.sh contains escaped \\${domain}.pem in HAProxy heredoc"
     exit 1
 fi
-if ! grep -q 'bind \*:443 ssl crt /etc/haproxy/certs/${domain}\.pem' "$SETUP_FILE"; then
+if ! grep -q 'bind \(0\.0\.0\.0\|\*\):443 ssl crt /etc/haproxy/certs/${domain}\.pem' "$SETUP_FILE"; then
     echo "ASSERT_FAILED: setup.sh missing unescaped \${domain}.pem in HAProxy heredoc"
     exit 1
 fi
