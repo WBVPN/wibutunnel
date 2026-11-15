@@ -9,7 +9,7 @@
 set -eu
 
 REF="${WIBU_REF:-v4.1.7}"
-EXPECT="368b958f83bc2c016f46a7291593d06474e65b36dd18f1ec0f8558a155d8a59e"
+EXPECT="f153702ef6879c0fc104e4210cc36fabf62a710445b47c710b6e34c75eead0e3"
 PRIMARY="https://raw.githubusercontent.com/WBVPN/wibutunnel/$REF/setup.sh"
 MIRROR="https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@$REF/setup.sh"
 
