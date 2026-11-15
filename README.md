@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.11
+# 🦋 WIBUTUNNEL v4.1.12
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.11-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.12-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 730a935eb329bab0fe48f14ecd8cc2cc66d3782f89237efe0342b39f955a5fb4
+sha256sum setup.sh     # harap: 85d855b5e05bd288b61c1ba2d2c80c1ae9b253085180f46842e533b5520a2655
 bash setup.sh
 ```
 
@@ -202,6 +202,13 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.12 (2026-11-15)
+- **Cache manifest per ref + divalidasi.** Cache `wibu-manifest` (satu berkas, tanpa nama ref) membuat
+  rilis berikutnya memverifikasi berkas baru terhadap **manifest lama** - gejala lapangan: `hash tidak cocok`
+  untuk berkas yang baru diubah padahal sumbernya benar, lalu berkas ditolak dan instalasi tidak lengkap.
+  Sekarang nama cache memuat ref, isinya wajib berbentuk manifest (`sha256  nama`, >= 10 baris) dan
+  diambil ulang bila tidak sah (respons JSON/HTML tidak lagi bisa dipakai sebagai manifest).
 
 ### v4.1.11 (2026-11-15)
 Dua bug ditemukan saat memasang di VPS pelanggan nyata (Ubuntu 20.04):

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.11
+# MASTER INSTALLER WIBU TUNNELING - v4.1.12
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -134,7 +134,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.11}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.12}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -282,7 +282,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.11" > /etc/wibutunnel/version
+echo "4.1.12" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -928,12 +928,20 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.11}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.12}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
-WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
+# [FIX-CACHE] Cache manifest HARUS per-ref: cache tetap membuat rilis berikutnya memverifikasi
+# berkas baru terhadap manifest LAMA (gejala: "hash tidak cocok" untuk berkas yang baru diubah,
+# padahal sumbernya benar). Isi cache juga divalidasi supaya respons JSON/HTML tidak terpakai.
+WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest-${WIBU_REF}"
+wibu_manifest_valid() {   # cache sah = banyak baris "<sha256>  <nama>"
+    [ -s "$WIBU_MANIFEST_CACHE" ] || return 1
+    [ "$(awk 'NF==2 && $1 ~ /^[0-9a-f]{64}$/' "$WIBU_MANIFEST_CACHE" 2>/dev/null | wc -l)" -ge 10 ]
+}
 wibu_manifest_fetch() {
-    [[ -s "$WIBU_MANIFEST_CACHE" ]] && return 0
+    wibu_manifest_valid && return 0
     mkdir -p /etc/wibutunnel/tmp
+    rm -f "$WIBU_MANIFEST_CACHE"
     local cb="cb=$(date +%s)$$"
     # [FIX] API GitHub = sumber OTORITATIF (isi per ref, tak lewat CDN raw). Diuji: setelah tag
     # dipindah, raw menyajikan MANIFEST LAMA (55 entri vs 57 di API) dan cache-buster `?cb=`
@@ -941,10 +949,13 @@ wibu_manifest_fetch() {
     curl -4 -fsSL --retry 2 --connect-timeout 10 --max-time 40 \
         -H 'Accept: application/vnd.github.raw' -H 'User-Agent: wibutunnel-installer' \
         -o "$WIBU_MANIFEST_CACHE" "https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/SHA256SUMS?ref=${WIBU_REF}" 2>/dev/null
-    [[ -s "$WIBU_MANIFEST_CACHE" ]] || curl -4 -fsSL --retry 3 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" "${GITHUB_RAW}/SHA256SUMS?${cb}" 2>/dev/null
-    [[ -s "$WIBU_MANIFEST_CACHE" ]] || curl -4 -fsSL --retry 2 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" \
-        "https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/SHA256SUMS" 2>/dev/null
-    [[ -s "$WIBU_MANIFEST_CACHE" ]]
+    wibu_manifest_valid || { rm -f "$WIBU_MANIFEST_CACHE"; curl -4 -fsSL --retry 3 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" "${GITHUB_RAW}/SHA256SUMS?${cb}" 2>/dev/null; }
+    if ! wibu_manifest_valid; then
+        rm -f "$WIBU_MANIFEST_CACHE"
+        curl -4 -fsSL --retry 2 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" \
+            "https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/SHA256SUMS" 2>/dev/null
+    fi
+    wibu_manifest_valid
 }
 wibu_verify_file() {   # $1=berkas lokal  $2=nama di manifest (jalur repo)
     local f="$1" name="$2" want got
@@ -1417,7 +1428,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.11" > /etc/wibutunnel/version
+echo "4.1.12" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
