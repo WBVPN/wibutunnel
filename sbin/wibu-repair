@@ -100,19 +100,27 @@ fi
 
 # 4. Validasi & Perbaiki Konfigurasi Xray Core
 echo -ne " [4/8] Memeriksa konfigurasi Xray JSON... "
+# Lokasi config Xray: /etc/xray/config.json adalah symlink ke path asli.
+XRAY_MAIN="/usr/local/etc/xray/config.json"
+XRAY_CFG="$XRAY_MAIN"
+[[ -f "$XRAY_CFG" ]] || XRAY_CFG="/etc/xray/config.json"
 xray_json_ok=0
-if jq . /etc/xray/config.json >/dev/null 2>&1; then
+if jq . "$XRAY_CFG" >/dev/null 2>&1; then
     xray_json_ok=1
     echo -e "${GREEN}[OK]${NC}"
 else
     echo -e "${YELLOW}[INVALID JSON - RESTORING]${NC}"
-    # Prioritaskan restore dari cadangan yang memiliki akun/clients
-    for b in /etc/xray/config.json.bak /etc/xray/config.json.bak.* /etc/wibutunnel/recovery/config.json.*; do
+    # [FIX] Cadangan ditulis installer di $XRAY_MAIN.bak.<waktu>, sedangkan versi lama
+    # hanya mencari di /etc/xray/ (bukan lokasi cadangan sebenarnya) sehingga restore
+    # TIDAK PERNAH menemukan cadangan installer. Sekarang kedua lokasi dicari.
+    for b in "$XRAY_CFG".bak "$XRAY_CFG".bak.* "$XRAY_MAIN".bak "$XRAY_MAIN".bak.* \
+             /etc/xray/config.json.bak /etc/xray/config.json.bak.* /etc/wibutunnel/recovery/config.json.*; do
         if [[ -f "$b" ]] && jq . "$b" >/dev/null 2>&1; then
             cnt=$(jq '[.inbounds[].settings.clients[]?] | length' "$b" 2>/dev/null || echo 0)
             if [[ "$cnt" -gt 0 ]]; then
-                cp -f "$b" /etc/xray/config.json
-                chmod 644 /etc/xray/config.json
+                cp -f "$b" "$XRAY_CFG"
+                chmod 640 "$XRAY_CFG"
+                id xray >/dev/null 2>&1 && chown root:xray "$XRAY_CFG" 2>/dev/null || true
                 xray_json_ok=1
                 echo -e "       Dipulihkan dari cadangan (${cnt} akun): ${GREEN}[$b]${NC}"
                 break
@@ -122,10 +130,11 @@ else
 
     # Fallback ke .bak valid lainnya jika ada
     if [[ $xray_json_ok -eq 0 ]]; then
-        for b in /etc/xray/config.json.bak /etc/xray/config.json.bak.*; do
+        for b in "$XRAY_CFG".bak "$XRAY_CFG".bak.* "$XRAY_MAIN".bak "$XRAY_MAIN".bak.*; do
             if [[ -f "$b" ]] && jq . "$b" >/dev/null 2>&1; then
-                cp -f "$b" /etc/xray/config.json
-                chmod 644 /etc/xray/config.json
+                cp -f "$b" "$XRAY_CFG"
+                chmod 640 "$XRAY_CFG"
+                id xray >/dev/null 2>&1 && chown root:xray "$XRAY_CFG" 2>/dev/null || true
                 xray_json_ok=1
                 echo -e "       Dipulihkan dari cadangan lokal: ${YELLOW}[$b]${NC}"
                 break
@@ -194,7 +203,11 @@ echo -e "${GREEN}[OK]${NC}"
 # 7. Cek Flat-File DB Expiry & Limit
 echo -ne " [7/8] Memeriksa integritas file database... "
 touch /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_exp.conf /etc/xray/ssh_exp.conf
-chmod 644 /etc/xray/*_exp.conf
+# [FIX] Izinkan 600 (bukan 644): berkas *_exp.conf memuat daftar pelanggan.
+# Versi lama melonggarkan izin ke 644 setiap kali repair dijalankan, sehingga
+# pengerasan installer (600) hilang dan user lokal bisa membaca daftar pelanggan.
+chmod 750 /etc/xray 2>/dev/null || true
+chmod 600 /etc/xray/*_exp.conf 2>/dev/null || true
 touch /etc/wibutunnel/locked_users.db /etc/wibutunnel/limit_ip.db /etc/wibutunnel/limit_bw.db /etc/wibutunnel/user_usage.db /etc/wibutunnel/ssh_pass.db
 chmod 600 /etc/wibutunnel/*.db
 mkdir -p /etc/wibutunnel/recovery
