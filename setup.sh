@@ -131,7 +131,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.0.6-fixed}"
+WIBU_REF="${WIBU_REF:-v4.0.7}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -791,7 +791,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.0.6-fixed}"
+WIBU_REF="${WIBU_REF:-v4.0.7}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
