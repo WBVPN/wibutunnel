@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.3
+# MASTER INSTALLER WIBU TUNNELING - v4.1.4
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
-# RESIDUAL RISK (v4.1.3):
+# RESIDUAL RISK (v4.1.4):
 #  * Pelanggan SSH masih mendapat shell /bin/bash. Mitigasi utama: port API Xray
 #    127.0.0.1:10085 dibatasi uid 0 via iptables owner-match + unit systemd
 #    wibutunnel-firewall.service (ditegakkan saat boot). Opt-in WIBU_SSH_NOLOGIN=1
@@ -133,7 +133,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.3}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.4}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -271,7 +271,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.3" > /etc/wibutunnel/version
+echo "4.1.4" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -811,7 +811,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.3}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.4}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
@@ -1141,6 +1141,10 @@ else
     echo -e "\e[1;33m[i] Bot Telegram belum diatur -> unit tidak diaktifkan (Setting -> [6] Setup Bot Telegram).\e[0m"
 fi
 systemctl enable dropbear.service ws-stunnel.service >/dev/null 2>&1
+# [FIX] Bersihkan status 'failed' sisa percobaan sebelum konfigurasi ditulis (di Debian 12
+# dropbear/haproxy sempat gagal start dengan config bawaan paket -> `systemctl status` menampilkan
+# 'failed' walau layanannya sudah berjalan normal setelah installer menulis konfigurnya).
+systemctl reset-failed dropbear.service haproxy.service ws-stunnel.service >/dev/null 2>&1 || true
 systemctl restart dropbear.service ws-stunnel.service >/dev/null 2>&1
 systemctl enable algojo-expired.service >/dev/null 2>&1
 systemctl restart algojo-expired.service >/dev/null 2>&1
@@ -1266,7 +1270,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.3" > /etc/wibutunnel/version
+echo "4.1.4" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
