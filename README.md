@@ -27,28 +27,34 @@ Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu comman
 - Root access
 - IP VPS terdaftar di `izin.txt` (hubungi @wibuvpn)
 
-### One-Liner
+### Instalasi (unduh -> verifikasi -> pasang)
+
 ```bash
-curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/setup.sh
-sha256sum setup.sh     # harap: 9c07c5b242d9d425da34867b78efbc4c620a77339d5be714dd0ad6323aebf1da
+curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.7/setup.sh
+sha256sum setup.sh     # harap: f14b02b8b6ea22ad6c7d03469f9ba4ada883dfbc06fde18bea9abb59becba3df
 bash setup.sh
 ```
 
+Kenapa tiga baris, bukan `curl | bash`? Supaya berkasnya **diverifikasi lebih dulu** - kalau hash tidak
+cocok kamu berhenti sebelum menjalankan apa pun. Angka di baris kedua berasal dari rilis ini dan
+**setiap rilis punya tag tetap (immutable) sendiri**, jadi hash di README selalu cocok dengan tag di
+baris pertama.
 
-`setup.sh` mengambil kode (`menu/*`, `sbin/*`, `common.sh`) dari **tag rilis** (bukan `main`) dan
-memverifikasi sha256 setiap berkas terhadap `SHA256SUMS`; hash tidak cocok = instalasi DIHENTIKAN.
-Ganti ref: `WIBU_REF=v4.0.6-fixed bash setup.sh` · bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
+- Baris 1 mengambil `setup.sh` dari **tag rilis `v4.0.7`** (bukan `main`) agar kode yang kamu pasang
+  tidak berubah di tengah jalan.
+- `setup.sh` lalu mengambil `menu/*`, `sbin/*`, `common.sh` dari **tag yang sama** dan memverifikasi
+  sha256 tiap berkas terhadap `SHA256SUMS`; hash tidak cocok = instalasi DIHENTIKAN.
+- Tag lain: `WIBU_REF=v4.0.7 bash setup.sh` · tag lama `v4.0.6-fixed` tetap ada (beku) ·
+  bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
 
-> **Penting — VPS dengan IPv6 "blackhole" (umum di Indonesia):** perintah di atas sengaja memakai
-> `curl -4` karena `wget` bisa **menggantung tanpa batas** dan `curl` tanpa `-4` menunggu ~24 detik
-> per unduhan (installer ada 25 unduhan). Kalau GitHub mentok dari jaringanmu, pakai mirror:
-> `https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@v4.0.6-fixed/setup.sh`.
-
-**Instalasi versi rilis (terpin):** perintah di atas mengambil dari tag `v4.0.6-fixed`.
-Bila ingin versi terbaru dari cabang `main`, ganti `v4.0.6-fixed` menjadi `main` (hash `setup.sh` akan berbeda).
+> **Penting - VPS dengan IPv6 "blackhole" (umum di Indonesia):** perintah di atas memakai `curl -4`
+> karena `wget` bisa **menggantung tanpa batas** dan `curl` tanpa `-4` menunggu ~24 detik per unduhan
+> (installer ada 25 unduhan). Kalau GitHub mentok dari jaringanmu, pakai mirror:
+> `https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@v4.0.7/setup.sh` (hash-nya sama).
 
 > **Instalasi baru:** IP VPS harus terdaftar di `izin.txt` (hubungi @wibuvpn). Tanpa itu instalasi
-> berhenti di pemeriksaan lisensi — perilaku normal, bukan error jaringan.
+> berhenti di pemeriksaan lisensi - perilaku normal, bukan error jaringan.
+
 **Proses:** Install dependencies → SSL cert → Xray config → Telegram bot → Services. Waktu: ~5-10 menit.
 
 ---
