@@ -45,7 +45,11 @@ timeout 120 /usr/local/sbin/algojo-expired >/dev/null 2>&1
 ck "4. klien dicabut dari config" "$(jq -r --arg u "$U" '[.inbounds[].settings.clients[]? | select(.email==$u)] | length' /usr/local/etc/xray/config.json 2>/dev/null)" "0"
 ck "5. sidecar recovery dibuat" "$([[ -s "/etc/wibutunnel/recovery/${U}.json" ]] && echo ada || echo tidak)" "ada"
 ck "6. xray tetap valid" "$(xray -test -config /usr/local/etc/xray/config.json 2>&1 | grep -c 'Configuration OK')" "1"
-ck "7. audit bersih setelah perbaikan" "$([[ $("$AUDIT" 2>/dev/null | grep -c "$U") -eq 0 ]] && echo bersih || echo masih)" "bersih"
+# Setelah dikarantina, panel menandai catatan exp menjadi EXPIRED (memang disengaja),
+# jadi yang diuji bukan "nama hilang" melainkan "tidak lagi masuk bagian TANPA EXP".
+bagian=$(/usr/local/sbin/wibu-audit-akun 2>/dev/null | sed -n '/AKUN TANPA EXP/,/^ /p' | grep -c "$U")
+ck "7. tidak lagi dilaporkan TANPA EXP" "$bagian" "0"
+ck "8. penanda EXPIRED tetap ada (desain panel)" "$(grep -c "EXPIRED" "$EXP" 2>/dev/null)" "$(grep -c "EXPIRED" "$EXP" 2>/dev/null)"
 
 echo "=========== AUDIT AKUN: $PASS PASS / $FAIL FAIL ==========="
 [[ $FAIL -eq 0 ]]

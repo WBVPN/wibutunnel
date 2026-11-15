@@ -67,6 +67,14 @@ for proto in vless vmess trojan; do
         [[ -z "$name" ]] && continue
         [[ "$name" == dummy* ]] && continue
         # hanya anggap ghost bila memang tidak ada di protokol ini
+        # Catatan yang ditandai EXPIRED/QUOTA, ada di locked_users.db, atau punya sidecar
+        # recovery adalah penanda RESMI panel (bukan sampah) -> jangan dilaporkan sebagai sisa.
+        line=$(grep -m1 "^${name}:" "$EXP_DIR/${proto}_exp.conf" 2>/dev/null || true)
+        if [[ "$line" == *EXPIRED* || "$line" == *QUOTA* ]] \
+           || grep -qw "$name" "$DB_DIR/locked_users.db" 2>/dev/null \
+           || [[ -s "$DB_DIR/recovery/${name}.json" ]]; then
+            continue
+        fi
         if ! awk -v n="$name" -v p="$proto" 'BEGIN{FS="\t"} $1==n && tolower($2) ~ p {found=1} END{exit !found}' "$WORK/clients"; then
             ghosts=$((ghosts + 1))
             report_ghost+="  - $name ($proto): catatan exp tanpa klien"$'\n'
