@@ -418,6 +418,12 @@ wibu_get_script() { # $1=jalur repo  $2=tujuan
         "https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/SHA256SUMS?ref=${WIBU_REF}" 2>/dev/null | awk -v f="$1" '$2==f{print $1}' | head -1)
     act=$(sha256sum "$tmp" 2>/dev/null | awk '{print $1}')
     if [[ -n "$exp" && "$act" == "$exp" ]]; then install -m755 "$tmp" "$2"; rm -f "$tmp"; return 0; fi
+    # [FIX] Berkas lewat CDN raw pun bisa basi -> coba sekali lagi lewat API (otoritatif).
+    curl -4 -fsSL --retry 2 --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw' \
+        -H 'User-Agent: wibutunnel-installer' -o "$tmp" \
+        "https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/$1?ref=${WIBU_REF}" 2>/dev/null
+    act=$(sha256sum "$tmp" 2>/dev/null | awk '{print $1}')
+    if [[ -n "$exp" && "$act" == "$exp" ]]; then install -m755 "$tmp" "$2"; rm -f "$tmp"; return 0; fi
     rm -f "$tmp"
     return 1
 }
@@ -770,16 +776,15 @@ wibu_manifest_fetch() {
     [[ -s "$WIBU_MANIFEST_CACHE" ]] && return 0
     mkdir -p /etc/wibutunnel/tmp
     local cb="cb=$(date +%s)$$"
-    # [FIX] Cache-buster: setelah tag dipindah, raw.githubusercontent.com masih menyajikan
-    # SHA256SUMS LAMA dari cache CDN (55 entri vs 57 di tag) sehingga verifikasi fail-closed
-    # menolak berkas yang sebenarnya sudah ada. Query unik memaksa isi terbaru.
-    curl -4 -fsSL --retry 3 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" "${GITHUB_RAW}/SHA256SUMS?${cb}" 2>/dev/null
-    [[ -s "$WIBU_MANIFEST_CACHE" ]] || curl -4 -fsSL --retry 2 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" \
-        "https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/SHA256SUMS" 2>/dev/null
-    # [FIX] Cadangan terakhir: API GitHub (isi langsung per ref, tidak lewat CDN raw)
-    [[ -s "$WIBU_MANIFEST_CACHE" ]] || curl -4 -fsSL --retry 2 --connect-timeout 10 --max-time 40 \
+    # [FIX] API GitHub = sumber OTORITATIF (isi per ref, tak lewat CDN raw). Diuji: setelah tag
+    # dipindah, raw menyajikan MANIFEST LAMA (55 entri vs 57 di API) dan cache-buster `?cb=`
+    # TIDAK menolong -> verifikasi fail-closed menolak berkas yang sudah ada.
+    curl -4 -fsSL --retry 2 --connect-timeout 10 --max-time 40 \
         -H 'Accept: application/vnd.github.raw' -H 'User-Agent: wibutunnel-installer' \
         -o "$WIBU_MANIFEST_CACHE" "https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/SHA256SUMS?ref=${WIBU_REF}" 2>/dev/null
+    [[ -s "$WIBU_MANIFEST_CACHE" ]] || curl -4 -fsSL --retry 3 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" "${GITHUB_RAW}/SHA256SUMS?${cb}" 2>/dev/null
+    [[ -s "$WIBU_MANIFEST_CACHE" ]] || curl -4 -fsSL --retry 2 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" \
+        "https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/SHA256SUMS" 2>/dev/null
     [[ -s "$WIBU_MANIFEST_CACHE" ]]
 }
 wibu_verify_file() {   # $1=berkas lokal  $2=nama di manifest (jalur repo)
