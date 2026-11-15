@@ -70,22 +70,37 @@ menu              # Dashboard & status stack
 m-vless           # Kelola VLESS
 m-vmess           # Kelola VMESS
 m-trojan          # Kelola TROJAN
-m-ssh             # Kelola SSH (Edit Banner: [12], Respon WS: [13])
+m-ssh             # Kelola SSH (Cek Login: [9], Banner: [12], Respon WS: [13])
 m-setting         # Settings (Auto-repair: [1], Update: [5])
+m-backup          # Backup & restore (password wajib, validasi isi arsip)
+cek-trafik        # Monitor trafik & IP per user
+menu-lock         # Kunci massal
+menu-unlock       # Buka kunci massal
 menu-recovery     # Restore user dari recovery
+xp                # Kelola masa aktif (add/reduce hari)
 wibu-repair       # Diagnostic & repair stack
 ```
 
+Daemon pendukung (dipasang di `/usr/local/sbin/`):
+`algojo-wibu` `algojo-kuota` `algojo-ssh` `algojo-expired` `algojo-expired-daemon`
+`lock-user` `unlock-user` `unlocker-wibu` `ws-stunnel` `wibu-repair` `wibu-daemon`
+
 ### Service
+Unit yang dikelola panel (9):
 ```bash
-systemctl status xray telegram-bot algojo-expired wibu-daemon
+systemctl status xray haproxy dropbear ws-stunnel telegram-bot \
+                 algojo-expired wibu-daemon network-tune wibutunnel-firewall
 journalctl -u telegram-bot -f
-tail -f /var/log/xray/access.log
+journalctl -u wibu-daemon --since "10 minutes ago"
+tail -f /var/log/xray/access.log        # izin 0640 (tidak lagi terbaca semua user)
 ```
+`wibutunnel-firewall` menegakkan ulang aturan "hanya root boleh ke API Xray (:10085)" setiap kali boot.
 
 ### File Penting
 ```
-/etc/xray/config.json               # Xray config
+/usr/local/etc/xray/config.json     # Xray config (kanonik; /etc/xray/config.json = symlink)
+/etc/wibutunnel/version             # Penanda versi (4.0.6-fixed)
+/etc/wibutunnel/izin.txt            # Daftar lisensi lokal (opsional)
 /etc/xray/{vless,vmess,trojan,ssh}_exp.conf   # User expiry
 /etc/wibutunnel/bot.conf            # Telegram credentials
 /etc/wibutunnel/limit_ip.db         # IP limit (sesi simultan)
@@ -147,6 +162,26 @@ Backup otomatis ke `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum hapus.
 
 ---
 
+## 🔐 Keamanan (4.0.6-fixed)
+
+- **Rantai pasang diverifikasi.** `setup.sh` mengambil `menu/*`, `sbin/*`, `common.sh` dari **tag rilis**
+  (bukan `main`) dan membandingkan sha256 setiap berkas dengan `SHA256SUMS`; tidak cocok = instalasi **dihentikan**.
+  Installer Xray juga dipin hash-nya. Bypass sadar hanya `WIBUTUNNEL_ALLOW_UNVERIFIED=1` (dengan peringatan + log).
+- **Update fail-closed.** `m-setting → [5]` memverifikasi manifest sebelum menimpa, dan menyimpan cadangan
+  ke `/usr/local/share/wibutunnel/backup/`.
+- **API Xray (:10085) hanya untuk root.** Aturan iptables `-m owner ! --uid-owner 0 … REJECT` + unit
+  `wibutunnel-firewall` yang menegakkan ulang setelah reboot — mencegah satu pelanggan mengubah/menghapus user lain.
+- **Izin berkas:** `/etc/wibutunnel` 700 · `*_exp.conf` 600 · `/etc/xray` 750 · `/var/log/xray` 750 dengan log 0640
+  (daftar pelanggan & IP tidak lagi terbaca semua user lokal).
+- **Token bot tidak lagi lewat `argv`** (dibaca `curl -K -`), jadi tidak terlihat di `ps` oleh user lokal.
+- **Restore backup:** wajib `https`, wajib password, isi arsip divalidasi (tolak path absolut/`..`), ekstrak di `mktemp -d`.
+- **Akun pelanggan tetap ber-shell** (perilaku produk). Ingin mode nologin? Pasang dengan `WIBU_SSH_NOLOGIN=1`.
+- ⚠️ **Catatan lisensi:** pemeriksaan lisensi menerima juga `./izin.txt` atau `/etc/wibutunnel/izin.txt` yang memuat
+  IP VPS — jadi gate ini **penghalang, bukan pengaman** (siapa pun yang punya root di VPS-nya bisa melewatinya).
+  Rincian temuan & perbaikan: [`docs/SECURITY_FIXES.md`](docs/SECURITY_FIXES.md).
+
+---
+
 ## 📊 Network
 
 ### Ports
@@ -169,6 +204,19 @@ Internet → HAProxy (80/443)
             ├→ Dropbear :143 (Direct SSH)
             └→ ws-stunnel :10015 → Dropbear :109 (SSH WS)
 ```
+
+---
+
+## 🧪 Pengujian
+
+```bash
+bash tests/test_hardening.sh        # 38 cek keamanan, non-destruktif (tidak menyentuh sistem)
+sha256sum -c SHA256SUMS             # integritas seluruh berkas rilis
+```
+
+> ⚠️ Jangan jalankan suite lama (`tests/test_auto_repair.sh`, `test_xray_api_sync.sh`,
+> `test_expiry_and_xp.sh`, dll) di VPS produksi — sebagian menulis `/etc` dan me-restart stack.
+> Prosedur aman ada di [`docs/STAGING_TEST.md`](docs/STAGING_TEST.md).
 
 ---
 
@@ -217,6 +265,17 @@ cat /etc/xray/vless_exp.conf  # Format: username:YYYY-MM-DD HH:MM:SS
 
 ## 📝 Changelog
 
+### v4.0.6-fixed (2026-11-15) - Patch keamanan
+- Rantai pasang: `curl | bash` dihapus, ref dipin ke tag, semua unduhan diverifikasi `SHA256SUMS` (fail-closed)
+- Update menu fail-closed + cadangan rollback
+- API Xray `:10085` diblokir untuk non-root (iptables owner-match + unit firewall persisten)
+- Token bot keluar dari `argv` (11 titik → `curl -K -`)
+- Restore backup: password wajib + validasi entri + `mktemp`; backup pakai password acak
+- Izin berkas diperketat (`*_exp.conf` 600, `/etc/xray` 750, log 0640)
+- Tulis DB ber-`flock`, guard oktal `10#`, hitungan trafik diperbaiki, resolver indeks inbound via tag
+- Penjaga EOF pada input domain (sebelumnya loop tanpa henti bila input habis)
+- Alat baru: `SHA256SUMS`, `tests/test_hardening.sh` (38 cek non-destruktif), `docs/`
+
 ### v4.0.6 KURUMI (2026-11-02) - Production Ready
 
 **🛠️ Auto-Repair & Diagnostic:**
@@ -239,7 +298,7 @@ cat /etc/xray/vless_exp.conf  # Format: username:YYYY-MM-DD HH:MM:SS
 **📊 Dashboard:**
 - Multi-service live monitor (`Online` / `Degraded`)
 - Clean SSH menu (hapus opsi usang)
-- 11 test suite lama + `tests/test_hardening.sh` (32 cek keamanan, non-destruktif)
+- 11 test suite lama
 
 **🐛 Critical Fixes:**
 - SSH-1: Parsing `ss` benar ($3/$5, PID via ps, filter dropbear|sshd)
