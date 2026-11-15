@@ -122,6 +122,10 @@ if [[ $orphans -gt 0 ]]; then
 else
     echo " ✅ Tidak ada akun tanpa exp."
 fi
+# [FIX] Sebelumnya catatan dummy bawaan installer (dummy-*) diabaikan diam-diam, sehingga
+# "Tidak ada sisa data" bisa disalah-artikan sebagai benar-benar kosong. Sekarang ditampilkan.
+_dummy=$(cat "${EXP_DIR}"/*_exp.conf 2>/dev/null | awk -F: '$1 ~ /^dummy/ {c++} END{print c+0}')
+echo " Catatan dummy installer : ${_dummy} (diabaikan)"
 if [[ $ghosts -gt 0 || $ghosts_ssh -gt 0 ]]; then
     echo " ℹ SISA DATA tanpa akun ($((ghosts + ghosts_ssh))):"
     printf '%s' "$report_ghost"
