@@ -314,8 +314,19 @@ case $sub_setting in
         safe_update "sbin/ws-stunnel"
         safe_update "sbin/wibu-daemon"
         safe_update "sbin/wibu-repair"
+        safe_update "sbin/wibutunnel-firewall.sh"
+        safe_update "sbin/network-tune.sh"
         
         safe_update "common.sh"
+        
+        # [FIX] Skrip firewall & network-tune kini berkas repo (nama tanpa .sh). Unit systemd
+        # di VPS yang sudah terpasang masih menunjuk nama .sh -> pasang symlink kompatibilitas,
+        # lalu terapkan aturan firewall versi terbaru (dedupe) tanpa perlu instalasi ulang.
+        ln -sf /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.sh 2>/dev/null || true
+        ln -sf /usr/local/sbin/network-tune /usr/local/sbin/network-tune.sh 2>/dev/null || true
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        [[ -x /usr/local/sbin/wibutunnel-firewall ]] && /usr/local/sbin/wibutunnel-firewall >/dev/null 2>&1 || true
+        [[ -x /usr/local/sbin/network-tune ]] && /usr/local/sbin/network-tune >/dev/null 2>&1 || true
         
         dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
         systemctl restart telegram-bot algojo-expired wibu-daemon ws-stunnel >/dev/null 2>&1 || true

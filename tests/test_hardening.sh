@@ -87,7 +87,7 @@ for n in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemo
   grep -q "$n" "$REPO/README.md" || { echo "     README belum menyebut daemon: $n"; _rmiss=1; }
 done
 t "semua curl/wget runtime dipaksa IPv4 (-4)" "! grep -rnE '(curl|wget) ' --include='*.sh' \"\$REPO/menu\" \"\$REPO/common.sh\" \"\$REPO/sbin\" 2>/dev/null | grep -vE 'curl -4|wget -4|:[0-9]+:[[:space:]]*#|curl -6' | grep -q ."
-t "skrip firewall mendedupe aturan (tahan reboot berkali-kali)" "grep -q 'Buang SEMUA salinan lama' \"\$REPO/setup.sh\""
+t "skrip firewall mendedupe aturan (tahan reboot berkali-kali)" "grep -q 'Buang SEMUA salinan lama' \"\$REPO/sbin/wibutunnel-firewall.sh\""
 t "IPv6 dimatikan permanen saat instalasi" "grep -q 'net.ipv6.conf.all.disable_ipv6' \"\$REPO/setup.sh\""
 t "lisensi hanya dari sumber resmi (tak percaya ./izin.txt)" "! grep -q '\"./izin.txt\"' \"\$REPO/setup.sh\""
 t "cek lisensi memakai pencocokan kolom IP persis (awk)" "grep -q 'license_lookup()' \"\$REPO/common.sh\""
@@ -103,7 +103,11 @@ t "wibu-repair tak melonggarkan izin exp ke 644" "! grep -q 'chmod 644 /etc/xray
 t "wibu-repair memakai izin 600 untuk exp" "grep -q 'chmod 600 /etc/xray/\*_exp.conf' \"\$REPO/sbin/wibu-repair\""
 t "wibu-repair mencari cadangan di path sebenarnya" "grep -q 'XRAY_MAIN\".bak' \"\$REPO/sbin/wibu-repair\""
 t "invariant izin: exp 600 & config xray 640 di installer" "grep -q 'chmod 600 /etc/xray/\*_exp.conf' \"\$REPO/setup.sh\" && grep -q 'chmod 640 /usr/local/etc/xray/config.json' \"\$REPO/setup.sh\""
-t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/setup.sh\""
+t "heredoc setup.sh == berkas repo (firewall)" "cmp -s <(awk '/<< .FWEOF./{f=1;next} /^FWEOF$/{f=0} f' \"\$REPO/setup.sh\") \"\$REPO/sbin/wibutunnel-firewall.sh\""
+t "heredoc setup.sh == berkas repo (network-tune)" "cmp -s <(awk 'index(\$0,\"network-tune <<\"){f=1;next} f&&/^EOF$/{f=0;exit} f' \"\$REPO/setup.sh\") \"\$REPO/sbin/network-tune.sh\""
+t "menu [5] ikut memperbarui firewall & network-tune" "grep -q 'safe_update \"sbin/wibutunnel-firewall.sh\"' \"\$REPO/menu/m-setting.sh\" && grep -q 'safe_update \"sbin/network-tune.sh\"' \"\$REPO/menu/m-setting.sh\""
+t "update menu memasang symlink kompatibilitas unit lama" "grep -q 'symlink kompatibilitas' \"\$REPO/menu/m-setting.sh\""
+t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""
 t "perintah instalasi README pakai curl -4 (bukan wget)" "grep -q 'curl -4 -fsSL -o setup.sh' \"\$REPO/README.md\" && ! grep -qE '^wget -qO setup.sh' \"\$REPO/README.md\""
