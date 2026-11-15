@@ -45,7 +45,7 @@ bash setup.sh
 
 ```bash
 curl -4 -fsSL -o uninstall.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/uninstall.sh
-sha256sum uninstall.sh   # harap: db9734a4f248e18102c4eb33329de5e00266c1a041359dea4f55128aeeca7b38
+sha256sum uninstall.sh   # harap: a9962e71a9ac5b83757101d76c5163a8825e785433f7a1639fa44dfa022ba46d
 bash uninstall.sh
 ```
 
