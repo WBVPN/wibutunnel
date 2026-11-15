@@ -195,3 +195,30 @@ aset Release (tag v4.1.7/v4.1.8) tanpa penyesuaian manual.
 **Temuan khas jammy:** image minimal tidak menyertakan `systemd-timesyncd` (NTP tidak aktif, jam tidak sinkron).
 Diperbaiki: dipasang lebih dulu bila belum ada, **non-fatal** agar konflik paket `ntp`/`chrony` tidak membatalkan
 instalasi. Sesudah perbaikan: `System clock synchronized: yes` dan bertahan setelah reboot.
+
+
+---
+
+## 9. Uji lapangan: Debian 11 (bullseye) - 2026-11-15
+
+VPS `103.150.60.84` di-rebuild ke Debian 11 (kernel 5.10, 978 MB RAM, 18 GB disk), instalasi dari aset Release.
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Penjaga OS | `[+] OS terdeteksi: Debian GNU/Linux 11 (bullseye) (11)` |
+| Galat apt/dpkg | **0** (sesudah repo dialihkan ke arsip) |
+| Berkas gagal unduh | **0** |
+| HAProxy | **2.2.9** - `Configuration file is valid` |
+| certbot | **1.12.0**, sertifikat Let's Encrypt s/d 2027-02-13 |
+| Layanan | 8/8 `active` + `enabled`; port 80/443/143/109 |
+| Reboot | BOOT_ID berubah, 8/8 naik sendiri, aturan `:10085` = 1 di iptables **dan** rules.v4, akun & sertifikat utuh |
+| Keamanan | config 640 root:xray, exp 600, dir 750, API 10085 root-only, lisensi LOLOS |
+| Jam | tersinkron setelah paket `systemd-timesyncd` terpasang (installer mencoba best-effort) |
+| Uji klien | Xray sebagai klien VLESS TLS+WS -> keluar sukses, HTTP via tunnel 200 |
+
+**Temuan khas Debian 11 (semuanya diperbaiki di installer):**
+1. `dig` tidak ada -> validasi domain gagal -> instalasi berhenti (v4.1.13: resolver rantai, getent sebagai jaring terakhir).
+2. bullseye **EOL**: `security.debian.org` menjawab **404** untuk seluruh pool + mirror pihak ketiga rusak
+   (`mr.heru.id/debian bullseye-backports` tanpa Release file) -> apt mustahil (v4.1.14: alih otomatis ke `archive.debian.org`).
+3. `awk` = **mawk 1.3.4** tidak mendukung interval `{64}` -> manifest dinilai tidak sah -> semua berkas ditolak
+   (v4.1.15: regex portabel `length($1) == 64 && $1 ~ /^[0-9a-f]+$/`).
