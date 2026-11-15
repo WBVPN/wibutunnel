@@ -4,6 +4,22 @@
 # [PATCH] Cleanup lengkap semua komponen
 # ==========================================
 
+# [C1] Pin + verifikasi instaleler Xray (sama seperti setup.sh). Hash 2026-11-15.
+XRAY_INSTALL_URL="${XRAY_INSTALL_URL:-https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh}"
+XRAY_INSTALL_SHA256="${XRAY_INSTALL_SHA256:-a562d1287cd7bf2871023d4c81bd9031c56fa132956067ba1de126957cc5fb1c}"
+XRAY_TMP=""
+xray_tmp_cleanup() { [ -n "$XRAY_TMP" ] && rm -f "$XRAY_TMP"; return 0; }
+trap xray_tmp_cleanup EXIT
+
+xray_verify_sha256() {
+    local file="$1" want="$2" got
+    [ -s "$file" ] || { echo "instaleler kosong/tidak ada: $file" >&2; return 1; }
+    got="$(sha256sum "$file" 2>/dev/null | awk '{print $1}')"
+    [ -n "$got" ] || { echo "sha256sum gagal" >&2; return 1; }
+    [ "$got" = "$want" ] || { echo "HASH TIDAK COCOK (dapat=$got harap=$want)" >&2; return 1; }
+    return 0
+}
+
 echo -e "\e[33mMemulai proses uninstall WIBU TUNNELING...\e[0m"
 
 # Hentikan semua layanan
@@ -13,6 +29,8 @@ systemctl stop telegram-bot.service algojo-expired.service 2>/dev/null
 systemctl disable telegram-bot.service algojo-expired.service 2>/dev/null
 systemctl stop telegram-webhook.socket 2>/dev/null
 systemctl disable telegram-webhook.socket 2>/dev/null
+systemctl stop wibutunnel-firewall.service 2>/dev/null
+systemctl disable wibutunnel-firewall.service 2>/dev/null
 
 # Backup SEMUA data user sebelum dihapus. Gagal backup = batalkan uninstall.
 SAVED="/root/wibutunnel-backup-$(date +%Y%m%d-%H%M%S)"
@@ -35,7 +53,14 @@ rm -rf /usr/local/etc/xray /etc/haproxy /etc/wibutunnel /etc/xray /var/log/xray
 
 # Uninstall Xray core (dipasang setup.sh via install-release.sh)
 if command -v xray >/dev/null 2>&1; then
-    curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- remove >/dev/null 2>&1
+    # [C1] Uninstaller resmi HANYA dijalankan setelah hash cocok (tanpa verifikasi = risiko RCE).
+    XRAY_TMP="$(mktemp /tmp/xray-uninstall.XXXXXX.sh)" || XRAY_TMP=""
+    if [ -n "$XRAY_TMP" ] && curl -fSL --retry 3 --max-time 60 -o "$XRAY_TMP" "$XRAY_INSTALL_URL" \
+        && xray_verify_sha256 "$XRAY_TMP" "$XRAY_INSTALL_SHA256"; then
+        bash "$XRAY_TMP" -s -- remove >/dev/null 2>&1
+    else
+        echo -e "\e[33m[ABORT] Unduh/verifikasi instaleler Xray gagal - uninstaller resmi DILEWATI, lanjut pembersihan manual.\e[0m"
+    fi
 fi
 rm -rf /usr/local/share/xray /usr/local/bin/xray /etc/tmpfiles.d/xray.conf
 rm -f /usr/lib/systemd/system/xray.service /usr/lib/systemd/system/xray@.service
@@ -44,7 +69,13 @@ id -g xray >/dev/null 2>&1 && groupdel xray >/dev/null 2>&1
 
 # Kembalikan iptables ke kondisi bersih
 if command -v iptables >/dev/null 2>&1; then
-    iptables -F 2>/dev/null
+    # [C2] Hapus HANYA aturan owner-match milik wibutunnel (cocokkan pola),
+    # jangan flush seluruh firewall.
+    for p in 10085; do
+        while iptables -C OUTPUT ! -m owner --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null; do
+            iptables -D OUTPUT ! -m owner --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null || break
+        done
+    done
     iptables -t mangle -F 2>/dev/null
     iptables -t mangle -X 2>/dev/null
     command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1
@@ -79,15 +110,19 @@ rm -f /etc/systemd/system/telegram-webhook@.service
 rm -rf /etc/systemd/system/haproxy.service.d
 rm -rf /etc/systemd/system/xray.service.d
 rm -f /etc/systemd/system/wibutunnel-bot.service /etc/systemd/system/xray.service /etc/systemd/system/xray@.service
+rm -f /etc/systemd/system/wibutunnel-firewall.service
+rm -f /usr/local/sbin/wibutunnel-firewall.sh
 systemctl daemon-reload
 
 # Hapus logrotate
 rm -f /etc/logrotate.d/xray
 
 # Bersihkan .profile
+[ -f /root/.profile ] && [ ! -f /root/.profile.wibutunnel.bak ] && cp -a /root/.profile /root/.profile.wibutunnel.bak
 sed -i '/Auto-start menu/d; /^clear$/d; /^menu$/d' /root/.profile 2>/dev/null
 
 # Bersihkan fstab entries
+[ -f /etc/fstab ] && [ ! -f /etc/fstab.wibutunnel.bak ] && cp -a /etc/fstab /etc/fstab.wibutunnel.bak
 sed -i '/\/var\/log\/xray/d' /etc/fstab 2>/dev/null
 sed -i '/\/swapfile none swap sw 0 0/d' /etc/fstab 2>/dev/null
 sed -i '/tmpfs \/tmp tmpfs/d' /etc/fstab 2>/dev/null

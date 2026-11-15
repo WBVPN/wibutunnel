@@ -1,8 +1,15 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.0 KURUMI
+# MASTER INSTALLER WIBU TUNNELING - v4.0.6-fixed
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
+# RESIDUAL RISK (v4.0.6-fixed):
+#  * Pelanggan SSH masih mendapat shell /bin/bash. Mitigasi utama: port API Xray
+#    127.0.0.1:10085 dibatasi uid 0 via iptables owner-match + unit systemd
+#    wibutunnel-firewall.service (ditegakkan saat boot). Opt-in WIBU_SSH_NOLOGIN=1
+#    mematikan shell interaktif pelanggan (tunnel ssh -N -L tetap jalan).
+#  * Instaleler Xray dipin hash (XRAY_INSTALL_SHA256). Bypass HANYA via env
+#    WIBUTUNNEL_ALLOW_UNVERIFIED=1 (dicatat ke log + peringatan besar).
 
 # [FIX] Root check harus paling awal sebelum operasi apapun
 if [ "${EUID}" -ne 0 ]; then
@@ -92,7 +99,51 @@ fi
 
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
-GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
+# [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
+WIBU_REF="${WIBU_REF:-v4.0.6-fixed}"
+GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
+
+# [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
+# langsung = root RCE bila hulu diretas. Hash diverifikasi 2026-11-15.
+XRAY_INSTALL_URL="${XRAY_INSTALL_URL:-https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh}"
+XRAY_INSTALL_SHA256="${XRAY_INSTALL_SHA256:-a562d1287cd7bf2871023d4c81bd9031c56fa132956067ba1de126957cc5fb1c}"
+XRAY_TMP=""
+xray_tmp_cleanup() { [ -n "$XRAY_TMP" ] && rm -f "$XRAY_TMP"; return 0; }
+trap xray_tmp_cleanup EXIT
+
+xray_verify_sha256() {
+    # $1=berkas $2=hash harap. Cetak alasan ke stderr bila gagal, return 1.
+    local file="$1" want="$2" got
+    [ -s "$file" ] || { echo "instaleler kosong/tidak ada: $file" >&2; return 1; }
+    got="$(sha256sum "$file" 2>/dev/null | awk '{print $1}')"
+    [ -n "$got" ] || { echo "sha256sum gagal" >&2; return 1; }
+    [ "$got" = "$want" ] || { echo "HASH TIDAK COCOK (dapat=$got harap=$want)" >&2; return 1; }
+    return 0
+}
+
+xray_installer_run() {
+    # $1=aksi (install|remove). ABORT bila unduh/verifikasi gagal, kecuali bypass.
+    local action="${1:-install}"
+    mkdir -p /etc/wibutunnel/tmp
+    XRAY_TMP="$(mktemp /etc/wibutunnel/tmp/xray-install.XXXXXX.sh)" || {
+        echo -e "\e[1;31m[FATAL] gagal membuat berkas temporer.\e[0m"; exit 1; }
+    if ! curl -fSL --retry 3 --max-time 60 -o "$XRAY_TMP" "$XRAY_INSTALL_URL"; then
+        echo -e "\e[1;31m[FATAL] unduh instaleler Xray gagal: $XRAY_INSTALL_URL\e[0m"
+        [ "${WIBUTUNNEL_ALLOW_UNVERIFIED:-0}" = "1" ] || exit 1
+    fi
+    if ! xray_verify_sha256 "$XRAY_TMP" "$XRAY_INSTALL_SHA256"; then
+        if [ "${WIBUTUNNEL_ALLOW_UNVERIFIED:-0}" = "1" ]; then
+            echo -e "\e[1;31m[PERINGATAN BESAR] Instaleler Xray TIDAK TERVERIFIKASI - melanjutkan karena WIBUTUNNEL_ALLOW_UNVERIFIED=1\e[0m"
+            echo "$(date -Is) bypass WIBUTUNNEL_ALLOW_UNVERIFIED: $XRAY_INSTALL_URL" >> /var/log/wibutunnel-installer.log 2>/dev/null
+            logger -t wibutunnel "Xray installer UNVERIFIED bypass (hash mismatch)" 2>/dev/null
+        else
+            echo -e "\e[1;31m[FATAL] Hash instaleler Xray tidak cocok/kosong. ABORT (installer tidak dijalankan).\e[0m"
+            echo -e "\e[1;33m         Override sadar (tidak disarankan): WIBUTUNNEL_ALLOW_UNVERIFIED=1\e[0m"
+            exit 1
+        fi
+    fi
+    bash "$XRAY_TMP" -s -- "$action"
+}
 
 clear
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -115,6 +166,7 @@ sysctl -p >/dev/null 2>&1
 
 if command -v update-grub >/dev/null 2>&1 && [[ -f /etc/default/grub ]]; then
     if ! grep -q "ipv6.disable=1" /etc/default/grub; then
+        [ -f /etc/default/grub ] && [ ! -f /etc/default/grub.wibutunnel.bak ] && cp -a /etc/default/grub /etc/default/grub.wibutunnel.bak
         sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="ipv6.disable=1 /' /etc/default/grub
         update-grub >/dev/null 2>&1
     fi
@@ -175,11 +227,20 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.0 Kurumi" > /etc/wibutunnel/version
+echo "4.0.6-fixed" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
 chmod 600 /etc/wibutunnel/lock.conf
+
+# [C5 opt-in] Pelanggan SSH default dapat shell /bin/bash (common.sh:396).
+# WIBU_SSH_NOLOGIN=1 mematikan shell interaktif pelanggan: tunneling (ssh -N -L)
+# tetap jalan, tapi shell mati. Disimpan di ssh_shell.conf.
+if [[ "${WIBU_SSH_NOLOGIN:-0}" == "1" ]]; then
+    printf 'SSH_SHELL=/usr/sbin/nologin\n' > /etc/wibutunnel/ssh_shell.conf
+    chmod 600 /etc/wibutunnel/ssh_shell.conf
+    echo -e "\e[1;33m[!] WIBU_SSH_NOLOGIN=1: shell pelanggan SSH = /usr/sbin/nologin (tunneling tetap jalan).\e[0m"
+fi
 
 # Dummy users
 echo "dummy-tls:Lifetime" > /etc/xray/vless_exp.conf
@@ -190,6 +251,10 @@ echo "dummy-vmess-ntls:Lifetime" >> /etc/xray/vmess_exp.conf
 echo "dummy-vmess-grpc:Lifetime" >> /etc/xray/vmess_exp.conf
 echo "dummy-trojan-tls:Lifetime" > /etc/xray/trojan_exp.conf
 echo "dummy-trojan-grpc:Lifetime" >> /etc/xray/trojan_exp.conf
+
+# [C3] /etc/xray memuat *_exp.conf (daftar pelanggan) -> batasi akses.
+chmod 750 /etc/xray
+chmod 600 /etc/xray/*_exp.conf 2>/dev/null || true
 
 # AUTO-SWAP CERDAS
 total_ram=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
@@ -226,11 +291,19 @@ EOF
 sysctl -p >/dev/null 2>&1
 fi
 
-cat <<EOF > /etc/security/limits.conf
+# [C4] Jangan timpa /etc/security/limits.conf: backup sekali + blok berpenanda (idempoten).
+[ -f /etc/security/limits.conf ] && [ ! -f /etc/security/limits.conf.wibutunnel.bak ] && \
+    cp -a /etc/security/limits.conf /etc/security/limits.conf.wibutunnel.bak
+if grep -q '# >>> wibutunnel >>>' /etc/security/limits.conf 2>/dev/null; then
+    sed -i '/# >>> wibutunnel >>>/,/# <<< wibutunnel <<</d' /etc/security/limits.conf
+fi
+cat <<'EOF' >> /etc/security/limits.conf
+# >>> wibutunnel >>>
 root soft nofile 512000
 root hard nofile 512000
 * soft nofile 512000
 * hard nofile 512000
+# <<< wibutunnel <<<
 EOF
 
 # INSTALL PAKET (dibersihkan dari bloat nginx/python3/socat)
@@ -251,7 +324,8 @@ if ! grep -q "tmpfs /var/log/xray" /etc/fstab; then
     mkdir -p /var/log/xray
     mount /var/log/xray 2>/dev/null || true
 fi
-chmod 755 /var/log/xray
+chown xray:adm /var/log/xray 2>/dev/null || true
+chmod 750 /var/log/xray
 
 # Anti-Torrent
 # Guard idempoten: 25 rule di bawah di-append tanpa flush, jadi re-run setup.sh
@@ -286,6 +360,44 @@ iptables -I INPUT -p tcp --dport 443 -m connlimit --connlimit-above 100 -j REJEC
 iptables -I INPUT -p tcp --dport 80 -m connlimit --connlimit-above 100 -j REJECT --reject-with tcp-reset
 
 fi   # end iptables idempotency guard
+
+# [C2] MITIGASI UTAMA: API Xray 127.0.0.1:10085 tanpa auth hanya boleh diakses uid 0.
+# Akun pelanggan SSH dapat shell, jadi tanpa ini mereka bisa `xray api ...` atau
+# `ssh -L 10085:127.0.0.1:10085` untuk hapus user & lewati expiry/kuota.
+# Owner-match memblokir non-root, termasuk koneksi tunnel ssh -L (proses sshd
+# sudah turun ke uid user). Residual risk: pelanggan tetap punya shell.
+cat > /usr/local/sbin/wibutunnel-firewall.sh << 'FWEOF'
+#!/bin/bash
+# Wibu Tunneling - paksa akses root-only ke port API Xray (mitigasi utama).
+# Tambahkan port API baru ke API_PORTS bila skema berubah.
+API_PORTS="10085"
+rc=0
+for p in $API_PORTS; do
+    iptables -C OUTPUT ! -m owner --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null || \
+        iptables -I OUTPUT 1 ! -m owner --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT || rc=1
+done
+exit $rc
+FWEOF
+chmod +x /usr/local/sbin/wibutunnel-firewall.sh
+/usr/local/sbin/wibutunnel-firewall.sh || true
+
+cat > /etc/systemd/system/wibutunnel-firewall.service << 'SVCEOF'
+[Unit]
+Description=Wibu Tunneling - Re-enforce root-only Xray API firewall
+After=network.target
+Before=xray.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/wibutunnel-firewall.sh
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+systemctl daemon-reload
+systemctl enable wibutunnel-firewall.service >/dev/null 2>&1 || true
+
 iptables-save > /etc/iptables/rules.v4
 # QoS
 cat > /usr/local/sbin/network-tune.sh << 'EOF'
@@ -347,10 +459,11 @@ chmod 700 /etc/haproxy/certs
 chmod 600 /etc/haproxy/certs/*.pem
 
 # XRAY CORE
-curl -sS -L https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh | bash -s -- install
+xray_installer_run install
 # user xray baru ada setelah install-release.sh di atas
-chown -R xray:xray /var/log/xray
-echo 'd /var/log/xray 0755 xray xray -' > /etc/tmpfiles.d/xray.conf
+chown -R xray:adm /var/log/xray
+chmod 750 /var/log/xray
+echo 'd /var/log/xray 0750 xray adm -' > /etc/tmpfiles.d/xray.conf
 
 # Backup config lama
 [ -f /usr/local/etc/xray/config.json ] && cp /usr/local/etc/xray/config.json "/usr/local/etc/xray/config.json.bak.$(date +%F_%H%M%S)"
@@ -385,6 +498,7 @@ chown -R root:xray /usr/local/etc/xray
 chmod 640 /usr/local/etc/xray/config.json
 ln -sf /usr/local/etc/xray/config.json /etc/xray/config.json
 chown -R root:xray /etc/xray 2>/dev/null || true
+chmod 750 /etc/xray 2>/dev/null || true
 
 # HAProxy Config
 cat <<HFEOF > /etc/haproxy/haproxy.cfg
@@ -552,8 +666,31 @@ sed "s|/etc/haproxy/certs/${domain}\.pem|/etc/haproxy/certs/\${__DOMAIN__}.pem|"
     /etc/haproxy/haproxy.cfg > /etc/wibutunnel/templates/haproxy.cfg
 chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 
-# Bypass GitHub 429 Rate Limit menggunakan GHProxy
-GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
+# [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
+# diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
+# WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
+WIBU_REF="${WIBU_REF:-v4.0.6-fixed}"
+GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
+WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
+wibu_manifest_fetch() {
+    [[ -s "$WIBU_MANIFEST_CACHE" ]] && return 0
+    mkdir -p /etc/wibutunnel/tmp
+    if ! curl -fsSL --retry 2 --max-time 30 -o "$WIBU_MANIFEST_CACHE" "${GITHUB_RAW}/SHA256SUMS" 2>/dev/null; then
+        curl -fsSL --retry 2 --max-time 30 -o "$WIBU_MANIFEST_CACHE" \
+            "https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/SHA256SUMS" 2>/dev/null || return 1
+    fi
+    [[ -s "$WIBU_MANIFEST_CACHE" ]]
+}
+wibu_verify_file() {   # $1=berkas lokal  $2=nama di manifest (jalur repo)
+    local f="$1" name="$2" want got
+    wibu_manifest_fetch || { echo -e "\e[31m[!] Manifest SHA256SUMS (ref ${WIBU_REF}) tidak dapat diambil.\e[0m"; return 1; }
+    want="$(awk -v n="$name" '$2 == n {print $1; exit}' "$WIBU_MANIFEST_CACHE")"
+    [[ -n "$want" ]] || { echo -e "\e[31m[!] $name tidak terdaftar di SHA256SUMS.\e[0m"; return 1; }
+    got="$(sha256sum "$f" 2>/dev/null | awk '{print $1}')"
+    [[ "$got" == "$want" ]] || { echo -e "\e[31m[!] HASH TIDAK COCOK: $name\e[0m"
+                                 echo -e "\e[31m    harap=$want\n    dapat=$got\e[0m"; return 1; }
+    return 0
+}
 
 # [FIX] Download Menu - $RANDOM tanpa backslash agar benar-benar cache-bust
 download_menu() {
@@ -568,7 +705,7 @@ download_menu() {
     # Retry with mirror if rate limited
     if [[ "$http_code" == "429" ]]; then
         echo -e "\e[31m[!] Terkena Rate Limit GitHub saat mengunduh $2. Mencoba mirror lain...\e[0m"
-        url="https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@main/$1"
+        url="https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/$1"
         http_code=$(curl -sS -L -w '%{http_code}' -o "$tmp_file" "$url")
     fi
     
@@ -593,6 +730,19 @@ download_menu() {
         return 1
     fi
     
+    # [FIX-K1] Verifikasi hash terhadap SHA256SUMS ref terpin (fail-closed)
+    if ! wibu_verify_file "$tmp_file" "$1"; then
+        if [[ "${WIBUTUNNEL_ALLOW_UNVERIFIED:-0}" == "1" ]]; then
+            echo -e "\e[1;31m[PERINGATAN BESAR] $2 TIDAK TERVERIFIKASI — lanjut karena WIBUTUNNEL_ALLOW_UNVERIFIED=1\e[0m"
+            echo "$(date -Is) bypass unverified: $1" >> /var/log/wibutunnel-installer.log 2>/dev/null
+        else
+            echo -e "\e[31m[!] $2 DITOLAK: hash tidak cocok/berkas tak terdaftar. Instalasi dihentikan.\e[0m"
+            echo -e "\e[33m    Ref: ${WIBU_REF}. Override sadar (tidak disarankan): WIBU_REF=main WIBUTUNNEL_ALLOW_UNVERIFIED=1\e[0m"
+            rm -f "$tmp_file"
+            return 1
+        fi
+    fi
+
     # Validate shebang and syntax
     local shebang=$(head -n 1 "$tmp_file")
     if [[ "$shebang" =~ ^#!.*(bash|sh) ]]; then
@@ -836,8 +986,8 @@ systemctl restart algojo-expired.service >/dev/null 2>&1
 # Logrotate & Cron
 cat << 'LREOF' > /etc/logrotate.d/xray
 /var/log/xray/*.log {
-    su xray xray
-    create 0644 xray xray
+    su xray adm
+    create 0640 xray adm
     daily
     rotate 3
     size 10M
