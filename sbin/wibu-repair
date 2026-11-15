@@ -144,9 +144,24 @@ chown -R xray:xray /var/log/xray 2>/dev/null || true
 echo -ne " [5/8] Memeriksa Dropbear SSH & Host Keys... "
 mkdir -p /etc/dropbear /etc/wibutunnel
 groupadd -f ssh_tunnel
-[[ -s /etc/dropbear/dropbear_rsa_host_key ]] || dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key >/dev/null 2>&1 || true
-[[ -s /etc/dropbear/dropbear_ed25519_host_key ]] || dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1 || true
-[[ -s /etc/dropbear/dropbear_ecdsa_host_key ]] || dropbearkey -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key >/dev/null 2>&1 || true
+# [FIX] Tiap tipe host key dibuat lalu DIVERIFIKASI. Versi lama memakai `|| true`
+# tanpa memeriksa hasil, sehingga di Dropbear yang tidak mendukung ed25519
+# (mis. Ubuntu 20.04 / dropbear 2020.81) kegagalan ini lewat tanpa jejak.
+for _t in ed25519 ecdsa rsa; do
+    _k="/etc/dropbear/dropbear_${_t}_host_key"
+    [[ -s "$_k" ]] && continue
+    if dropbearkey -t "$_t" -f "$_k" >/dev/null 2>&1 && [[ -s "$_k" ]]; then
+        chmod 600 "$_k" 2>/dev/null
+    else
+        rm -f "$_k" 2>/dev/null
+        echo -n "[host key $_t tidak didukung dropbear ini - dilewati] "
+    fi
+done
+# Minimal satu host key harus ada, kalau tidak dropbear gagal start.
+if [[ ! -s /etc/dropbear/dropbear_rsa_host_key && ! -s /etc/dropbear/dropbear_ecdsa_host_key && ! -s /etc/dropbear/dropbear_ed25519_host_key ]]; then
+    echo -n "[PERINGATAN: tidak ada host key dropbear!] "
+    (umask 077; dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key >/dev/null 2>&1) || true
+fi
 
 if [[ ! -s /etc/default/dropbear ]] || ! grep -q "DROPBEAR_PORT" /etc/default/dropbear 2>/dev/null; then
 cat << 'EOF' > /etc/default/dropbear
