@@ -189,6 +189,15 @@ case $sub_setting in
             systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon telegram-bot network-tune cron 2>/dev/null || true
             echo -e "${GREEN}Semua service berhasil direstart!${NC}"
         fi
+        # [ADD] Pemeriksa akun tanpa catatan exp: klien di config tanpa baris exp
+        # TIDAK akan pernah kedaluwarsa (VPN gratis). Laporan saja di sini.
+        if [[ -x /usr/local/sbin/wibu-audit-akun ]]; then
+            AOUT=$(/usr/local/sbin/wibu-audit-akun 2>/dev/null | grep -E 'AKUN TANPA EXP|SISA DATA' || true)
+            if [[ -n "$AOUT" ]]; then
+                echo -e "${YELLOW}${AOUT}${NC}"
+                echo -e "${YELLOW}   Perbaiki dengan: wibu-audit-akun --fix${NC}"
+            fi
+        fi
         echo ""
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
@@ -342,6 +351,7 @@ case $sub_setting in
         safe_update "sbin/wibu-repair"
         safe_update "sbin/wibutunnel-firewall.sh"
         safe_update "sbin/network-tune.sh"
+        safe_update "sbin/wibu-audit-akun"
         
         safe_update "common.sh"
         

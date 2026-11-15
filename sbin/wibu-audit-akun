@@ -1,0 +1,127 @@
+#!/bin/bash
+# ==========================================================================
+# wibu-audit-akun - audit akun Xray vs catatan masa aktif.
+#
+# MASALAH YANG DICARI: klien yang ada di config Xray TAPI tidak punya baris di
+# /etc/xray/*_exp.conf. Daemon expiry hanya memproses nama yang ada di berkas itu,
+# jadi akun seperti ini TIDAK PERNAH kedaluwarsa = VPN gratis selamanya.
+# Sumbernya biasanya: skrip tes/pihak ketiga menambah klien langsung ke config.
+#
+# PEMAKAIAN:
+#   wibu-audit-akun          # laporan saja (read-only, aman dijalankan kapan pun)
+#   wibu-audit-akun --fix    # karantina akun tanpa exp lewat mesin recovery yang ada
+#
+# CARA --fix BEKERJA (tidak menghapus apa pun secara langsung):
+#   baris `<user>:<kemarin>` ditulis ke berkas exp protokol yang sesuai, sehingga
+#   algojo-expired akan memindahkannya ke /etc/wibutunnel/recovery/ pada putaran
+#   berikutnya - jalur yang sama dengan akun kedaluwarsa biasa (admin bisa restore
+#   lewat menu-recovery). Sisa data tanpa klien dibersihkan memakai safe_sed_delete.
+# ==========================================================================
+set -u
+FIX=0
+case "${1:-}" in
+    --fix) FIX=1 ;;
+    --report|-r|"") FIX=0 ;;
+    *) echo "Pakai: $(basename "$0") [--report|--fix]"; exit 2 ;;
+esac
+
+source /usr/local/bin/common.sh 2>/dev/null || source "$(dirname "$0")/../common.sh" 2>/dev/null || true
+CFG="${XRAY_CONFIG:-/usr/local/etc/xray/config.json}"
+[[ -s "$CFG" ]] || { echo "[!] config Xray tidak ditemukan: $CFG"; exit 1; }
+
+EXP_DIR="/etc/xray"
+DB_DIR="/etc/wibutunnel"
+WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+
+jq -r '.inbounds[] | (.tag // "") as $t | (.settings.clients // [])[]? | select(.email != null and .email != "") | "\(.email)\t\($t)"' \
+    "$CFG" 2>/dev/null | sort -u > "$WORK/clients_all"
+grep -v '^dummy' "$WORK/clients_all" > "$WORK/clients" 2>/dev/null || true
+
+exp_names() {  # $1=protokol -> nama yang punya catatan exp
+    awk -F: 'NF>=2 && $1 != "" {print $1}' "$EXP_DIR/$1_exp.conf" 2>/dev/null
+}
+
+orphans=0; ghosts=0; ghosts_ssh=0
+report_orphan=""; report_ghost=""
+
+# ---------- 1) ORPHAN: klien ada, catatan exp tidak ada ----------
+for proto in vless vmess trojan; do
+    exp_names "$proto" | sort -u > "$WORK/exp_$proto"
+    while IFS=$'\t' read -r name tag; do
+        [[ -z "$name" ]] && continue
+        case "${tag,,}" in *"$proto"*) ;; *) continue ;; esac   # hanya inbound protokol ini
+        if ! grep -qx "$name" "$WORK/exp_$proto"; then
+            orphans=$((orphans + 1))
+            report_orphan+="  - $name ($proto, tag: ${tag:-tanpa-tag})"$'\n'
+            if [[ $FIX -eq 1 ]]; then
+                printf '%s:%s\n' "$name" "$(date -d yesterday +%F)" >> "$EXP_DIR/${proto}_exp.conf"
+                echo "[fix] $name: catatan exp ditulis (kemarin) -> algojo-expired akan mengarantina"
+            fi
+        fi
+    done < "$WORK/clients"
+done
+
+# ---------- 2) GHOST Xray: catatan exp ada, klien tidak ada ----------
+for proto in vless vmess trojan; do
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        [[ "$name" == dummy* ]] && continue
+        # hanya anggap ghost bila memang tidak ada di protokol ini
+        if ! awk -v n="$name" -v p="$proto" 'BEGIN{FS="\t"} $1==n && tolower($2) ~ p {found=1} END{exit !found}' "$WORK/clients"; then
+            ghosts=$((ghosts + 1))
+            report_ghost+="  - $name ($proto): catatan exp tanpa klien"$'\n'
+            if [[ $FIX -eq 1 ]]; then
+                safe_sed_delete "$name" "$EXP_DIR/${proto}_exp.conf" 2>/dev/null || true
+                safe_sed_delete "$name" "$DB_DIR/limit_ip.db" 2>/dev/null || true
+                safe_sed_delete "$name" "$DB_DIR/limit_bw.db" 2>/dev/null || true
+                safe_sed_delete "$name" "$DB_DIR/locked_users.db" 2>/dev/null || true
+                safe_sed_delete "$name" "$DB_DIR/user_usage.db" 2>/dev/null || true
+                echo "[fix] $name: sisa catatan ($proto) dibersihkan"
+            fi
+        fi
+    done < <(exp_names "$proto" | sort -u)
+done
+
+# ---------- 3) GHOST SSH: catatan ssh_exp ada, user sistem tidak ada ----------
+while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+    if ! id "$name" >/dev/null 2>&1; then
+        ghosts_ssh=$((ghosts_ssh + 1))
+        report_ghost+="  - $name (ssh): catatan exp tanpa user sistem"$'\n'
+        if [[ $FIX -eq 1 ]]; then
+            safe_sed_delete "$name" "$EXP_DIR/ssh_exp.conf" 2>/dev/null || true
+            safe_sed_delete "$name" "$DB_DIR/ssh_pass.db" 2>/dev/null || true
+            safe_sed_delete "$name" "$DB_DIR/limit_ip.db" 2>/dev/null || true
+            safe_sed_delete "$name" "$DB_DIR/limit_bw.db" 2>/dev/null || true
+            echo "[fix] $name: sisa catatan ssh dibersihkan"
+        fi
+    fi
+done < <(exp_names ssh | sort -u)
+
+# ---------- Laporan ----------
+echo "=================================================="
+echo " AUDIT AKUN - $(date '+%Y-%m-%d %H:%M:%S')"
+echo "=================================================="
+echo " Klien aktif di config : $(wc -l < "$WORK/clients" | tr -d ' ')"
+echo " Punya catatan exp     : $(cat "${EXP_DIR}"/*_exp.conf 2>/dev/null | awk -F: '$1!="" && $1 !~ /^dummy/ {print $1}' | sort -u | wc -l | tr -d ' ')"
+echo "--------------------------------------------------"
+if [[ $orphans -gt 0 ]]; then
+    echo " ⚠ AKUN TANPA EXP ($orphans) - tidak akan pernah kedaluwarsa:"
+    printf '%s' "$report_orphan"
+    if [[ $FIX -eq 0 ]]; then
+        echo "   -> jalankan: $(basename "$0") --fix"
+    fi
+else
+    echo " ✅ Tidak ada akun tanpa exp."
+fi
+if [[ $ghosts -gt 0 || $ghosts_ssh -gt 0 ]]; then
+    echo " ℹ SISA DATA tanpa akun ($((ghosts + ghosts_ssh))):"
+    printf '%s' "$report_ghost"
+    [[ $FIX -eq 0 ]] && echo "   -> jalankan --fix untuk membersihkan"
+else
+    echo " ✅ Tidak ada sisa data."
+fi
+echo "=================================================="
+[[ $orphans -eq 0 && $ghosts -eq 0 && $ghosts_ssh -eq 0 ]] && exit 0
+[[ $FIX -eq 1 ]] && exit 0
+exit 1   # laporan menemukan masalah (cocok untuk cron/monitoring)

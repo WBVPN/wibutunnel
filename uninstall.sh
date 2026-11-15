@@ -85,7 +85,7 @@ systemctl disable netfilter-persistent >/dev/null 2>&1
 # Hapus file executable menu & daemon
 rm -f /usr/local/sbin/algojo-wibu /usr/local/sbin/algojo-kuota /usr/local/sbin/unlocker-wibu /usr/local/sbin/algojo-expired /usr/local/sbin/algojo-expired-daemon
 rm -f /usr/local/bin/algojo-expired-daemon
-rm -f /usr/local/sbin/network-tune /usr/local/sbin/network-tune.sh /usr/local/bin/network-tune /usr/local/bin/network-tune.sh /usr/local/sbin/wibu-repair
+rm -f /usr/local/sbin/network-tune /usr/local/sbin/network-tune.sh /usr/local/bin/network-tune /usr/local/bin/network-tune.sh /usr/local/sbin/wibu-repair /usr/local/sbin/wibu-audit-akun /usr/local/bin/wibu-audit-akun
 rm -f /usr/local/bin/menu /usr/local/bin/m-vless /usr/local/bin/m-vmess /usr/local/bin/m-trojan /usr/local/bin/m-ssh
 rm -f /usr/local/bin/m-setting /usr/local/bin/m-backup /usr/local/bin/menu-lock /usr/local/bin/menu-unlock
 rm -f /usr/local/bin/menu-recovery /usr/local/bin/cek-trafik /usr/local/bin/xp
