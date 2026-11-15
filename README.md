@@ -25,13 +25,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 | Lisensi | IP VPS terdaftar di `izin.txt` ([@wibuvpn](https://t.me/wibuvpn)) |
 
 <details>
-<summary>🔧 Alternatif & cara manual</summary>
-
-**Domain pendek** (kalau malas mengetik / dibagikan ke pelanggan):
-
-```bash
-curl -4 -fsSL https://wibu.loli.web.id/i | bash
-```
+<summary>🔧 Cara manual (unduh → verifikasi → pasang)</summary>
 
 **Tanpa perantara sama sekali** (unduh → verifikasi → pasang):
 
@@ -201,7 +195,7 @@ wibu-audit-akun    # akun tanpa masa aktif (--fix = karantina)
 ```
 
 ```bash
-curl -4 -fsSL https://wibu.loli.web.id/u | bash     # cadangan otomatis ke /root/wibutunnel-backup-*/
+curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-backup-*/
 ```
 
 ---
@@ -230,7 +224,7 @@ curl -4 -fsSL https://wibu.loli.web.id/u | bash     # cadangan otomatis ke /root
 - Cek harness baru: `-4` hanya boleh jadi argumen pertama `curl`/`wget`/`ip`.
 
 ### v4.0.8 (2026-11-15)
-- **Instalasi 1 baris:** `curl -4 -fsSL https://wibu.loli.web.id/i | bash` (bootstrap verifikasi hash dulu) + `install.sh`
+- **Instalasi 1 baris** dari aset Release GitHub (`install.sh` verifikasi hash dulu)
 - **Update menu mengikuti rilis terbaru** (bukan tag beku) supaya perbaikan setelah rilis tetap sampai ke VPS
 - **Audit akun** menampilkan jumlah catatan `dummy-*` bawaan installer (dulu senyap)
 - Cek hash README diperkuat: jalur absolut + menolak placeholder hash yang tersisa (sebelumnya bisa lolos palsu)
