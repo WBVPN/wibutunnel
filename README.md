@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.15
+# 🦋 WIBUTUNNEL v4.1.16
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.15-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.16-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: dc522b6f48d837a38122d08dbeaadf338ebb8a69f0c8640fd17b0a663517f639
+sha256sum setup.sh     # harap: ff51b9de2452bfedb4cd17f40a602407ce7e68713b03b87e1481f38b184e2af5
 bash setup.sh
 ```
 
@@ -202,6 +202,18 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.16 (2026-11-15)
+Dua masalah Ubuntu 24.04, keduanya bisa menggagalkan instalasi total:
+
+- **`/tmp` = tmpfs `noexec`.** Ubuntu 24.04 memasang `/tmp` sebagai tmpfs tanpa izin eksekusi. Installer resmi
+  Xray menjalankan biner pemeriksa versi dari `/tmp` -> `error: Local Xray binary cannot run`. Installer kini
+  mengarahkan `TMPDIR` ke `/usr/local/src` sebelum memanggil installer resmi.
+- **Installer resmi Xray butuh kuota API GitHub** (`Failed to get release list`, HTTP **403** saat kuota
+  anonim 60/jam habis - mudah terjadi karena verifikasi berkas juga memakai API). Kini ada **jalur cadangan**:
+  unduh langsung `Xray-linux-64.zip` dari aset rilis versi terpin (**tanpa API**), verifikasi **hash biner**,
+  pasang biner + geodata + user + unit systemd sendiri. Bila jalur utama gagal, instalasi **tidak berhenti**.
+- Rantai unduhan berkas juga berhenti memakai API setelah menerima 403/429.
 
 ### v4.1.15 (2026-11-15)
 - **Regex awk portabel (penyebab instalasi setengah jadi di Debian 11).** Validasi manifest memakai

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.15
+# MASTER INSTALLER WIBU TUNNELING - v4.1.16
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -134,13 +134,17 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.15}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.16}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
 # langsung = root RCE bila hulu diretas. Hash diverifikasi 2026-11-15.
 XRAY_INSTALL_URL="${XRAY_INSTALL_URL:-https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh}"
 XRAY_INSTALL_SHA256="${XRAY_INSTALL_SHA256:-a562d1287cd7bf2871023d4c81bd9031c56fa132956067ba1de126957cc5fb1c}"
+# [FIX] Jalur CADANGAN Xray: dipakai bila installer resmi gagal (mis. kuota API GitHub anonim 60/jam
+# habis -> "Failed to get release list" 403). Unduhan langsung dari aset rilis = TIDAK memakai API.
+XRAY_VER="${XRAY_VER:-v26.11.9}"
+XRAY_BIN_SHA256="${XRAY_BIN_SHA256:-e87bce586acdb9136aa5b1f1d9c8db9f1ea1d145b6d86368c7f6f662f9f6a66d}"
 XRAY_TMP=""
 xray_tmp_cleanup() { [ -n "$XRAY_TMP" ] && rm -f "$XRAY_TMP"; return 0; }
 trap xray_tmp_cleanup EXIT
@@ -177,6 +181,70 @@ xray_installer_run() {
         fi
     fi
     bash "$XRAY_TMP" "$action"   # [FIX] bentuk berkas: aksi jadi $1 (bukan "-s --" yang untuk pipa)
+}
+
+xray_pasang_cadangan() {
+    # [FIX-PORTABILITAS] Pasang Xray tanpa API GitHub, dan TIDAK memakai /tmp untuk menjalankan biner
+    # (Ubuntu 24.04: /tmp = tmpfs noexec -> installer resmi gagal "Local Xray binary cannot run").
+    # Biner diverifikasi hash-nya terhadap versi terpin.
+    local tmp="/usr/local/src/wibu-xray.$$" zip="Xray-linux-64.zip" got
+    rm -rf "$tmp"; mkdir -p "$tmp" || return 1
+    echo -e "\e[1;33m[!] Installer resmi Xray gagal -> jalur cadangan (tanpa API GitHub), versi $XRAY_VER...\e[0m"
+    if ! curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 180 -o "$tmp/$zip" \
+         "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/${zip}"; then
+        echo -e "\e[1;31m[!] Unduh arsip Xray gagal.\e[0m"; rm -rf "$tmp"; return 1
+    fi
+    command -v unzip >/dev/null 2>&1 || {
+        DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true install -y \
+            -o Dpkg::Options::=--force-confold unzip >/dev/null 2>&1 || true; }
+    ( cd "$tmp" && unzip -o -q "$zip" ) || { echo -e "\e[1;31m[!] Ekstraksi arsip Xray gagal.\e[0m"; rm -rf "$tmp"; return 1; }
+    got="$(sha256sum "$tmp/xray" 2>/dev/null | awk '{print $1}')"
+    if [ "$got" != "$XRAY_BIN_SHA256" ]; then
+        echo -e "\e[1;31m[!] Hash biner Xray tidak cocok (dapat=$got). Batal.\e[0m"
+        rm -rf "$tmp"; return 1
+    fi
+    install -m 755 -o root -g root "$tmp/xray" /usr/local/bin/xray || { rm -rf "$tmp"; return 1; }
+    mkdir -p /usr/local/share/xray
+    [ -f "$tmp/geoip.dat" ]   && install -m 644 "$tmp/geoip.dat"   /usr/local/share/xray/geoip.dat
+    [ -f "$tmp/geosite.dat" ] && install -m 644 "$tmp/geosite.dat" /usr/local/share/xray/geosite.dat
+    mkdir -p /var/empty
+    if ! id xray >/dev/null 2>&1; then
+        useradd -r -s /usr/sbin/nologin -d /var/empty xray 2>/dev/null || \
+        adduser --system --no-create-home --shell /usr/sbin/nologin xray 2>/dev/null || true
+    fi
+    chown -R xray:xray /usr/local/share/xray 2>/dev/null || true
+    cat > /etc/systemd/system/xray.service <<'XRSVCEOF'
+[Unit]
+Description=Xray Service
+Documentation=https://xtls.github.io/
+After=network.target nss-lookup.target
+
+[Service]
+User=xray
+Group=xray
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+NoNewPrivileges=yes
+UMask=0077
+ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
+Restart=on-failure
+RestartPreventExitStatus=23
+LimitNPROC=10000
+LimitNOFILE=1000000
+RuntimeDirectory=xray
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
+XRSVCEOF
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable xray >/dev/null 2>&1 || true
+    rm -rf "$tmp"
+    if command -v xray >/dev/null 2>&1 && xray version >/dev/null 2>&1; then
+        echo -e "\e[1;32m[+] Xray $XRAY_VER terpasang lewat jalur cadangan (hash terverifikasi).\e[0m"
+        return 0
+    fi
+    return 1
 }
 
 clear
@@ -306,7 +374,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.15" > /etc/wibutunnel/version
+echo "4.1.16" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -722,8 +790,16 @@ chmod 700 /etc/haproxy/certs
 chmod 600 /etc/haproxy/certs/*.pem
 
 # XRAY CORE
+# [FIX-PORTABILITAS] TMPDIR: di Ubuntu 24.04 /tmp = tmpfs noexec, sehingga biner yang dijalankan dari
+# sana gagal ("cannot run"). Arahkan ke direktori biasa sebelum installer resmi berjalan.
+mkdir -p /usr/local/src 2>/dev/null || true
+export TMPDIR=/usr/local/src
 xray_installer_run install
-# [FIX] gagal dini dengan pesan jelas bila Xray tidak terpasang
+# [FIX] Bila installer resmi gagal (mis. 403 kuota API GitHub), coba jalur cadangan tanpa API.
+if ! command -v xray >/dev/null 2>&1 || ! id xray >/dev/null 2>&1; then
+    xray_pasang_cadangan || true
+fi
+# gagal dini dengan pesan jelas bila Xray tetap tidak terpasang
 if ! command -v xray >/dev/null 2>&1 || ! id xray >/dev/null 2>&1; then
     echo -e "\\e[1;31m[FATAL] Xray gagal terpasang (binary/user 'xray' tidak ada).\\e[0m"
     echo -e "\\e[33m        Cek koneksi ke github.com/XTLS atau jalankan ulang; instalasi DIHENTIKAN sebelum merusak konfigurasi.\\e[0m"
@@ -973,7 +1049,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.15}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.16}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 # [FIX-CACHE] Cache manifest HARUS per-ref: cache tetap membuat rilis berikutnya memverifikasi
 # berkas baru terhadap manifest LAMA (gejala: "hash tidak cocok" untuk berkas yang baru diubah,
@@ -1025,6 +1101,7 @@ download_menu() {
     # API GitHub = sumber otoritatif tanpa CDN; dipakai sebagai cadangan (jatah API hanya terpakai
     # kalau hash memang tidak cocok). [FIX-IPv6] semua unduhan dipaksa IPv4.
     for src in raw api jsdelivr raw2; do
+        [[ "$src" == "api" && "${WIBU_API_MATI:-0}" == "1" ]] && continue
         case "$src" in
             raw)      url="${GITHUB_RAW}/$1?v=$RANDOM" ;;
             api)      url="https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/$1?ref=${WIBU_REF}" ;;
@@ -1041,6 +1118,11 @@ download_menu() {
             [[ "$http_code" == "200" ]] && break
             [[ "$try" == "3" ]] || sleep 5
         done
+        # [FIX] 403/429 = kuota API anonim habis: jangan buang waktu mencoba API untuk berkas berikutnya.
+        if [[ "$src" == "api" && ( "$http_code" == "403" || "$http_code" == "429" ) ]]; then
+            WIBU_API_MATI=1
+            echo -e "\e[33m[!] API GitHub membalas $http_code (kuota habis) - sisa berkas memakai raw/jsdelivr.\e[0m"
+        fi
         [[ "$http_code" == "200" && -s "$tmp_file" ]] || continue
         if wibu_verify_file "$tmp_file" "$1"; then ok=1; break; fi
         echo -e "\e[33m[!] $2 dari sumber ${src}: hash tidak cocok (CDN kemungkinan masih basi) - coba sumber lain...\e[0m"
@@ -1473,7 +1555,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.15" > /etc/wibutunnel/version
+echo "4.1.16" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
