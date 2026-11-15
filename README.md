@@ -31,6 +31,12 @@ Hash tidak cocok = berhenti sebelum memasang apa pun. `WIBU_BOOTSTRAP_ONLY=1` un
 | Akses | root |
 | Lisensi | IP VPS terdaftar di `izin.txt` ([@wibuvpn](https://t.me/wibuvpn)) |
 
+**Murni GitHub (tanpa link pendek)** — sama-sama satu baris, aset dari Release resmi:
+
+```bash
+curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash
+```
+
 <details>
 <summary>🔐 Cara manual (unduh → verifikasi → pasang) — atau kalau link pendek mati</summary>
 
