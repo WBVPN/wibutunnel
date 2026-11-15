@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.12
+# MASTER INSTALLER WIBU TUNNELING - v4.1.13
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -134,7 +134,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.12}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.13}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -210,6 +210,25 @@ echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
 # DOMAIN INPUT
 domain="${1:-${DOMAIN}}"
 _domain_try=0
+# [FIX-PORTABILITAS] Resolver A tanpa ketergantungan paket: dig -> host -> nslookup -> getent.
+# `getent` (bagian glibc) selalu ada, sehingga validasi domain tetap jalan di image minimal.
+wibu_resolve_a() {
+    local d="$1" ip=""
+    if command -v dig >/dev/null 2>&1; then
+        ip="$(dig -4 +short A "$d" 2>/dev/null | awk '/^[0-9]+\./{print $1; exit}')"
+    fi
+    if [ -z "$ip" ] && command -v host >/dev/null 2>&1; then
+        ip="$(host -t A "$d" 2>/dev/null | awk '/has address/{print $NF; exit}')"
+    fi
+    if [ -z "$ip" ] && command -v nslookup >/dev/null 2>&1; then
+        ip="$(nslookup "$d" 2>/dev/null | awk '/^Address: /{print $2; exit}')"
+    fi
+    if [ -z "$ip" ]; then
+        ip="$(getent ahostsv4 "$d" 2>/dev/null | awk '{print $1; exit}')"
+    fi
+    printf '%s' "$ip"
+}
+
 while true; do
     if [[ -z "$domain" ]]; then
         # [FIX] tanpa penjaga ini, input habis (EOF) = loop tanpa henti (1,4 juta baris log / 2 menit)
@@ -223,12 +242,17 @@ while true; do
                                 continue; }
     fi
 
+    # [FIX-PORTABILITAS] Validasi domain TIDAK boleh bergantung pada `dig`.
+    # Debian 11 minimal tidak menyertakan dig; percobaan memasangnya di sini pun bisa gagal
+    # (apt tanpa pemaksaan IPv4, tepat setelah IPv6 dimatikan) -> domain yang BENAR ditolak
+    # ("Domain tidak valid!") lalu instalasi berhenti karena tidak ada TTY. Terbukti di lapangan.
     if ! command -v dig >/dev/null 2>&1; then
-        apt-get update -y >/dev/null 2>&1
-        apt-get install -y dnsutils >/dev/null 2>&1
+        apt-get -o Acquire::ForceIPv4=true update -y >/dev/null 2>&1 || true
+        DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::ForceIPv4=true install -y \
+            -o Dpkg::Options::=--force-confold dnsutils >/dev/null 2>&1 || true
     fi
 
-    IP_DOMAIN=$(dig +short "$domain" | head -n 1)
+    IP_DOMAIN="$(wibu_resolve_a "$domain")"
 
     if [[ -z "$IP_DOMAIN" ]]; then
         echo -e "\e[1;31m[!] Domain tidak valid!\e[0m"
@@ -282,7 +306,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.12" > /etc/wibutunnel/version
+echo "4.1.13" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -928,7 +952,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.12}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.13}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 # [FIX-CACHE] Cache manifest HARUS per-ref: cache tetap membuat rilis berikutnya memverifikasi
 # berkas baru terhadap manifest LAMA (gejala: "hash tidak cocok" untuk berkas yang baru diubah,
@@ -1428,7 +1452,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.12" > /etc/wibutunnel/version
+echo "4.1.13" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

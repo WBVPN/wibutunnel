@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.12
+# 🦋 WIBUTUNNEL v4.1.13
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.12-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.13-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 85d855b5e05bd288b61c1ba2d2c80c1ae9b253085180f46842e533b5520a2655
+sha256sum setup.sh     # harap: 799f20a00141e220f784fa9d5e68259d5ba53812a9d40231af817536676e57d4
 bash setup.sh
 ```
 
@@ -202,6 +202,15 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.13 (2026-11-15)
+- **Debian 11 bisa dipasang (temuan lapangan).** Image minimal bullseye **tidak punya `dig`**; validasi
+  domain bergantung padanya, dan percobaan memasang `dnsutils` di tahap itu bisa gagal (apt tanpa pemaksaan
+  IPv4, tepat sesudah IPv6 dimatikan). Akibatnya domain yang BENAR ditolak:
+  `dig: command not found` -> `[!] Domain tidak valid!` -> `[!] Input berakhir (EOF)` -> instalasi berhenti
+  sebelum apa pun terpasang.
+  Sekarang resolver memakai rantai tanpa ketergantungan paket: **dig -> host -> nslookup -> `getent ahostsv4`**
+  (getent selalu ada karena bagian glibc), dan pemasangan `dnsutils` dibuat best-effort dengan pemaksaan IPv4.
 
 ### v4.1.12 (2026-11-15)
 - **Cache manifest per ref + divalidasi.** Cache `wibu-manifest` (satu berkas, tanpa nama ref) membuat
