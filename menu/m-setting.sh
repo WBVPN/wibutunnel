@@ -45,7 +45,7 @@ safe_update() {
     local manifest_file="/etc/wibutunnel/tmp/SHA256SUMS.$$"
     
     # B2: unduh dengan curl -f (gagal pada HTTP 4xx/5xx) — fail-closed
-    if ! curl -fSL --retry 3 --max-time 60 -o "$tmp_file" "$raw_url" 2>/dev/null || [[ ! -s "$tmp_file" ]]; then
+    if ! curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 60 -o "$tmp_file" "$raw_url" 2>/dev/null || [[ ! -s "$tmp_file" ]]; then
         echo -e "${RED}× Gagal mengunduh ${base_name} (HTTP error / berkas kosong). Tidak ada yang diubah.${NC}"
         rm -f "$tmp_file"
         return 1
@@ -57,7 +57,7 @@ safe_update() {
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] UNVERIFIED UPDATE (bypass): ${repo_path}" >> /etc/wibutunnel/tmp/bot_error.log
     else
         local expected actual
-        if ! curl -fSL --retry 3 --max-time 30 -o "$manifest_file" "${raw_base}/SHA256SUMS" 2>/dev/null || [[ ! -s "$manifest_file" ]]; then
+        if ! curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 40 -o "$manifest_file" "${raw_base}/SHA256SUMS" 2>/dev/null || [[ ! -s "$manifest_file" ]]; then
             echo -e "${RED}× Manifest SHA256SUMS tidak dapat diunduh. Update DITOLAK (fail-closed).${NC}"
             rm -f "$tmp_file" "$manifest_file"
             return 1

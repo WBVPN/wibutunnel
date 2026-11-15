@@ -28,14 +28,14 @@ command -v curl >/dev/null 2>&1 || { apt-get update -y >/dev/null 2>&1 && apt-ge
 
 # [FIX Bug #1] Deteksi IP publik dengan validasi dan retry
 echo -e "\e[1;36m[+] Mendeteksi IP publik...\e[0m"
-MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com)
+MYIP=$(curl -4 -sS --max-time 8 ipv4.icanhazip.com)
 if [[ -z "$MYIP" ]]; then
     echo -e "\e[1;33m[WARN] Mencoba service alternatif...\e[0m"
-    MYIP=$(curl -sS --max-time 5 ifconfig.me)
+    MYIP=$(curl -4 -sS --max-time 8 ifconfig.me)
 fi
 if [[ -z "$MYIP" ]]; then
     echo -e "\e[1;33m[WARN] Mencoba service alternatif kedua...\e[0m"
-    MYIP=$(curl -sS --max-time 5 api.ipify.org)
+    MYIP=$(curl -4 -sS --max-time 8 api.ipify.org)
 fi
 if [[ -z "$MYIP" ]]; then
     clear
@@ -55,7 +55,7 @@ LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
 if [[ -f "./izin.txt" ]] && grep -w "$MYIP" "./izin.txt" >/dev/null 2>&1; then
     GET_DATA=$(grep -w "$MYIP" "./izin.txt")
 else
-    GET_DATA=$(curl -sS --max-time 10 $LINK_IZIN | grep -w "$MYIP")
+    GET_DATA=$(curl -4 -sS --max-time 20 --connect-timeout 10 $LINK_IZIN | grep -w "$MYIP")
 fi
 
 CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
@@ -127,7 +127,7 @@ xray_installer_run() {
     mkdir -p /etc/wibutunnel/tmp
     XRAY_TMP="$(mktemp /etc/wibutunnel/tmp/xray-install.XXXXXX.sh)" || {
         echo -e "\e[1;31m[FATAL] gagal membuat berkas temporer.\e[0m"; exit 1; }
-    if ! curl -fSL --retry 3 --max-time 60 -o "$XRAY_TMP" "$XRAY_INSTALL_URL"; then
+    if ! curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 90 -o "$XRAY_TMP" "$XRAY_INSTALL_URL"; then
         echo -e "\e[1;31m[FATAL] unduh instaleler Xray gagal: $XRAY_INSTALL_URL\e[0m"
         [ "${WIBUTUNNEL_ALLOW_UNVERIFIED:-0}" = "1" ] || exit 1
     fi
@@ -685,8 +685,8 @@ WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
     [[ -s "$WIBU_MANIFEST_CACHE" ]] && return 0
     mkdir -p /etc/wibutunnel/tmp
-    if ! curl -fsSL --retry 2 --max-time 30 -o "$WIBU_MANIFEST_CACHE" "${GITHUB_RAW}/SHA256SUMS" 2>/dev/null; then
-        curl -fsSL --retry 2 --max-time 30 -o "$WIBU_MANIFEST_CACHE" \
+    if ! curl -4 -fsSL --retry 3 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" "${GITHUB_RAW}/SHA256SUMS" 2>/dev/null; then
+        curl -4 -fsSL --retry 3 --connect-timeout 10 --max-time 40 -o "$WIBU_MANIFEST_CACHE" \
             "https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/SHA256SUMS" 2>/dev/null || return 1
     fi
     [[ -s "$WIBU_MANIFEST_CACHE" ]]
@@ -710,13 +710,14 @@ download_menu() {
     local http_code
     
     # Download with HTTP status code
-    http_code=$(curl -sS -L -w '%{http_code}' -o "$tmp_file" "$url")
-    
-    # Retry with mirror if rate limited
-    if [[ "$http_code" == "429" ]]; then
-        echo -e "\e[31m[!] Terkena Rate Limit GitHub saat mengunduh $2. Mencoba mirror lain...\e[0m"
+    # [FIX-IPv6] paksa IPv4 + timeout: di VPS dengan IPv6 blackhole, tanpa -4 setiap unduhan
+    # menunggu ~24 dtk lalu gagal (wget malah menggantung). Mirror dicoba untuk SEMUA kegagalan.
+    http_code=$(curl -4 -sS -L --connect-timeout 10 --max-time 60 -w '%{http_code}' -o "$tmp_file" "$url" 2>/dev/null)
+
+    if [[ "$http_code" != "200" ]]; then
+        echo -e "\e[33m[!] Unduhan $2 gagal (HTTP ${http_code:-timeout}). Mencoba mirror jsdelivr...\e[0m"
         url="https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/$1"
-        http_code=$(curl -sS -L -w '%{http_code}' -o "$tmp_file" "$url")
+        http_code=$(curl -4 -sS -L --connect-timeout 10 --max-time 60 -w '%{http_code}' -o "$tmp_file" "$url" 2>/dev/null)
     fi
     
     # Validate HTTP status
@@ -1078,7 +1079,7 @@ systemctl is-active --quiet haproxy || { echo "haproxy failed to start"; systemc
 # Pastikan tidak ada webhook aktif: webhook + getUpdates saling bertabrakan (Telegram error 409)
 source /etc/wibutunnel/bot.conf 2>/dev/null
 if [[ -n "$BOT_TOKEN" ]]; then
-    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
+    curl -4 -s --max-time 15 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
 fi
 
 dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1

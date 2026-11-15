@@ -29,8 +29,8 @@ Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu comman
 
 ### One-Liner
 ```bash
-wget -qO setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/setup.sh
-sha256sum setup.sh     # harap: 40f52d4fc6e8e4e101a83d99b08915e7648f5fdfcba6a535fc211f9fcd53fa12
+curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/setup.sh
+sha256sum setup.sh     # harap: fce409f7c342e844bbb25198a4cb42148f29542ba08d16976705d5b98f44882f
 bash setup.sh
 ```
 
@@ -38,6 +38,11 @@ bash setup.sh
 `setup.sh` mengambil kode (`menu/*`, `sbin/*`, `common.sh`) dari **tag rilis** (bukan `main`) dan
 memverifikasi sha256 setiap berkas terhadap `SHA256SUMS`; hash tidak cocok = instalasi DIHENTIKAN.
 Ganti ref: `WIBU_REF=v4.0.6-fixed bash setup.sh` · bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
+
+> **Penting — VPS dengan IPv6 "blackhole" (umum di Indonesia):** perintah di atas sengaja memakai
+> `curl -4` karena `wget` bisa **menggantung tanpa batas** dan `curl` tanpa `-4` menunggu ~24 detik
+> per unduhan (installer ada 25 unduhan). Kalau GitHub mentok dari jaringanmu, pakai mirror:
+> `https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@v4.0.6-fixed/setup.sh`.
 
 **Instalasi versi rilis (terpin):** perintah di atas mengambil dari tag `v4.0.6-fixed`.
 Bila ingin versi terbaru dari cabang `main`, ganti `v4.0.6-fixed` menjadi `main` (hash `setup.sh` akan berbeda).
@@ -151,7 +156,7 @@ m-setting   # Settings → [5] Update Script (verifikasi SHA256SUMS)
 ## 🗑️ Uninstall
 
 ```bash
-wget -qO uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/uninstall.sh
+curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/uninstall.sh
 sha256sum uninstall.sh   # harap: 392767c22817a14c9dc280f62fbb9aeccf9aef7d24a2f81880abe21062393d1a
 bash uninstall.sh
 ```
