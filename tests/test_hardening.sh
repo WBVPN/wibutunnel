@@ -137,7 +137,7 @@ t "penanda versi ditulis ulang di akhir instalasi" "grep -q 'Tulis ULANG penanda
 t "uninstall menghapus semua skrip yang dipasang" "for s in algojo-ssh lock-user unlock-user ws-stunnel wibu-daemon wibu-audit-akun wibutunnel-firewall network-tune; do grep -q \"\$s\" \"\$REPO/uninstall.sh\" || exit 1; done"
 t "dukungan Debian 12: rsyslog ikut dipasang (/dev/log ada)" "grep -q 'python3 rsyslog' \"\$REPO/setup.sh\""
 t "NTP punya fallback (ntp tidak ada di bookworm minimal)" "grep -q 'systemd-timesyncd' \"\$REPO/setup.sh\""
-t "penjaga OS menyebut versi yang didukung" "grep -q 'uji: Ubuntu 20.04/22.04/24.04, Debian 11/12' \"\$REPO/setup.sh\""
+t "penjaga OS menyebut versi yang didukung" "grep -q 'Didukung: Ubuntu 20.04/22.04/24.04, Debian 11/12' \"\$REPO/setup.sh\""
 t "status failed sisa percobaan dibersihkan (dropbear/haproxy)" "grep -q 'reset-failed dropbear.service haproxy.service' \"\$REPO/setup.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""

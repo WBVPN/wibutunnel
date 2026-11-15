@@ -19,7 +19,8 @@ fi
 
 source /etc/os-release
 if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
-    echo -e "\e[31m[GAGAL] Hanya mendukung Ubuntu/Debian (uji: Ubuntu 20.04/22.04/24.04, Debian 11/12).\e[0m"
+    echo -e "\e[31m[GAGAL] Hanya untuk Ubuntu/Debian. Didukung: Ubuntu 20.04/22.04/24.04, Debian 11/12.\e[0m"
+    echo -e "\e[33m        Sudah diuji di VPS nyata: Ubuntu 20.04 dan Debian 12.\e[0m"
     echo -e "\e[33m        Terdeteksi: ${PRETTY_NAME:-$ID} - hubungi @wibuvpn untuk OS lain.\e[0m"
     exit 1
 fi
