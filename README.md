@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.0.7
+# 🦋 WIBUTUNNEL v4.0.8
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.0.7-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.0.8-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -21,7 +21,7 @@ curl -4 -fsSL https://wibu.loli.web.id/i | less
 curl -4 -fsSL https://wibu.loli.web.id/sha         # hash rilis
 ```
 
-Skrip pendek itu mengunduh `setup.sh` dari **tag rilis v4.0.7**, **memverifikasi sha256-nya**, baru menjalankan.
+Skrip pendek itu mengunduh `setup.sh` dari **tag rilis v4.0.8**, **memverifikasi sha256-nya**, baru menjalankan.
 Hash tidak cocok = berhenti sebelum memasang apa pun. `WIBU_BOOTSTRAP_ONLY=1` untuk sekadar verifikasi.
 
 | Syarat | |
@@ -37,24 +37,25 @@ Hash tidak cocok = berhenti sebelum memasang apa pun. `WIBU_BOOTSTRAP_ONLY=1` un
 **Pasang**
 
 ```bash
-curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.7/setup.sh
-sha256sum setup.sh     # harap: 671b844a1ad60baacb3b633a233b30fc88c7793f9eecd487e33ef1c0c22aff22
+curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.8/setup.sh
+sha256sum setup.sh     # harap: 403f001787db4a2a6978195b128f354e0139fff3c9b0694e98c5fb476e59035d
 bash setup.sh
 ```
 
 **Hapus**
 
 ```bash
-curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.7/uninstall.sh
+curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.8/uninstall.sh
 sha256sum uninstall.sh   # harap: 310e0fa29f3bcac3d74ac76b86cfa05edd99a7c5c6078398f26112663823eebe
 bash uninstall.sh        # cadangan otomatis ke /root/wibutunnel-backup-*/
 ```
 
 </details>
 
-- Semua berkas diambil dari **tag rilis `v4.0.7`** (bukan `main`) supaya kode yang kamu pasang tidak berubah di tengah jalan.
+- Semua berkas diambil dari **tag rilis `v4.0.8`** (bukan `main`) supaya kode yang kamu pasang tidak berubah di tengah jalan.
 - `setup.sh` memverifikasi sha256 tiap berkas terhadap `SHA256SUMS` dari tag yang sama; tidak cocok = instalasi DIHENTIKAN.
-- Tag lain: `WIBU_REF=v4.0.6-fixed bash setup.sh` · bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
+- Tag lain: `WIBU_REF=v4.0.7 bash setup.sh` · bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
+- **Update menu ([5]) mengikuti rilis terbaru** (`main`) + verifikasi sha256 - jadi perbaikan setelah rilis tetap sampai; installer tetap memakai tag beku agar reproducible.
 
 > ⏱️ ~5-10 menit. **VPS IPv6 "blackhole" (umum di Indonesia):** semua perintah memakai `curl -4`;
 > `wget` bisa menggantung tanpa batas. GitHub mentok? Link pendek otomatis pakai mirror jsDelivr.
@@ -215,6 +216,12 @@ curl -4 -fsSL https://wibu.loli.web.id/u | bash     # cadangan otomatis ke /root
 ---
 
 ## 📝 Changelog
+
+### v4.0.8 (2026-11-15)
+- **Instalasi 1 baris:** `curl -4 -fsSL https://wibu.loli.web.id/i | bash` (bootstrap verifikasi hash dulu) + `install.sh`
+- **Update menu mengikuti rilis terbaru** (bukan tag beku) supaya perbaikan setelah rilis tetap sampai ke VPS
+- **Audit akun** menampilkan jumlah catatan `dummy-*` bawaan installer (dulu senyap)
+- Cek hash README diperkuat: jalur absolut + menolak placeholder hash yang tersisa (sebelumnya bisa lolos palsu)
 
 ### v4.0.7 (2026-11-15) — hasil uji nyata di VPS
 - **Keamanan:** rantai pasang & update terverifikasi hash (fail-closed) · API Xray root-only · izin 600/640 · token bot keluar dari `argv`

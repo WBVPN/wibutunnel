@@ -11,8 +11,10 @@ check_license
 source /etc/wibutunnel/bot.conf 2>/dev/null
 source /etc/wibutunnel/lock.conf 2>/dev/null || LOCK_DURATION=15
 
-# B2: ref repo dipin untuk update (override: WIBU_REF=... m-setting)
-WIBU_REF="${WIBU_REF:-v4.0.6-fixed}"
+# B2: UPDATE menu mengikuti rilis terbaru (main) supaya perbaikan setelah rilis tetap sampai ke VPS.
+#     Setiap berkas tetap diverifikasi sha256 terhadap SHA256SUMS dari ref yang sama.
+#     (Installer setup.sh tetap memakai TAG RILIS yang beku = reproducible.)
+WIBU_REF="${WIBU_REF:-main}"
 
 if [[ -z "$BOT_TOKEN" ]]; then
     STATUS_TOKEN="${RED}Belum disetting${NC}"
