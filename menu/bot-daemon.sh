@@ -1001,9 +1001,24 @@ while true; do
     resp=$(tg_api getUpdates -S --max-time 35 -G --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=30" 2>&1)
     
     if [[ $(echo "$resp" | jq -r '.ok' 2>/dev/null) != "true" ]]; then
-        sleep 1
+        # [FIX] Jangan gagal diam-diam. Sebelumnya loop ini hanya `sleep 1; continue`,
+        # sehingga token salah/dicabut (401) atau tabrakan poller (409) membuat bot
+        # "menghilang" tanpa satu baris pun di log.
+        _desc=$(echo "$resp" | jq -r '.description // empty' 2>/dev/null)
+        _code=$(echo "$resp" | jq -r '.error_code // empty' 2>/dev/null)
+        _fails=$(( ${_fails:-0} + 1 ))
+        if [[ $_fails -eq 1 || $(( _fails % 60 )) -eq 0 ]]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] getUpdates GAGAL (err ${_code:-?}: ${_desc:-tanpa keterangan}) - ke-$_fails" >> /etc/wibutunnel/tmp/bot_error.log 2>/dev/null || true
+            logger -t wibutunnel-bot "getUpdates gagal: ${_code:-?} ${_desc:-}" 2>/dev/null || true
+        fi
+        case "${_code:-}" in
+            401) echo "[!] TOKEN BOT DITOLAK (401). Perbarui /etc/wibutunnel/bot.conf lalu: systemctl restart telegram-bot" >&2 ;;
+            409) echo "[!] TABRAKAN POLLER (409): token yang sama dipakai di VPS lain. Matikan salah satunya." >&2 ;;
+        esac
+        sleep $(( _fails > 5 ? 5 : 1 ))
         continue
     fi
+    _fails=0
     
     count=$(echo "$resp" | jq -r '.result | length' 2>/dev/null)
     [[ -z "$count" || "$count" == "null" || "$count" -eq 0 ]] && continue

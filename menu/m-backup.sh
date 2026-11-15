@@ -305,6 +305,18 @@ do_restore() {
 
     systemctl restart xray haproxy dropbear ws-stunnel cron >/dev/null 2>&1
 
+    # [FIX] bot.conf ikut dipulihkan -> bila VPS lama masih hidup dengan token yang sama,
+    # dua poller akan bertabrakan (409) dan bot balas tidak konsisten. Matikan dulu;
+    # admin mengaktifkan lagi setelah memastikan hanya satu VPS memakai token itu.
+    if [[ -s /etc/wibutunnel/bot.conf ]]; then
+        echo -e "${YELLOW}[!] bot.conf ikut dipulihkan: layanan bot DIMATIKAN lebih dulu supaya tidak"
+        echo -e "    bertabrakan (409) dengan VPS lama yang memakai token sama.${NC}"
+        echo -e "${YELLOW}    Aktifkan lagi setelah yakin: Setting -> [6] Setup Bot Telegram,"
+        echo -e "    atau: systemctl enable --now telegram-bot${NC}"
+        systemctl stop telegram-bot 2>/dev/null || true
+        systemctl disable telegram-bot 2>/dev/null || true
+    fi
+
     echo -e "${GREEN}[+] RESTORE BERHASIL! Semua data berhasil dikembalikan.${NC}"
     read -p "Tekan Enter..." dummy
 }

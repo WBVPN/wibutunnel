@@ -122,6 +122,8 @@ t "restore memperbaiki pemilik config (Xray bisa membaca)" "grep -q 'chown root:
 t "backup menyertakan bot.conf" "grep -q 'etc/wibutunnel/bot.conf' \"\$REPO/menu/m-backup.sh\""
 t "ada pemeriksa akun tanpa exp" "test -x \"\$REPO/sbin/wibu-audit-akun\" && grep -q 'AKUN TANPA EXP' \"\$REPO/sbin/wibu-audit-akun\""
 t "audit dipanggil dari auto-repair & bisa di-update" "grep -q 'wibu-audit-akun' \"\$REPO/menu/m-setting.sh\""
+t "gagal polling dicatat (401/409 tidak diam)" "grep -q 'getUpdates GAGAL' \"\$REPO/menu/bot-daemon.sh\" && grep -q '409' \"\$REPO/menu/bot-daemon.sh\""
+t "restore mematikan bot agar tak tabrakan token" "grep -q 'layanan bot DIMATIKAN' \"\$REPO/menu/m-backup.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""

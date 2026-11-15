@@ -202,6 +202,33 @@ Backup otomatis ke `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum hapus.
 > (akun seperti itu tidak akan pernah kedaluwarsa). Laporan: `wibu-audit-akun`. Perbaiki dengan karantina lewat
 > mesin recovery yang ada: `wibu-audit-akun --fix`. Hasil pemeriksaan juga muncul di Setting → [1] Auto-Repair.
 
+### 🔁 Mengganti token bot (dan metode yang dipakai)
+
+Bot panel memakai **polling**, bukan webhook: `bot-daemon` memanggil `deleteWebhook` saat start lalu
+melakukan loop `getUpdates` (long polling 30 dtk) dengan offset tersimpan di `/etc/wibutunnel/tmp/bot_offset`.
+Cek sendiri: `curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"` -> `url` harus **kosong**.
+
+Konsekuensi penting: **satu token = satu poller.** Kalau token yang sama dipakai di dua VPS (mis. hasil
+restore backup ke VPS baru), keduanya berebut `getUpdates` dan Telegram membalas **409 Conflict** - bot
+menjawab tidak konsisten. Karena itu proses restore **mematikan layanan bot lebih dulu** bila `bot.conf`
+ikut dipulihkan.
+
+Ganti token (aman, tidak menghapus data akun):
+
+```bash
+# 1. BotFather -> /revoke  (token lama langsung mati)
+# 2. Tulis token baru + chat id (owner) ke berkas yang sudah ada
+nano /etc/wibutunnel/bot.conf      # BOT_TOKEN="..."  CHAT_ID="..."   (berkas sudah 600)
+#    atau lewat menu: Setting -> [6] Setup Bot Telegram
+chmod 600 /etc/wibutunnel/bot.conf
+systemctl restart telegram-bot
+systemctl is-active telegram-bot
+```
+
+Kalau bot diam setelah ganti token, buktinya sekarang ada di log (sebelumnya tidak):
+`/etc/wibutunnel/tmp/bot_error.log` + `journalctl -u telegram-bot` - **401** = token salah/dicabut,
+**409** = token itu dipakai poller lain.
+
 ### 🔄 Memperbarui pin installer Xray
 
 Installer Xray di-pin (`XRAY_INSTALL_SHA256`) supaya hulu XTLS yang diretas tidak otomatis jadi root di VPS Anda.
