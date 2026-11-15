@@ -159,6 +159,7 @@ aset Release GitHub (tag v4.1.3) tanpa penyesuaian manual apa pun.
 | Xray | `Configuration OK`, 9 inbound |
 | Keamanan | config 640 `root:xray`, `*_exp.conf` 600, `/etc/wibutunnel` 700, aturan `:10085` = 1, non-root ke API **DITOLAK**, lisensi **LOLOS** |
 | Akun uji | `staging-1` (VLESS, exp 2026-12-15, limit IP 2), audit bersih |
+| **Koneksi klien nyata** | **BERHASIL** - pemilik menghubungkan akun `staging-1` dari perangkatnya ke `test.priasawit.web.id` (2026-11-15). Rantai penuh terbukti: installer -> HAProxy 2.6 -> Xray -> akun -> klien. |
 
 **Temuan yang diperbaiki sebelum uji ini (dari analisis statis bookworm):** `rsyslog` tidak ada di
 instalasi minimal (log HAProxy hilang), paket `ntp` tidak ada (waktu tidak sinkron), pesan penjaga OS
@@ -167,5 +168,5 @@ tidak menyebut versi.
 start dengan konfigurasi bawaan paket sebelum installer menulis konfigurnya -> ditambahkan
 `systemctl reset-failed` (v4.1.4). Pembacaan `is-active` harus dilakukan setelah layanan tenang.
 
-**Batas yang belum diuji:** beban banyak klien paralel (load test) dan reboot VPS Debian 12 (belum
-dilakukan pada uji ini).
+**Batas yang belum diuji:** beban banyak klien paralel (load test). Reboot VPS Debian 12 **sudah** diuji:
+BOOT_ID berubah, 8/8 layanan naik sendiri, aturan `:10085` tetap 1, sertifikat & akun utuh.
