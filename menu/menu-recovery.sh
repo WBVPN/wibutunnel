@@ -102,7 +102,11 @@ if [[ "$target" == "deleteallusers" ]]; then
         fi
         rm -f "/etc/wibutunnel/recovery/${user}.json"
     done
-    > /etc/wibutunnel/locked_users.db
+    # B5: truncate dengan flock agar tidak race dengan penulis lain
+    (
+        flock -w 10 200 || echo "[ERROR] flock timeout locked_users.db" >&2
+        : > /etc/wibutunnel/locked_users.db
+    ) 200>/etc/wibutunnel/tmp/locked_users.db.lock
     systemctl restart xray >/dev/null 2>&1
     echo -e "\n ${GREEN}SEMUA AKUN RECOVERY TELAH DIMUSNAHKAN PERMANEN!${NC}"
     read -p " Tekan Enter..." dummy
