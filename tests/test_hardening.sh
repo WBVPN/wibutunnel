@@ -86,6 +86,8 @@ done
 for n in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemon lock-user unlock-user unlocker-wibu ws-stunnel wibu-daemon; do
   grep -q "$n" "$REPO/README.md" || { echo "     README belum menyebut daemon: $n"; _rmiss=1; }
 done
+t "perintah instalasi README pakai curl -4 (bukan wget)" "grep -q 'curl -4 -fsSL -o setup.sh' \"\$REPO/README.md\" && ! grep -qE '^wget -qO setup.sh' \"\$REPO/README.md\""
+t "unduhan setup.sh pakai IPv4 (\\\$(curl -4 ...))" "! grep -E '\$\\(curl ' \"\$REPO/setup.sh\" | grep -qv -- ' -4 '"
 for u in xray haproxy dropbear ws-stunnel telegram-bot algojo-expired wibu-daemon network-tune wibutunnel-firewall; do
   grep -q "$u" "$REPO/README.md" || { echo "     README belum menyebut unit: $u"; _rmiss=1; }
 done
