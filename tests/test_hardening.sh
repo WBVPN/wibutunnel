@@ -144,6 +144,7 @@ t "portabilitas: konfigurasi haproxy divalidasi + fallback" "grep -q 'haproxy -c
 t "portabilitas: fallback AppArmor haproxy" "grep -q 'AppArmor memblokir haproxy' \"\$REPO/setup.sh\""
 t "portabilitas: laporan versi paket saat instalasi" "grep -q 'Versi: haproxy' \"\$REPO/setup.sh\""
 t "apt memakai --force-confold (conffile tidak pernah bertanya)" "grep -q 'Dpkg::Options::=--force-confold' \"\$REPO/setup.sh\""
+t "heredoc konfigurasi bersih dari kode shell (cegah tambalan nyasar)" "! awk '/^cat <<HFEOF/{f=1;next} f&&/^HFEOF/{exit} f' \"\$REPO/setup.sh\" | grep -qE 'PORTABILITAS|haproxy -c|aa-status|^rm '"
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""
