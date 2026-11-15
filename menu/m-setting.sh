@@ -57,13 +57,14 @@ safe_update() {
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] UNVERIFIED UPDATE (bypass): ${repo_path}" >> /etc/wibutunnel/tmp/bot_error.log
     else
         local expected actual
-        # [FIX] Cache-buster + fallback API: setelah tag dipindah, raw CDN masih menyajikan
-        # SHA256SUMS lama -> berkas baru ditolak fail-closed. Query unik memaksa isi terbaru.
-        local cb="cb=$(date +%s)$$"
-        if ! curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 40 -o "$manifest_file" "${raw_base}/SHA256SUMS?${cb}" 2>/dev/null || [[ ! -s "$manifest_file" ]]; then
-            curl -4 -fSL --retry 2 --connect-timeout 10 --max-time 40 -H 'Accept: application/vnd.github.raw' \
-                -H 'User-Agent: wibutunnel-update' -o "$manifest_file" \
-                "https://api.github.com/repos/WBVPN/wibutunnel/contents/SHA256SUMS?ref=${WIBU_REF}" 2>/dev/null || true
+        # [FIX] API GitHub = sumber OTORITATIF. Diuji: setelah tag dipindah, raw CDN menyajikan
+        # SHA256SUMS LAMA (55 entri vs 57 di API) dan `?cb=` TIDAK menolong -> berkas baru ditolak.
+        curl -4 -fSL --retry 2 --connect-timeout 10 --max-time 40 -H 'Accept: application/vnd.github.raw' \
+            -H 'User-Agent: wibutunnel-update' -o "$manifest_file" \
+            "https://api.github.com/repos/WBVPN/wibutunnel/contents/SHA256SUMS?ref=${WIBU_REF}" 2>/dev/null || true
+        if [[ ! -s "$manifest_file" ]]; then
+            local cb="cb=$(date +%s)$$"
+            curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 40 -o "$manifest_file" "${raw_base}/SHA256SUMS?${cb}" 2>/dev/null || true
         fi
         if [[ ! -s "$manifest_file" ]]; then
             echo -e "${RED}× Manifest SHA256SUMS tidak dapat diunduh. Update DITOLAK (fail-closed).${NC}"
@@ -87,6 +88,13 @@ safe_update() {
             return 1
         fi
         actual=$(sha256sum "$tmp_file" | awk '{print $1}')
+        if [[ "$actual" != "$expected" ]]; then
+            # [FIX] Berkas lewat CDN raw bisa basi juga -> ambil sekali lagi lewat API (otoritatif).
+            curl -4 -fSL --retry 2 --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw' \
+                -H 'User-Agent: wibutunnel-update' -o "$tmp_file" \
+                "https://api.github.com/repos/WBVPN/wibutunnel/contents/${repo_path}?ref=${WIBU_REF}" 2>/dev/null || true
+            actual=$(sha256sum "$tmp_file" 2>/dev/null | awk '{print $1}')
+        fi
         if [[ "$actual" != "$expected" ]]; then
             echo -e "${RED}× HASH TIDAK COCOK untuk ${repo_path} — Update DITOLAK.${NC}"
             echo -e "${RED}  manifest : ${expected}${NC}"
