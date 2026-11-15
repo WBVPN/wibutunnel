@@ -142,6 +142,14 @@ rm -f /swapfile
 # Note: iptables rules persist in /etc/iptables/rules.v4
 # Run 'iptables -F && netfilter-persistent save' to reset if needed
 
+# [FIX] Bersihkan rujukan banner wibutunnel di konfigurasi dropbear SEBELUM purge.
+# Tanpa ini instalasi ULANG gagal: dpkg --configure dropbear mencari banner yang sudah dihapus
+# (/etc/wibutunnel/ssh-banner) -> apt-get install mengembalikan error -> instalasi berhenti.
+if [[ -f /etc/default/dropbear ]] && grep -q 'wibutunnel' /etc/default/dropbear 2>/dev/null; then
+    sed -i '/^DROPBEAR_BANNER=.*wibutunnel/d' /etc/default/dropbear
+    echo -e "\e[33m[i] rujukan banner wibutunnel dihapus dari /etc/default/dropbear\e[0m"
+fi
+
 # Uninstall paket bawaan (opsional)
 apt-get remove --purge -y haproxy vnstat dropbear >/dev/null 2>&1
 apt-get autoremove -y >/dev/null 2>&1

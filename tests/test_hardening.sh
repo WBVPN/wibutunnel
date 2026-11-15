@@ -129,6 +129,8 @@ t "update menu ikut rilis terbaru (main), bukan tag beku" "grep -q 'WIBU_REF:-ma
 t "update memperbarui penanda versi" "grep -q 'wibutunnel/version' \"\$REPO/menu/m-setting.sh\" && grep -q 'wibutunnel/version' \"\$REPO/setup.sh\""
 t "tidak ada '-4' nyasar di daftar paket apt" "! grep -nE '^[[:space:]]*apt(-get)? install[^|]*[[:space:]]-4([[:space:]]|$)' \"\$REPO/setup.sh\""
 t "apt gagal = fatal (tidak lanjut setengah jalan)" "grep -q 'Instalasi DIHENTIKAN supaya tidak setengah jalan' \"\$REPO/setup.sh\""
+t "banner disiapkan sebelum apt (dropbear tidak gagal configure)" "grep -q 'ssh-banner' \"\$REPO/setup.sh\" && grep -q 'DEBIAN_FRONTEND=noninteractive' \"\$REPO/setup.sh\""
+t "uninstall membersihkan rujukan banner dropbear" "grep -q 'DROPBEAR_BANNER' \"\$REPO/uninstall.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""

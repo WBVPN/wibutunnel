@@ -353,7 +353,17 @@ apt-get update -y
 # [FIX-KRITIS] '-4' pernah nyasar masuk daftar paket di sini (akibat penyisiran curl -4),
 # membuat SELURUH apt-get gagal -> haproxy tidak terpasang -> "Failed to enable services".
 # apt gagal sekarang DIANGGAP FATAL: lanjut tanpa paket = instalasi setengah jalan.
-if ! apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3; then
+# [FIX-KRITIS] dropbear dari instalasi lama bisa masih menunjuk banner yang sudah dihapus
+# (/etc/wibutunnel/ssh-banner). dpkg --configure dropbear lalu GAGAL -> seluruh apt-get gagal.
+# Siapkan direktori+banner kosong lebih dulu, dan buat banner yang hilang jadi ada.
+mkdir -p /etc/wibutunnel 2>/dev/null || true
+[[ -f /etc/wibutunnel/ssh-banner ]] || : > /etc/wibutunnel/ssh-banner
+if [[ -f /etc/default/dropbear ]]; then
+    _bn=$(sed -n 's/^DROPBEAR_BANNER="\?\(.*\)"\?$/\1/p' /etc/default/dropbear | head -1)
+    [[ -n "$_bn" && ! -f "$_bn" ]] && { mkdir -p "$(dirname "$_bn")" 2>/dev/null; : > "$_bn"; }
+fi
+# DEBIAN_FRONTEND=noninteractive: hindari prompt debconf (iptables-persistent) saat instalasi tanpa TTY.
+if ! DEBIAN_FRONTEND=noninteractive apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3; then
     echo -e "\e[1;31m[!] Gagal memasang paket dasar. Instalasi DIHENTIKAN supaya tidak setengah jalan.\e[0m"
     echo -e "\e[1;33m    Cek koneksi repo: apt-get update && apt-get install -y curl\e[0m"
     exit 1

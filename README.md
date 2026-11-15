@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.0.9
+# 🦋 WIBUTUNNEL v4.1.0
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.0.9-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.0-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -37,7 +37,7 @@ curl -4 -fsSL https://wibu.loli.web.id/i | bash
 
 ```bash
 curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/download/v4.0.9/setup.sh
-sha256sum setup.sh     # harap: 6dbdc265db7bbb59eeff4207bb562084ff31080bde72f228f764ee2ff4de3344
+sha256sum setup.sh     # harap: 46a7ae1f613073ebb9d21f7821bc6a7631739fab750e8b8fa858c51d14081bca
 bash setup.sh
 ```
 
@@ -45,7 +45,7 @@ bash setup.sh
 
 ```bash
 curl -4 -fsSL -o uninstall.sh https://github.com/WBVPN/wibutunnel/releases/download/v4.0.9/uninstall.sh
-sha256sum uninstall.sh   # harap: 310e0fa29f3bcac3d74ac76b86cfa05edd99a7c5c6078398f26112663823eebe
+sha256sum uninstall.sh   # harap: db9734a4f248e18102c4eb33329de5e00266c1a041359dea4f55128aeeca7b38
 bash uninstall.sh
 ```
 
@@ -207,6 +207,12 @@ curl -4 -fsSL https://wibu.loli.web.id/u | bash     # cadangan otomatis ke /root
 ---
 
 ## 📝 Changelog
+
+### v4.1.0 (2026-11-15)
+- **KRITIS (2):** `dropbear` gagal `--configure` karena sisa konfigurasi banner `wibutunnel` -> apt error ->
+  instalasi berhenti. Ditutup dari dua sisi: banner disiapkan **sebelum** apt, dan `uninstall.sh` membersihkan
+  rujukan banner. Ditemukan hanya lewat **instalasi penuh di VPS**.
+- apt kini `DEBIAN_FRONTEND=noninteractive` (tidak menggantung di prompt debconf tanpa TTY).
 
 ### v4.0.9 (2026-11-15)
 - **KRITIS:** `-4` nyasar di daftar paket apt + di `command -v curl -4` membuat **seluruh apt-get gagal** ->
