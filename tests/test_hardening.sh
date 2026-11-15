@@ -156,6 +156,7 @@ t "reinstall tidak menghapus daftar masa aktif akun" "grep -q 'if \[ ! -f /etc/x
 t "reinstall memasang kembali klien lama" "grep -q 'Akun lama dipasang kembali' \"\$REPO/setup.sh\" && grep -q 'KLIEN_LAMA' \"\$REPO/setup.sh\""
 t "cache manifest per-ref + divalidasi" "grep -q 'wibu-manifest-\${WIBU_REF}' \"\$REPO/setup.sh\" && grep -q 'wibu_manifest_valid()' \"\$REPO/setup.sh\""
 t "validasi domain jalan tanpa dig (image minimal)" "grep -q 'wibu_resolve_a' \"\$REPO/setup.sh\" && grep -q 'getent ahostsv4' \"\$REPO/setup.sh\" && ! grep -q 'IP_DOMAIN=\$(dig +short' \"\$REPO/setup.sh\""
+t "Debian 11 EOL dialihkan ke arsip resmi" "grep -q 'archive.debian.org/debian bullseye' \"\$REPO/setup.sh\" && grep -q 'Check-Valid-Until' \"\$REPO/setup.sh\" && grep -q 'bullseye-backports\|backports' \"\$REPO/setup.sh\""
 t "ada alat verifikasi rantai rilis" "test -x \"\$REPO/tools/verify-release.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""

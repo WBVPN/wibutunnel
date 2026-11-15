@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.13
+# 🦋 WIBUTUNNEL v4.1.14
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.13-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.14-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 799f20a00141e220f784fa9d5e68259d5ba53812a9d40231af817536676e57d4
+sha256sum setup.sh     # harap: 98386a29062a93929decaba2859e8701e366993e97f065515528d9f43d875f17
 bash setup.sh
 ```
 
@@ -202,6 +202,14 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.14 (2026-11-15)
+- **Debian 11 (EOL) sekarang bisa dipasang.** Bullseye sudah EOL: `security.debian.org` menjawab **404**
+  untuk seluruh paket, dan image VPS umumnya menambah mirror pihak ketiga yang rusak. Hasilnya
+  `apt-get install` mustahil berhasil (diuji: 47 paket gagal 404). Installer kini mendeteksi bullseye dan
+  mengalihkan repo ke arsip resmi `archive.debian.org` (+ `Acquire::Check-Valid-Until "false"` karena
+  arsip memang kedaluwarsa), serta menonaktifkan sumber `*backports*` yang tidak ada di arsip.
+  `sources.list` lama dicadangkan ke `/etc/apt/sources.list.bak.wibutunnel`.
 
 ### v4.1.13 (2026-11-15)
 - **Debian 11 bisa dipasang (temuan lapangan).** Image minimal bullseye **tidak punya `dig`**; validasi

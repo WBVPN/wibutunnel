@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.13
+# MASTER INSTALLER WIBU TUNNELING - v4.1.14
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -134,7 +134,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.13}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.14}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -306,7 +306,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.13" > /etc/wibutunnel/version
+echo "4.1.14" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -392,6 +392,27 @@ EOF
 
 # INSTALL PAKET (dibersihkan dari bloat nginx/python3/socat)
 export DEBIAN_FRONTEND=noninteractive
+# [FIX-EOL] Debian 11 (bullseye) sudah EOL: paket di security.debian.org menjawab 404 dan mirror
+# pihak ketiga di image umumnya rusak -> `apt-get install` mustahil berhasil. Terbukti di lapangan:
+# 47 paket gagal 404 (security.debian.org) + mirror mr.heru.id tanpa Release file untuk backports.
+# Alihkan ke arsip RESMI Debian + matikan cek Valid-Until (arsip memang kedaluwarsa).
+if [ -f /etc/os-release ] && grep -qiE '(bullseye|Debian GNU/Linux 11)' /etc/os-release \
+   && ! grep -qs 'archive.debian.org' /etc/apt/sources.list 2>/dev/null; then
+    cp -f /etc/apt/sources.list /etc/apt/sources.list.bak.wibutunnel 2>/dev/null || true
+    cat > /etc/apt/sources.list <<'APTSRCEOF'
+deb http://archive.debian.org/debian bullseye main contrib non-free
+deb http://archive.debian.org/debian bullseye-updates main contrib non-free
+deb http://archive.debian.org/debian-security bullseye-security main contrib non-free
+APTSRCEOF
+    printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99wibutunnel-archive
+    # Arsip tidak punya backports; mirror rusak seperti ini membuat SELURUH apt-get update gagal.
+    for _f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+        [ -f "$_f" ] || continue
+        grep -qiE 'backports' "$_f" && mv -f "$_f" "${_f}.wibutunnel-off" 2>/dev/null
+    done
+    echo -e "\e[1;33m[!] Debian 11 sudah EOL: repo dialihkan ke archive.debian.org (cadangan: /etc/apt/sources.list.bak.wibutunnel)\e[0m"
+fi
+
 apt-get update -y
 # [FIX-KRITIS] '-4' pernah nyasar masuk daftar paket di sini (akibat penyisiran curl -4),
 # membuat SELURUH apt-get gagal -> haproxy tidak terpasang -> "Failed to enable services".
@@ -952,7 +973,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.13}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.14}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 # [FIX-CACHE] Cache manifest HARUS per-ref: cache tetap membuat rilis berikutnya memverifikasi
 # berkas baru terhadap manifest LAMA (gejala: "hash tidak cocok" untuk berkas yang baru diubah,
@@ -1452,7 +1473,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.13" > /etc/wibutunnel/version
+echo "4.1.14" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
