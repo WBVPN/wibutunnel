@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.4
+# 🦋 WIBUTUNNEL v4.1.5
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.4-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.5-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: c84dc357100e5347ee2b2a1324d590bd3021c91b6bdff2cdbc7055e82558a09a
+sha256sum setup.sh     # harap: 9775eee35788522acf3e951215121c3050c5d64326a81ac98c37961728c2c992
 bash setup.sh
 ```
 
@@ -201,6 +201,13 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.5 (2026-11-15)
+**Persiapan agar kelima OS didukung** (hasil pelajaran Ubuntu 20.04 + Debian 12):
+- **dropbear tidak lagi start otomatis saat apt memasangnya** (paket Debian/Ubuntu mendengarkan port 22; kalau menang balapan dengan sshd, admin bisa kehilangan akses SSH). `NO_START=1` ditulis lebih dulu.
+- **Konfigurasi HAProxy divalidasi (`haproxy -c`) dan otomatis diturunkan ke versi minimal** kalau ada direktif yang tidak dikenal versi HAProxy di OS itu (rentang 2.0 s/d 2.8).
+- **Fallback AppArmor**: kalau Ubuntu memblokir haproxy (profil enforce), profil diubah ke complain mode lalu dicoba ulang.
+- **Laporan versi paket** (haproxy/certbot/dropbear/python/openssl) + peringatan kalau `/dev/log` tidak ada.
 
 ### v4.1.4 (2026-11-15)
 - **Debian 12 (bookworm) teruji nyata** di VPS: HAProxy 2.6 `Configuration file is valid`, certbot 2.1.0 menerbitkan sertifikat, `rsyslog` + `/dev/log` jalan, `systemd-timesyncd` sinkron, 8/8 layanan aktif **dan enabled**, port 80/443/143/109 dengar.
