@@ -44,20 +44,26 @@ log_bot_error() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $err_text" >> "$log_file"
 }
 
+# B1: Token TIDAK boleh muncul di argv. curl membaca URL dari STDIN (-K -).
+tg_api() {  # $1=method (mis. sendMessage), sisanya diteruskan ke curl
+  local m="$1"; shift
+  printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$BOT_TOKEN" "$m" | curl -s -K - "$@"
+}
+
 send_msg() {
     local text=$(echo -e "$1")
     local keyboard="$2"
     local target_id="${3:-${SENDER_ID:-$CHAT_ID}}"
     local resp
     if [[ -n "$keyboard" ]]; then
-        resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        resp=$(tg_api sendMessage --max-time 10 -X POST \
             --data-urlencode "chat_id=${target_id}" \
             --data-urlencode "disable_web_page_preview=true" \
             --data-urlencode "parse_mode=html" \
             --data-urlencode "text=${text}" \
             --data-urlencode "reply_markup=${keyboard}" 2>&1)
     else
-        resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        resp=$(tg_api sendMessage --max-time 10 -X POST \
             --data-urlencode "chat_id=${target_id}" \
             --data-urlencode "disable_web_page_preview=true" \
             --data-urlencode "parse_mode=html" \
@@ -75,7 +81,7 @@ edit_msg() {
     local keyboard="$4"
 
     local resp
-    resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
+    resp=$(tg_api editMessageText --max-time 10 -X POST \
         --data-urlencode "chat_id=${target_id}" \
         --data-urlencode "message_id=${msg_id}" \
         --data-urlencode "disable_web_page_preview=true" \
@@ -491,8 +497,7 @@ renew_account() {
         return
     fi
 
-    safe_sed_delete "$user" "$exp_file"
-    echo "${user}:${exp_date}" >> "$exp_file"
+    db_set "$exp_file" "$user" "$exp_date"
 
     local kb=""
     [[ -n "$proto" ]] && kb='{"inline_keyboard":[[{"text":"🔙 Back to '"${proto}"' Menu","callback_data":"menu_'"${proto,,}"'"}]]}'
@@ -668,7 +673,7 @@ unlock_account() {
 backup_vps() {
     local target_id="${SENDER_ID:-$CHAT_ID}"
 
-    local load_resp=$(curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    local load_resp=$(tg_api sendMessage --max-time 10 -X POST \
         -F "chat_id=${target_id}" \
         -F "disable_web_page_preview=true" \
         -F "parse_mode=html" \
@@ -677,11 +682,13 @@ backup_vps() {
 
     local domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
     local ip_vps=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null || echo "Unknown")
-    local backup_file="/tmp/${domain}-${ip_vps}.zip"
-    rm -f "$backup_file"
+    # B7/B6: direktori kerja mktemp (700, di bawah /etc/wibutunnel yang 700) + password acak.
+    local backup_dir; backup_dir=$(mktemp -d /etc/wibutunnel/tmp/backup.XXXXXX) || { send_msg "❌ <b>Gagal membuat direktori backup.</b>"; return 1; }
+    local BACKUP_PASS; BACKUP_PASS=$(openssl rand -hex 12 2>/dev/null || tr -dc 'a-f0-9' </dev/urandom | head -c 24)
+    local backup_file="${backup_dir}/${domain}-${ip_vps}.zip"
 
     cd /
-    zip -q -P "$CHAT_ID" -r "$backup_file" \
+    zip -q -P "$BACKUP_PASS" -r "$backup_file" \
         usr/local/etc/xray/config.json \
         etc/xray/vless_exp.conf \
         etc/xray/vmess_exp.conf \
@@ -698,7 +705,7 @@ backup_vps() {
     if [[ -f "$backup_file" ]]; then
         local tgl=$(date "+%Y-%m-%d %H:%M:%S")
         local caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n<i>Mengunggah dan membuat File ID...</i>")
-        local response=$(curl -s --max-time 60 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+        local response=$(tg_api sendDocument --max-time 60 -X POST \
             -F "chat_id=${target_id}" \
             -F "document=@${backup_file}" \
             -F "caption=${caption}" \
@@ -708,25 +715,25 @@ backup_vps() {
         local msg_id=$(echo "$response" | jq -r '.result.message_id // empty')
 
         if [[ -n "$file_id" && -n "$msg_id" && "$msg_id" != "null" ]]; then
-            local new_caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${file_id}</code>\n\n🔐 <b>Password:</b> CHAT ID Anda")
-            curl -s --max-time 15 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
+            local new_caption=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${tgl}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${file_id}</code>\n\n🔐 <b>Password:</b> <code>${BACKUP_PASS}</code>")
+            tg_api editMessageCaption --max-time 15 -X POST \
                 -F "chat_id=${target_id}" \
                 -F "message_id=${msg_id}" \
                 -F "parse_mode=html" \
                 -F "caption=${new_caption}" >/dev/null 2>&1
         fi
 
-        rm -f "$backup_file"
+        rm -rf "$backup_dir"
 
         if [[ -n "$load_msg_id" && "$load_msg_id" != "null" ]]; then
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage" \
+            tg_api deleteMessage -X POST \
                 -F "chat_id=${target_id}" \
                 -F "message_id=${load_msg_id}" >/dev/null 2>&1
         fi
     else
         send_msg "❌ <b>Gagal membuat backup!</b>"
         if [[ -n "$load_msg_id" && "$load_msg_id" != "null" ]]; then
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage" \
+            tg_api deleteMessage -X POST \
                 -F "chat_id=${target_id}" \
                 -F "message_id=${load_msg_id}" >/dev/null 2>&1
         fi
@@ -980,7 +987,7 @@ if [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]]; then
 fi
 
 # Delete webhook if exists
-curl -s "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null
+tg_api deleteWebhook >/dev/null
 
 if ! check_license_silent; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Lisensi VPS tidak valid atau kedaluwarsa. Bot dinonaktifkan."
@@ -991,7 +998,7 @@ OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling bot started (offset: $OFFSET)"
 
 while true; do
-    resp=$(curl -sS --max-time 35 "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${OFFSET}&timeout=30" 2>&1)
+    resp=$(tg_api getUpdates -S --max-time 35 -G --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=30" 2>&1)
     
     if [[ $(echo "$resp" | jq -r '.ok' 2>/dev/null) != "true" ]]; then
         sleep 1
@@ -1014,7 +1021,7 @@ while true; do
             DATA=$(echo "$update" | jq -r ".callback_query.data" 2>/dev/null)
             
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Callback update #$update_id from $SENDER_ID: data='$DATA'"
-            curl -s "https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery?callback_query_id=${CB_ID}" >/dev/null &
+            tg_api answerCallbackQuery -G --data-urlencode "callback_query_id=${CB_ID}" >/dev/null &
             
             if ! is_admin "$SENDER_ID"; then
                 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Callback ditolak: ID $SENDER_ID bukan admin."
@@ -1063,7 +1070,7 @@ while true; do
                                 TRF_MSG+="<b>${idx}.</b> <code>${usr}</code> [${proto_r}] : ${vol}\n"
                                 ((idx++))
                                 [[ $idx -gt 10 ]] && break
-                            done < <(awk -F':' '{ if ($1 ~ /^(vless|vmess|trojan)-(ws|grpc)-(tls|ntls)$/ || $1 ~ /^(vless|vmess|trojan)-grpc$/ || $1 == "api" || $1 == "direct" || $1 == "blocked") next; down=($2=="null"||$2=="")?0:$2; up=($3=="null"||$3=="")?0:$3; print (down+up)":"$1 }' /etc/wibutunnel/user_usage.db 2>/dev/null | sort -t: -k1 -nr)
+                            done < <(awk -F':' '{ if ($1 ~ /^(vless|vmess|trojan)-(ws|grpc)-(tls|ntls)$/ || $1 ~ /^(vless|vmess|trojan)-grpc$/ || $1 == "api" || $1 == "direct" || $1 == "blocked") next; tot=($2=="null"||$2=="")?0:$2; print tot":"$1 }' /etc/wibutunnel/user_usage.db 2>/dev/null | sort -t: -k1 -nr)
                             TRF_MSG+="━━━━━━━━━━━━━━━━━━━━"
                             [[ $idx -eq 1 ]] && TRF_MSG="📊 <b>Belum ada pemakaian quota.</b>"
                             kb='{"inline_keyboard":[[{"text":"🔙 Back to SYSTEM Menu","callback_data":"menu_system"}]]}'
