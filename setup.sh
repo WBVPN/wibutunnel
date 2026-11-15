@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.8
+# MASTER INSTALLER WIBU TUNNELING - v4.1.9
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -134,7 +134,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.8}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.9}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -282,7 +282,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.8" > /etc/wibutunnel/version
+echo "4.1.9" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -513,6 +513,30 @@ fi
 ln -sf /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.sh 2>/dev/null || true
 /usr/local/sbin/wibutunnel-firewall || true
 
+cat > /etc/systemd/system/wibutunnel-ssl-ulang.service << 'SSLSVCEOF'
+[Unit]
+Description=Terbitkan ulang sertifikat SSL wibutunnel (setelah sertifikat sementara)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wibu-ssl-ulang
+SSLSVCEOF
+
+cat > /etc/systemd/system/wibutunnel-ssl-ulang.timer << 'SSLTIMEOF'
+[Unit]
+Description=Penjadwal penerbitan ulang sertifikat SSL wibutunnel
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+SSLTIMEOF
+
 cat > /etc/systemd/system/wibutunnel-firewall.service << 'SVCEOF'
 [Unit]
 Description=Wibu Tunneling - Re-enforce root-only Xray API firewall
@@ -612,9 +636,36 @@ else
     certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos -d "$domain"
 fi
 
+# [PORTABILITAS] Penerbitan sertifikat bisa GAGAL tanpa salah konfigurasi:
+# Let's Encrypt membatasi 5 sertifikat / 7 hari per domain (batas laju) - pelanggan yang
+# beberapa kali memasang ulang / ganti domain akan kena. JANGAN hentikan instalasi:
+# pasang sertifikat sementara supaya layanan tetap jalan, lalu jadwalkan penerbitan ulang otomatis.
+SSL_SEMENTARA=0
 if [ ! -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
-    echo -e "${RED}SSL GAGAL! Pastikan domain $domain mengarah ke IP ini.${NC}"
-    exit 1
+    echo -e "${YELLOW}[!] Sertifikat resmi belum bisa diterbitkan (cek log letsencrypt).${NC}"
+    echo -e "${YELLOW}    Memasang sertifikat SEMENTARA + penjadwal penerbitan ulang otomatis...${NC}"
+    mkdir -p /etc/wibutunnel/cert-temp
+    if openssl req -x509 -nodes -newkey rsa:2048 -days 90 \
+        -keyout /etc/wibutunnel/cert-temp/privkey.pem -out /etc/wibutunnel/cert-temp/fullchain.pem \
+        -subj "/CN=$domain" -addext "subjectAltName=DNS:$domain" >/dev/null 2>&1; then
+        mkdir -p "/etc/letsencrypt/live/$domain"
+        cp -f /etc/wibutunnel/cert-temp/fullchain.pem "/etc/letsencrypt/live/$domain/fullchain.pem"
+        cp -f /etc/wibutunnel/cert-temp/privkey.pem   "/etc/letsencrypt/live/$domain/privkey.pem"
+        echo "SEMENTARA" > /etc/wibutunnel/cert-temp/JADWAL_ULANG
+        date -d '+1 hour' +%s > /etc/wibutunnel/cert-temp/COBA_LAGI
+        # percobaan pertama cukup cepat; kalau masih kena batas laju, skrip menggeser sendiri 6 jam
+        SSL_SEMENTARA=1
+        if [ -f /usr/local/sbin/wibu-ssl-ulang ]; then
+            systemctl enable --now wibutunnel-ssl-ulang.timer >/dev/null 2>&1 || true
+        fi
+        echo -e "${YELLOW}    Sertifikat sementara aktif; penerbitan ulang otomatis tiap jam (log: /var/log/wibutunnel-ssl.log).${NC}"
+        echo -e "${YELLOW}    Klien perlu 'allow insecure' sampai sertifikat resmi terbit.${NC}"
+    else
+        echo -e "${RED}SSL GAGAL! Pastikan domain $domain mengarah ke IP ini.${NC}"
+        exit 1
+    fi
+else
+    rm -f /etc/wibutunnel/cert-temp/JADWAL_ULANG
 fi
 cat /etc/letsencrypt/live/"$domain"/fullchain.pem /etc/letsencrypt/live/"$domain"/privkey.pem > /etc/haproxy/certs/"$domain".pem
 chmod 700 /etc/haproxy/certs
@@ -853,7 +904,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.8}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.9}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
@@ -1000,10 +1051,11 @@ _need "sbin/algojo-expired-daemon" "algojo-expired-daemon"
 _need "sbin/ws-stunnel" "ws-stunnel"
 _need "sbin/wibu-repair" "wibu-repair-dl"
 _need "sbin/wibu-audit-akun" "wibu-audit-akun-dl"
+_need "sbin/wibu-ssl-ulang" "wibu-ssl-ulang-dl"
 _need "sbin/wibu-daemon" "wibu-daemon-dl"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun; do
+for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
     fi
@@ -1322,7 +1374,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.8" > /etc/wibutunnel/version
+echo "4.1.9" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

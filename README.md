@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.8
+# 🦋 WIBUTUNNEL v4.1.9
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.8-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.9-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: a6dd1162c7efbc7564b3610838f7c4262194d1910e6069bd860d4347500fc70f
+sha256sum setup.sh     # harap: 312d51179e5a1edae1f251b193b447d6870af2cc6e94380718e4d3397febc2da
 bash setup.sh
 ```
 
@@ -39,7 +39,7 @@ bash setup.sh
 
 ```bash
 curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
-sha256sum uninstall.sh   # harap: a9962e71a9ac5b83757101d76c5163a8825e785433f7a1639fa44dfa022ba46d
+sha256sum uninstall.sh   # harap: 9890f65787a47ffde0d4d093a5abda2914c277d766fb7c6f7ee24e533b1345c3
 bash uninstall.sh
 ```
 
@@ -202,6 +202,14 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.9 (2026-11-15)
+- **Tahan batas laju Let's Encrypt.** Let's Encrypt membatasi 5 sertifikat / 7 hari per domain; pelanggan yang
+  memasang ulang beberapa kali akan kena dan sebelumnya **instalasi langsung berhenti** (`SSL GAGAL`).
+  Sekarang: sertifikat **sementara** dipasang supaya layanan tetap jalan, plus **penjadwal otomatis**
+  (`wibutunnel-ssl-ulang.timer`) yang menerbitkan sertifikat resmi begitu kuota pulih, lalu mengganti
+  sertifikat sementara + reload HAProxy - tanpa perlu pelanggan melakukan apa pun.
+- Skrip `wibu-ssl-ulang` + unit systemd-nya ikut dibersihkan saat uninstall.
 
 ### v4.1.8 (2026-11-15)
 - **Ubuntu 22.04 (jammy) teruji lapangan**: HAProxy 2.4.30 `Configuration file is valid`, certbot 1.21.0 menerbitkan
