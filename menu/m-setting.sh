@@ -175,7 +175,7 @@ echo -e " ${RED}[0] Kembali ke Dashboard Utama${NC}"
 echo -e "$LINE"
 
 echo -ne "${WHITE}Pilih menu: ${NC}"
-read -r sub_setting
+read -r sub_setting || exit 0
 
 case $sub_setting in
     1)

@@ -460,7 +460,7 @@ echo -e "${LINE}"
 echo -e " ${WHITE}[0]  Back to Menu Dashboard${NC}"
 echo -e "${LINE}"
 echo -ne "${WHITE}Pilih menu: ${NC}"
-read -r sub_menu
+read -r sub_menu || exit 0
 
 case $sub_menu in
     1) add_user; exec m-trojan ;;

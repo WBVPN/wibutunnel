@@ -188,7 +188,7 @@ delete_ssh_menu() {
     [[ -z "$SELECTED_USER" ]] && { exec m-ssh; }
 
     echo -e "\n ${RED}Yakin hapus ${SELECTED_USER}? [y/n]${NC}"
-    read -r konfirmasi
+    read -r konfirmasi || return 1
     if [[ "$konfirmasi" =~ ^[yY]$ ]]; then
         if del_ssh_user "$SELECTED_USER"; then
             echo -e "\n ${GREEN}BERHASIL! Akun ${SELECTED_USER} dihapus permanen.${NC}"
@@ -416,7 +416,7 @@ echo -e " ${GREEN}[13] Edit Respon HTTP WS${NC}"
 echo -e " ${WHITE}[0]  Back to Menu Dashboard${NC}"
 echo -e "${LINE}"
 echo -ne "${WHITE}Pilih menu: ${NC}"
-read -r sub_menu
+read -r sub_menu || exit 0
 
 case $sub_menu in
     1) add_ssh_menu; exec m-ssh ;;
