@@ -29,8 +29,8 @@ systemctl stop telegram-bot.service algojo-expired.service 2>/dev/null
 systemctl disable telegram-bot.service algojo-expired.service 2>/dev/null
 systemctl stop telegram-webhook.socket 2>/dev/null
 systemctl disable telegram-webhook.socket 2>/dev/null
-systemctl stop wibutunnel-firewall.service 2>/dev/null
-systemctl disable wibutunnel-firewall.service 2>/dev/null
+systemctl stop wibutunnel-firewall.service wibutunnel-firewall.timer 2>/dev/null
+systemctl disable wibutunnel-firewall.service wibutunnel-firewall.timer 2>/dev/null
 
 # Backup SEMUA data user sebelum dihapus. Gagal backup = batalkan uninstall.
 SAVED="/root/wibutunnel-backup-$(date +%Y%m%d-%H%M%S)"
@@ -110,7 +110,7 @@ rm -f /etc/systemd/system/telegram-webhook@.service
 rm -rf /etc/systemd/system/haproxy.service.d
 rm -rf /etc/systemd/system/xray.service.d
 rm -f /etc/systemd/system/wibutunnel-bot.service /etc/systemd/system/xray.service /etc/systemd/system/xray@.service
-rm -f /etc/systemd/system/wibutunnel-firewall.service
+rm -f /etc/systemd/system/wibutunnel-firewall.service /etc/systemd/system/wibutunnel-firewall.timer
 rm -f /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.sh /usr/local/bin/wibutunnel-firewall /usr/local/bin/wibutunnel-firewall.sh
 systemctl daemon-reload
 

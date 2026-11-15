@@ -30,7 +30,7 @@ Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu comman
 ### One-Liner
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/setup.sh
-sha256sum setup.sh     # harap: 5c7a696548b4ae1a64f01d64f17799c499064af94fccba781105886d7453a36b
+sha256sum setup.sh     # harap: 9c07c5b242d9d425da34867b78efbc4c620a77339d5be714dd0ad6323aebf1da
 bash setup.sh
 ```
 
