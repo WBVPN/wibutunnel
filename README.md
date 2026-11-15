@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.0
+# 🦋 WIBUTUNNEL v4.1.1
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.0-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.1-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -37,7 +37,7 @@ curl -4 -fsSL https://wibu.loli.web.id/i | bash
 
 ```bash
 curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/download/v4.0.9/setup.sh
-sha256sum setup.sh     # harap: 46a7ae1f613073ebb9d21f7821bc6a7631739fab750e8b8fa858c51d14081bca
+sha256sum setup.sh     # harap: 85f4a9ccecbbfc56714a43551a35e94d4f111de50a70c89e061af6519c001448
 bash setup.sh
 ```
 
@@ -207,6 +207,11 @@ curl -4 -fsSL https://wibu.loli.web.id/u | bash     # cadangan otomatis ke /root
 ---
 
 ## 📝 Changelog
+
+### v4.1.1 (2026-11-15)
+- `wibu-audit-akun` kini **ikut dipasang** oleh installer (sebelumnya hanya lewat update menu - instalasi baru tidak punya).
+- Unit bot tidak lagi "failed" pada instalasi yang belum diisi token (tidak diaktifkan sampai token ada).
+- Penanda versi **ditulis ulang di akhir** instalasi supaya tidak ketimpa data lama dari backup.
 
 ### v4.1.0 (2026-11-15)
 - **KRITIS (2):** `dropbear` gagal `--configure` karena sisa konfigurasi banner `wibutunnel` -> apt error ->
