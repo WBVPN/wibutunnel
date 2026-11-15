@@ -8,31 +8,57 @@ Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jala
 
 ---
 
-### Instalasi (unduh -> verifikasi -> pasang)
+## ⚡ Instalasi — satu baris
+
+```bash
+curl -4 -fsSL https://wibu.loli.web.id/i | bash
+```
+
+Cek dulu isi skripnya (disarankan):
+
+```bash
+curl -4 -fsSL https://wibu.loli.web.id/i | less
+curl -4 -fsSL https://wibu.loli.web.id/sha         # hash rilis
+```
+
+Skrip pendek itu mengunduh `setup.sh` dari **tag rilis v4.0.7**, **memverifikasi sha256-nya**, baru menjalankan.
+Hash tidak cocok = berhenti sebelum memasang apa pun. `WIBU_BOOTSTRAP_ONLY=1` untuk sekadar verifikasi.
+
+| Syarat | |
+|---|---|
+| OS | Ubuntu 20.04+ / Debian 11+ |
+| Domain | A record mengarah ke IP VPS *(tanpa AAAA)* |
+| Akses | root |
+| Lisensi | IP VPS terdaftar di `izin.txt` ([@wibuvpn](https://t.me/wibuvpn)) |
+
+<details>
+<summary>🔐 Cara manual (unduh → verifikasi → pasang) — atau kalau link pendek mati</summary>
+
+**Pasang**
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.7/setup.sh
-sha256sum setup.sh     # harap: __HASH__
+sha256sum setup.sh     # harap: 671b844a1ad60baacb3b633a233b30fc88c7793f9eecd487e33ef1c0c22aff22
 bash setup.sh
 ```
 
-Kenapa tiga baris, bukan `curl | bash`? Supaya berkasnya **diverifikasi lebih dulu** - kalau hash tidak
-cocok kamu berhenti sebelum menjalankan apa pun. Angka di baris kedua berasal dari rilis ini dan
-**setiap rilis punya tag tetap (immutable) sendiri**, jadi hash di README selalu cocok dengan tag di
-baris pertama.
+**Hapus**
 
-- Baris 1 mengambil `setup.sh` dari **tag rilis `v4.0.7`** (bukan `main`) agar kode yang kamu pasang
-  tidak berubah di tengah jalan.
-- `setup.sh` lalu mengambil `menu/*`, `sbin/*`, `common.sh` dari **tag yang sama** dan memverifikasi
-  sha256 tiap berkas terhadap `SHA256SUMS`; hash tidak cocok = instalasi DIHENTIKAN.
-- Tag lain: `WIBU_REF=v4.0.7 bash setup.sh` · tag lama `v4.0.6-fixed` tetap ada (beku) ·
-  bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
+```bash
+curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.7/uninstall.sh
+sha256sum uninstall.sh   # harap: 310e0fa29f3bcac3d74ac76b86cfa05edd99a7c5c6078398f26112663823eebe
+bash uninstall.sh        # cadangan otomatis ke /root/wibutunnel-backup-*/
+```
 
-> **Penting - VPS dengan IPv6 "blackhole" (umum di Indonesia):** perintah di atas memakai `curl -4`
-> karena `wget` bisa **menggantung tanpa batas** dan `curl` tanpa `-4` menunggu ~24 detik per unduhan
-> (installer ada 25 unduhan). Kalau GitHub mentok dari jaringanmu, pakai mirror:
-> `https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@v4.0.7/setup.sh` (hash-nya sama).
+</details>
 
+- Semua berkas diambil dari **tag rilis `v4.0.7`** (bukan `main`) supaya kode yang kamu pasang tidak berubah di tengah jalan.
+- `setup.sh` memverifikasi sha256 tiap berkas terhadap `SHA256SUMS` dari tag yang sama; tidak cocok = instalasi DIHENTIKAN.
+- Tag lain: `WIBU_REF=v4.0.6-fixed bash setup.sh` · bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
+
+> ⏱️ ~5-10 menit. **VPS IPv6 "blackhole" (umum di Indonesia):** semua perintah memakai `curl -4`;
+> `wget` bisa menggantung tanpa batas. GitHub mentok? Link pendek otomatis pakai mirror jsDelivr.
+>
 > **Instalasi baru:** IP VPS harus terdaftar di `izin.txt` (hubungi @wibuvpn). Tanpa itu instalasi
 > berhenti di pemeriksaan lisensi - perilaku normal, bukan error jaringan.
 
