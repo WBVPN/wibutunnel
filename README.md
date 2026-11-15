@@ -29,7 +29,7 @@ Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu comman
 
 ### One-Liner
 ```bash
-wget -qO setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh 
+wget -qO setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/setup.sh
 sha256sum setup.sh     # harap: 518d8b98f86617ab57d4d271242ae84a773d12001c36b5f8316b1b705023eb14
 bash setup.sh
 ```
@@ -38,6 +38,9 @@ bash setup.sh
 `setup.sh` mengambil kode (`menu/*`, `sbin/*`, `common.sh`) dari **tag rilis** (bukan `main`) dan
 memverifikasi sha256 setiap berkas terhadap `SHA256SUMS`; hash tidak cocok = instalasi DIHENTIKAN.
 Ganti ref: `WIBU_REF=v4.0.6-fixed bash setup.sh` · bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
+
+**Instalasi versi rilis (terpin):** perintah di atas mengambil dari tag `v4.0.6-fixed`.
+Bila ingin versi terbaru dari cabang `main`, ganti `v4.0.6-fixed` menjadi `main` (hash `setup.sh` akan berbeda).
 
 > **Instalasi baru:** IP VPS harus terdaftar di `izin.txt` (hubungi @wibuvpn). Tanpa itu instalasi
 > berhenti di pemeriksaan lisensi — perilaku normal, bukan error jaringan.
@@ -135,11 +138,11 @@ m-setting   # Settings → [5] Update Script (verifikasi SHA256SUMS)
 ```bash
 wget -qO uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/uninstall.sh
 sha256sum uninstall.sh   # harap: 3fe0992fadd28373d8ace41e5f9bd7fcc50e711c3e472eddc6d117f305b7df26
-
-> Hindari `curl … | bash` untuk uninstall: skrip ini menghapus layanan/data. Installer Xray di
-> dalam `uninstall.sh` juga diverifikasi sha256 sebelum dijalankan.
 bash uninstall.sh
 ```
+
+> Hindari `curl … | bash` untuk uninstall: skrip ini menghapus layanan/data, jadi periksa dulu.
+> Installer Xray di dalam `uninstall.sh` juga diverifikasi sha256 sebelum dijalankan.
 Backup otomatis ke `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum hapus.
 
 ---
