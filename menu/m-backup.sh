@@ -62,6 +62,7 @@ if [[ "$1" == "auto" ]]; then
         etc/wibutunnel/locked_users.db \
         etc/wibutunnel/user_usage.db \
         etc/wibutunnel/recovery \
+        etc/wibutunnel/bot.conf \
         etc/xray/domain 2>/dev/null
 
     if [[ ! -f "$BACKUP_FILE" ]]; then
@@ -132,6 +133,7 @@ do_backup() {
         etc/wibutunnel/locked_users.db \
         etc/wibutunnel/user_usage.db \
         etc/wibutunnel/recovery \
+        etc/wibutunnel/bot.conf \
         etc/xray/domain 2>/dev/null
 
     if [[ ! -f "$BACKUP_FILE" ]]; then
@@ -277,7 +279,15 @@ do_restore() {
     cp -a "${xdir}/etc/wibutunnel/"*.db /etc/wibutunnel/ 2>/dev/null
     [[ -d "${xdir}/etc/wibutunnel/recovery" ]] && cp -a "${xdir}/etc/wibutunnel/recovery" /etc/wibutunnel/ 2>/dev/null
     cp -a "${xdir}/etc/xray/domain" /etc/xray/ 2>/dev/null
-    chmod 600 /etc/wibutunnel/*.db 2>/dev/null
+    cp -a "${xdir}/etc/wibutunnel/bot.conf" /etc/wibutunnel/ 2>/dev/null
+    chmod 600 /etc/wibutunnel/*.db /etc/wibutunnel/bot.conf 2>/dev/null
+    # [FIX] Zip tidak menyimpan pemilik grup: after `cp -a` config.json jadi root:root 640
+    # sedangkan Xray jalan sebagai user `xray` -> "permission denied" dan xray.service GAGAL
+    # (terbukti di VPS: restore sukses tapi Xray failed). Betulkan pemilik + izin di sini.
+    chown root:xray /usr/local/etc/xray/config.json 2>/dev/null || true
+    chmod 640 /usr/local/etc/xray/config.json 2>/dev/null || true
+    chown -R xray:xray /var/log/xray 2>/dev/null || true
+    chmod 600 /etc/xray/*_exp.conf 2>/dev/null || true
 
     # Pulihkan akun SSH ke sistem Linux jika ada data ssh_pass.db
     if [[ -f /etc/wibutunnel/ssh_pass.db ]]; then

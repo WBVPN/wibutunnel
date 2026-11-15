@@ -100,6 +100,36 @@ Update fail-closed jadi **menolak berkas yang sebenarnya sudah ada**. Cache-bust
 (CDN mengabaikan query untuk path itu). Perbaikan akhir: `SHA256SUMS` diambil **dari API GitHub lebih dulu**,
 raw hanya cadangan; bila hash berkas tidak cocok, berkas diunduh ulang lewat API lalu diverifikasi lagi.
 
+## 6c. Backup & pindah VPS (diuji)
+
+Backup berpassword (`zip -P`) dikirim ke Telegram; caption memuat **file_id + password** (jadi restore cukup dari chat).
+Isi arsip (13 entri): `config.json`, 4 berkas `*_exp.conf`, 5 DB (`ssh_pass`, `limit_ip`,
+`limit_bw`, `locked_users`, `user_usage`), `recovery/`, `domain`, `bot.conf`.
+
+Uji yang dijalankan di VPS:
+
+| Langkah | Hasil |
+|---|---|
+| Buat akun penanda `uji-backup-1` (exp 2030-12-31, limit_ip 2) lalu backup | zip 3.6 KB terkirim, `Auto backup SUCCESS` |
+| **Hapus seluruh data pelanggan** (setara VPS baru) | klien non-dummy = 0, `*_exp.conf` kosong, DB kosong |
+| Restore lewat menu [2] (file_id + password) | `[+] Backup valid. Mengembalikan data...` lalu `RESTORE BERHASIL!` |
+| Periksa hasil | akun + `exp 2030-12-31` + `limit_ip 2` kembali **persis**, `xray -test` = OK |
+| Menu setelah restore | keluar rapi (perbaikan EOF bekerja; tanpa itu menu berputar tanpa henti) |
+
+**Bug yang ketangkap:** setelah restore, `config.json` menjadi `640 root:root`. Zip tidak menyimpan pemilik grup dan
+`cp -a` mempertahankan `root:root`, sedangkan Xray berjalan sebagai user `xray` ->
+`failed to load config: permission denied` dan **`xray.service` GAGAL** (semua akun mati walau datanya "berhasil" dipulihkan).
+Diperbaiki di `do_restore`: `chown root:xray` + `chmod 640` + `chown -R xray:xray /var/log/xray` + `chmod 600` exp.
+
+### Memindahkan ke VPS baru - urutan yang benar
+
+1. **Daftarkan IP VPS baru** di `izin.txt` (repo ini) - tanpa itu instalasi DITOLAK (gerbang lisensi, fail-closed).
+2. Pasang panel di VPS baru dengan perintah README.
+3. Restore backup (menu **Backup & Restore -> [2]**) memakai **file_id + password** dari caption Telegram.
+4. Yang **tidak** ikut di backup dan perlu diulang: **sertifikat SSL** (installer menerbitkannya untuk domain baru),
+   dan setelan auto-reboot/cron lain di luar panel.
+5. Bersihkan akun sisa bila arsip berasal dari VPS yang pernah dipakai menjalankan `tests/*.sh`.
+
 ## 7. Sisa yang belum diuji
 
 - **Siklus reboot nyata** setelah perbaikan dedupe firewall (bukti statis + uji jalankan-2× sudah ada).
