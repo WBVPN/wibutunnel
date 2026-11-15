@@ -86,6 +86,7 @@ done
 for n in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemon lock-user unlock-user unlocker-wibu ws-stunnel wibu-daemon; do
   grep -q "$n" "$REPO/README.md" || { echo "     README belum menyebut daemon: $n"; _rmiss=1; }
 done
+t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/setup.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""
 t "perintah instalasi README pakai curl -4 (bukan wget)" "grep -q 'curl -4 -fsSL -o setup.sh' \"\$REPO/README.md\" && ! grep -qE '^wget -qO setup.sh' \"\$REPO/README.md\""
