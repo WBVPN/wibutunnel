@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.7
+# MASTER INSTALLER WIBU TUNNELING - v4.1.8
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
-# RESIDUAL RISK (v4.1.7):
+# RESIDUAL RISK (v4.1.8):
 #  * Pelanggan SSH masih mendapat shell /bin/bash. Mitigasi utama: port API Xray
 #    127.0.0.1:10085 dibatasi uid 0 via iptables owner-match + unit systemd
 #    wibutunnel-firewall.service (ditegakkan saat boot). Opt-in WIBU_SSH_NOLOGIN=1
@@ -134,7 +134,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.7}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.8}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -264,7 +264,17 @@ timedatectl set-timezone Asia/Jakarta
 apt-get update -y >/dev/null 2>&1
 apt-get install -y ntp dnsutils >/dev/null 2>&1
 # [FIX Debian 12] paket `ntp` tidak ada di instalasi minimal bookworm -> pakai systemd-timesyncd
+# [PORTABILITAS] Image Ubuntu 22.04 minimal TIDAK menyertakan systemd-timesyncd (jam bisa tidak sinkron ->
+# berpengaruh ke TLS/expiry). Pasang dulu bila belum ada, tapi TIDAK fatal supaya konflik paket ntp/chrony
+# tidak pernah membatalkan instalasi. Hanya dikerjakan kalau belum ada layanan NTP yang aktif.
+if ! systemctl is-active --quiet systemd-timesyncd && ! systemctl is-active --quiet ntp && ! systemctl is-active --quiet chrony; then
+    if ! dpkg -l systemd-timesyncd >/dev/null 2>&1 || ! dpkg -l systemd-timesyncd 2>/dev/null | grep -q '^ii'; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confold systemd-timesyncd >/dev/null 2>&1 || true
+    fi
+fi
 systemctl enable --now systemd-timesyncd >/dev/null 2>&1 || systemctl enable --now ntp >/dev/null 2>&1 || systemctl enable --now chrony >/dev/null 2>&1 || true
+systemctl is-active --quiet systemd-timesyncd || systemctl is-active --quiet ntp || systemctl is-active --quiet chrony \
+    || echo -e "\e[1;33m[!] Tidak ada layanan NTP yang aktif -> waktu VPS bisa meleset.\e[0m"
 
 mkdir -p /etc/xray /usr/local/etc/xray /etc/haproxy/certs /etc/wibutunnel /etc/wibutunnel/tmp
 chmod 700 /etc/wibutunnel /etc/wibutunnel/tmp
@@ -272,7 +282,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.7" > /etc/wibutunnel/version
+echo "4.1.8" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -843,7 +853,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.7}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.8}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
@@ -1312,7 +1322,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.7" > /etc/wibutunnel/version
+echo "4.1.8" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

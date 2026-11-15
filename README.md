@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.7
+# 🦋 WIBUTUNNEL v4.1.8
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.7-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.8-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: f153702ef6879c0fc104e4210cc36fabf62a710445b47c710b6e34c75eead0e3
+sha256sum setup.sh     # harap: a6dd1162c7efbc7564b3610838f7c4262194d1910e6069bd860d4347500fc70f
 bash setup.sh
 ```
 
@@ -201,6 +201,12 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.8 (2026-11-15)
+- **Ubuntu 22.04 (jammy) teruji lapangan**: HAProxy 2.4.30 `Configuration file is valid`, certbot 1.21.0 menerbitkan
+  sertifikat, dropbear **0 kegagalan start** (tambalan `NO_START` bekerja), 8/8 layanan, reboot bersih.
+- Temuan jammy: image minimal **tidak menyertakan `systemd-timesyncd`** sehingga jam tidak tersinkron. Sekarang
+  dipasang lebih dulu bila belum ada - **non-fatal**, supaya konflik paket `ntp`/`chrony` tidak pernah membatalkan instalasi.
 
 ### v4.1.7 (2026-11-15)
 - **KRITIS: v4.1.5 & v4.1.6 DITARIK.** Tambalan validasi HAProxy di kedua rilis itu **nyasar masuk ke dalam heredoc**
