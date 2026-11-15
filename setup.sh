@@ -402,12 +402,32 @@ iptables -I INPUT -p tcp --dport 80 -m connlimit --connlimit-above 100 -j REJECT
 
 fi   # end iptables idempotency guard
 
+# [FIX] Ambil skrip dari ref terpin supaya berkas ini juga ikut ter-update lewat menu [5]
+# (sebelumnya hanya ada sebagai heredoc di sini, jadi perbaikannya tak bisa dikirim ke VPS
+# pelanggan lewat jalur update). Gagal unduh/verifikasi -> pakai heredoc di bawahnya.
+wibu_get_script() { # $1=jalur repo  $2=tujuan
+    local tmp="/etc/wibutunnel/tmp/wg.$$" code exp act
+    code=$(curl -4 -sS -L --connect-timeout 10 --max-time 60 -w '%{http_code}' -o "$tmp" "${GITHUB_RAW}/$1" 2>/dev/null)
+    if [[ "$code" != "200" ]]; then
+        code=$(curl -4 -sS -L --connect-timeout 10 --max-time 60 -w '%{http_code}' -o "$tmp" "https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/$1" 2>/dev/null)
+    fi
+    [[ "$code" == "200" && -s "$tmp" ]] || { rm -f "$tmp"; return 1; }
+    exp=$(curl -4 -sS --max-time 40 "${GITHUB_RAW}/SHA256SUMS" 2>/dev/null | awk -v f="$1" '$2==f{print $1}' | head -1)
+    act=$(sha256sum "$tmp" 2>/dev/null | awk '{print $1}')
+    if [[ -n "$exp" && "$act" == "$exp" ]]; then install -m755 "$tmp" "$2"; rm -f "$tmp"; return 0; fi
+    rm -f "$tmp"
+    return 1
+}
+
 # [C2] MITIGASI UTAMA: API Xray 127.0.0.1:10085 tanpa auth hanya boleh diakses uid 0.
 # Akun pelanggan SSH dapat shell, jadi tanpa ini mereka bisa `xray api ...` atau
 # `ssh -L 10085:127.0.0.1:10085` untuk hapus user & lewati expiry/kuota.
 # Owner-match memblokir non-root, termasuk koneksi tunnel ssh -L (proses sshd
 # sudah turun ke uid user). Residual risk: pelanggan tetap punya shell.
-cat > /usr/local/sbin/wibutunnel-firewall.sh << 'FWEOF'
+if wibu_get_script "sbin/wibutunnel-firewall.sh" /usr/local/sbin/wibutunnel-firewall; then
+    echo -e "\e[1;32m[+] Skrip firewall dari ref terpin & terverifikasi\e[0m"
+else
+cat > /usr/local/sbin/wibutunnel-firewall << 'FWEOF'
 #!/bin/bash
 # Wibu Tunneling - paksa akses root-only ke port API Xray (mitigasi utama).
 # Tambahkan port API baru ke API_PORTS bila skema berubah.
@@ -428,8 +448,11 @@ for p in $API_PORTS; do
 done
 exit $rc
 FWEOF
-chmod +x /usr/local/sbin/wibutunnel-firewall.sh
-/usr/local/sbin/wibutunnel-firewall.sh || true
+    chmod +x /usr/local/sbin/wibutunnel-firewall
+fi
+# symlink nama lama supaya unit yang sudah terpasang tetap bekerja
+ln -sf /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.sh 2>/dev/null || true
+/usr/local/sbin/wibutunnel-firewall || true
 
 cat > /etc/systemd/system/wibutunnel-firewall.service << 'SVCEOF'
 [Unit]
@@ -440,7 +463,7 @@ Before=xray.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/sbin/wibutunnel-firewall.sh
+ExecStart=/usr/local/sbin/wibutunnel-firewall
 
 [Install]
 WantedBy=multi-user.target
@@ -450,7 +473,10 @@ systemctl enable wibutunnel-firewall.service >/dev/null 2>&1 || true
 
 iptables-save > /etc/iptables/rules.v4
 # QoS
-cat > /usr/local/sbin/network-tune.sh << 'EOF'
+if wibu_get_script "sbin/network-tune.sh" /usr/local/sbin/network-tune; then
+    echo -e "\e[1;32m[+] Skrip network-tune dari ref terpin & terverifikasi\e[0m"
+else
+cat > /usr/local/sbin/network-tune << 'EOF'
 #!/bin/bash
 # [FIX] Probe dukungan target CLASSIFY: sebagian kernel VPS tanpa modul ini, dan sebelumnya
 # 4 aturan gagal setiap menit (journal spam + QoS tidak jalan diam-diam).
@@ -471,7 +497,9 @@ for IFACE in $(ip -o -4 addr show | awk '{print $2}' | grep -v lo); do
     tc qdisc add dev $IFACE parent 1:1 fq_codel quantum 300 ecn
 done
 EOF
-chmod +x /usr/local/sbin/network-tune.sh
+    chmod +x /usr/local/sbin/network-tune
+fi
+ln -sf /usr/local/sbin/network-tune /usr/local/sbin/network-tune.sh 2>/dev/null || true
 
 cat > /etc/systemd/system/network-tune.service << EOF
 [Unit]
@@ -479,7 +507,7 @@ Description=QoS Low Latency
 After=network.target
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/network-tune.sh
+ExecStart=/usr/local/sbin/network-tune
 RemainAfterExit=true
 [Install]
 WantedBy=multi-user.target
