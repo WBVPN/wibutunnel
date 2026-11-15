@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.5
+# 🦋 WIBUTUNNEL v4.1.6
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.5-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.6-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 9775eee35788522acf3e951215121c3050c5d64326a81ac98c37961728c2c992
+sha256sum setup.sh     # harap: c55fdaac3750f3a0575acdb71c1729d52d1bf4b5f21a4e8ef39ea88061d8ce86
 bash setup.sh
 ```
 
@@ -201,6 +201,13 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.6 (2026-11-15)
+- **KRITIS:** `apt-get` sekarang memakai `-o Dpkg::Options::=--force-confold`. Sebabnya: installer menulis
+  `/etc/default/dropbear` LEBIH DULU (agar dropbear tidak merebut port 22) sehingga dpkg bertanya soal conffile -
+  dan karena stdin tidak interaktif, jawabannya EOF -> `end of file on stdin at conffile prompt` -> seluruh apt gagal.
+  Kesalahan ini ditemukan oleh uji-regresi di Debian 12, bukan oleh pemeriksaan hash.
+- Pesan gagal apt sekarang menyertakan cara memulihkan paket setengah terpasang (`dpkg --configure -a`).
 
 ### v4.1.5 (2026-11-15)
 **Persiapan agar kelima OS didukung** (hasil pelajaran Ubuntu 20.04 + Debian 12):
