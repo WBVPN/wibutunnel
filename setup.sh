@@ -455,6 +455,10 @@ for p in $API_PORTS; do
     done
     iptables -I OUTPUT 1 -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT || rc=1
 done
+# [FIX] Simpan keadaan yang sudah rapi ke rules.v4 supaya berkas == aturan nyata.
+# (Restore saat boot berjalan setelah unit ini dan menambah salinan -> berkas yang
+#  sudah berisi tepat satu aturan membuat siklus boot berikutnya stabil.)
+command -v iptables-save >/dev/null 2>&1 && iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
 exit $rc
 FWEOF
     chmod +x /usr/local/sbin/wibutunnel-firewall
@@ -466,7 +470,7 @@ ln -sf /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.s
 cat > /etc/systemd/system/wibutunnel-firewall.service << 'SVCEOF'
 [Unit]
 Description=Wibu Tunneling - Re-enforce root-only Xray API firewall
-After=network.target
+After=network.target netfilter-persistent.service
 Before=xray.service
 
 [Service]
@@ -479,6 +483,24 @@ WantedBy=multi-user.target
 SVCEOF
 systemctl daemon-reload
 systemctl enable wibutunnel-firewall.service >/dev/null 2>&1 || true
+
+# [FIX] Timer idempoten: unit oneshot bisa kalah urutan dengan restore iptables saat boot
+# (terbukti: aturan jadi 2 setelah reboot). Timer menjalankan ulang skrip (yang mendedupe)
+# 2 menit setelah boot lalu tiap 5 menit -> aturan kembali tepat 1 dan tetap ditegakkan.
+cat > /etc/systemd/system/wibutunnel-firewall.timer << 'TMREOF'
+[Unit]
+Description=Wibu Tunneling - re-enforce root-only Xray API firewall (periodik)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+TMREOF
+systemctl daemon-reload
+systemctl enable --now wibutunnel-firewall.timer >/dev/null 2>&1 || true
 
 iptables-save > /etc/iptables/rules.v4
 # QoS

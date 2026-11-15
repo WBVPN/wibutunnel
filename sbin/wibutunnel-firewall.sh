@@ -16,4 +16,8 @@ for p in $API_PORTS; do
     done
     iptables -I OUTPUT 1 -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT || rc=1
 done
+# [FIX] Simpan keadaan yang sudah rapi ke rules.v4 supaya berkas == aturan nyata.
+# (Restore saat boot berjalan setelah unit ini dan menambah salinan -> berkas yang
+#  sudah berisi tepat satu aturan membuat siklus boot berikutnya stabil.)
+command -v iptables-save >/dev/null 2>&1 && iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
 exit $rc
