@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.1
+# 🦋 WIBUTUNNEL v4.1.2
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.1-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.2-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -36,15 +36,15 @@ curl -4 -fsSL https://wibu.loli.web.id/i | bash
 **Tanpa perantara sama sekali** (unduh → verifikasi → pasang):
 
 ```bash
-curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/download/v4.0.9/setup.sh
-sha256sum setup.sh     # harap: cd51985934e06f24e5edb86e395e910f06e2671bd368f021efd118c27297500b
+curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/setup.sh
+sha256sum setup.sh     # harap: ddebcfcc79534bb2363d7f7338b530ffe358eb98db5ba9d023e753f35c251ee6
 bash setup.sh
 ```
 
 **Hapus** (cadangan otomatis ke `/root/wibutunnel-backup-*/`):
 
 ```bash
-curl -4 -fsSL -o uninstall.sh https://github.com/WBVPN/wibutunnel/releases/download/v4.0.9/uninstall.sh
+curl -4 -fsSL -o uninstall.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/uninstall.sh
 sha256sum uninstall.sh   # harap: db9734a4f248e18102c4eb33329de5e00266c1a041359dea4f55128aeeca7b38
 bash uninstall.sh
 ```
@@ -207,6 +207,10 @@ curl -4 -fsSL https://wibu.loli.web.id/u | bash     # cadangan otomatis ke /root
 ---
 
 ## 📝 Changelog
+
+### v4.1.2 (2026-11-15)
+- Tautan unduh di README memakai `releases/latest/download/...` supaya tidak bisa menunjuk versi lama.
+- `systemctl reset-failed` untuk unit bot (status bersih saat token belum diisi).
 
 ### v4.1.1 (2026-11-15)
 - `wibu-audit-akun` kini **ikut dipasang** oleh installer (sebelumnya hanya lewat update menu - instalasi baru tidak punya).
