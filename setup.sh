@@ -175,10 +175,18 @@ echo -e "\e[1;32m[+] IPv6 berhasil dimatikan secara permanen!\e[0m"
 
 # DOMAIN INPUT
 domain="${1:-${DOMAIN}}"
+_domain_try=0
 while true; do
     if [[ -z "$domain" ]]; then
-        read -p "Masukkan Domain Anda: " domain
-        [[ -z "$domain" ]] && { echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"; continue; }
+        # [FIX] tanpa penjaga ini, input habis (EOF) = loop tanpa henti (1,4 juta baris log / 2 menit)
+        if ! read -r -p "Masukkan Domain Anda: " domain; then
+            echo -e "\e[31m[!] Input berakhir (EOF). Instalasi dihentikan.\e[0m"
+            exit 1
+        fi
+        [[ -z "$domain" ]] && { echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"
+                                _domain_try=$((_domain_try+1))
+                                [[ $_domain_try -ge 5 ]] && { echo -e "\e[31m[!] 5 kali gagal. Keluar.\e[0m"; exit 1; }
+                                continue; }
     fi
 
     if ! command -v dig >/dev/null 2>&1; then
@@ -199,10 +207,12 @@ while true; do
         break
     else
         echo -e "\e[1;33m[!] IP Domain berbeda dengan IP VPS.\e[0m"
-        read -p "Lanjutkan dengan mode Cloudflare? (y/n): " lanjut
+        read -r -p "Lanjutkan dengan mode Cloudflare? (y/n): " lanjut || { echo -e "\e[31m[!] Input berakhir (EOF). Keluar.\e[0m"; exit 1; }
         if [[ "$lanjut" == "y" || "$lanjut" == "Y" ]]; then
             break
         fi
+        _domain_try=$((_domain_try+1))
+        [[ $_domain_try -ge 5 ]] && { echo -e "\e[31m[!] 5 kali gagal. Keluar.\e[0m"; exit 1; }
         domain=""
         continue
     fi
@@ -373,8 +383,8 @@ cat > /usr/local/sbin/wibutunnel-firewall.sh << 'FWEOF'
 API_PORTS="10085"
 rc=0
 for p in $API_PORTS; do
-    iptables -C OUTPUT ! -m owner --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null || \
-        iptables -I OUTPUT 1 ! -m owner --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT || rc=1
+    iptables -C OUTPUT -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null || \
+        iptables -I OUTPUT 1 -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT || rc=1
 done
 exit $rc
 FWEOF

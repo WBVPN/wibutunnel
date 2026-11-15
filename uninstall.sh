@@ -72,8 +72,8 @@ if command -v iptables >/dev/null 2>&1; then
     # [C2] Hapus HANYA aturan owner-match milik wibutunnel (cocokkan pola),
     # jangan flush seluruh firewall.
     for p in 10085; do
-        while iptables -C OUTPUT ! -m owner --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null; do
-            iptables -D OUTPUT ! -m owner --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null || break
+        while iptables -C OUTPUT -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null; do
+            iptables -D OUTPUT -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null || break
         done
     done
     iptables -t mangle -F 2>/dev/null

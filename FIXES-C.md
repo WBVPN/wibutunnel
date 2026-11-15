@@ -112,3 +112,8 @@ Nomor baris = sebelum → sesudah (berkas diubah in-place, jadi nomor setelah = 
    dimaksud sebagai source-of-truth, perlu refactor setup.sh — di luar scope.
 4. Rule iptables memakai `--uid-owner` (tersedia di xt_owner standar Debian/Ubuntu; sudah ada
    paket `iptables` di daftar apt setup.sh).
+
+## Koreksi (2026-11-15, setelah uji container)
+- Aturan iptables versi awal `! -m owner --uid-owner 0` TIDAK valid di iptables-nft (Ubuntu 22.04):
+  `unexpected ! flag before --match`. Diskorig menjadi `-m owner ! --uid-owner 0` (diuji: `iptables -C` -> exit 1
+  = sintaks valid, aturan belum ada). Terima kasih uji end-to-end.
