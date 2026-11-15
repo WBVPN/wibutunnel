@@ -136,3 +136,36 @@ Diperbaiki di `do_restore`: `chown root:xray` + `chmod 640` + `chown -R xray:xra
 - **Koneksi klien dari perangkat nyata** (VLESS/VMESS/Trojan/SSH) — pemilik VPS melaporkan akun sudah konek.
 - **Layanan bot Telegram** hanya diuji dengan satu bot uji (`@bansoswibu_bot`).
 - **Siklus reboot** setelah semua perbaikan (butuh akses root di VPS uji).
+
+
+---
+
+## 7. Uji lapangan: Debian 12 (bookworm) - 2026-11-15
+
+VPS: `103.150.60.84` di-rebuild ke Debian 12 (kernel 6.1, 973 MB RAM, 18 GB disk), instalasi dari
+aset Release GitHub (tag v4.1.3) tanpa penyesuaian manual apa pun.
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Penjaga OS | `[+] OS terdeteksi: Debian GNU/Linux 12 (bookworm) (12)` |
+| Validasi domain | `[+] Pointing Sukses!` (A record -> IP VPS, tanpa AAAA) |
+| Galat apt/dpkg | **0** (semua 21 paket terpasang: haproxy 2.6.12, certbot 2.1.0, dropbear 2022.83, iptables-persistent 1.0.20, rsyslog 8.2302, python3 3.11.2) |
+| HAProxy | `haproxy -c`: **Configuration file is valid** (2.6.12; konfigurasi 2.x-compatible terbukti) |
+| Sertifikat | certbot 2.1.0 menerbitkan `test.priasawit.web.id`, berlaku s/d 2027-02-13 |
+| syslog | `/dev/log -> /run/systemd/journal/dev-log`, `rsyslog active`, HAProxy menulis log |
+| Waktu | `systemd-timesyncd active`, `System clock synchronized: yes` |
+| Layanan | 8/8 `active` **dan** `enabled` (xray, haproxy, dropbear, ws-stunnel, algojo-expired, wibu-daemon, wibutunnel-firewall, network-tune) |
+| Port | 80, 443, 143, 109 (publik) + 10015, 10085 (lokal) |
+| Xray | `Configuration OK`, 9 inbound |
+| Keamanan | config 640 `root:xray`, `*_exp.conf` 600, `/etc/wibutunnel` 700, aturan `:10085` = 1, non-root ke API **DITOLAK**, lisensi **LOLOS** |
+| Akun uji | `staging-1` (VLESS, exp 2026-12-15, limit IP 2), audit bersih |
+
+**Temuan yang diperbaiki sebelum uji ini (dari analisis statis bookworm):** `rsyslog` tidak ada di
+instalasi minimal (log HAProxy hilang), paket `ntp` tidak ada (waktu tidak sinkron), pesan penjaga OS
+tidak menyebut versi.
+**Temuan saat uji:** `systemctl status dropbear/haproxy` sempat menampilkan `failed` karena percobaan
+start dengan konfigurasi bawaan paket sebelum installer menulis konfigurnya -> ditambahkan
+`systemctl reset-failed` (v4.1.4). Pembacaan `is-active` harus dilakukan setelah layanan tenang.
+
+**Batas yang belum diuji:** beban banyak klien paralel (load test) dan reboot VPS Debian 12 (belum
+dilakukan pada uji ini).

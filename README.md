@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.3
+# 🦋 WIBUTUNNEL v4.1.4
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.3-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.4-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/setup.sh
-sha256sum setup.sh     # harap: e10bc949d51f2e883a1e25be36202f4b94d6c130e61d066e5277c412c320d0d4
+sha256sum setup.sh     # harap: 30be59b81cb22665f99fcbde521b7c20c463dfa46ee3e27006e4b265f556e60d
 bash setup.sh
 ```
 
@@ -201,6 +201,10 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.4 (2026-11-15)
+- **Debian 12 (bookworm) teruji nyata** di VPS: HAProxy 2.6 `Configuration file is valid`, certbot 2.1.0 menerbitkan sertifikat, `rsyslog` + `/dev/log` jalan, `systemd-timesyncd` sinkron, 8/8 layanan aktif **dan enabled**, port 80/443/143/109 dengar.
+- Sisa status `failed` dari percobaan start dengan konfigurasi bawaan paket dibersihkan (`systemctl reset-failed`), jadi `systemctl status` tidak menyesatkan setelah instalasi.
 
 ### v4.1.3 (2026-11-15)
 - **Persiapan Debian 12 (bookworm):** `rsyslog` ikut dipasang (agar `/dev/log` ada dan log HAProxy tidak hilang - instalasi minimal bookworm tidak punya syslog), NTP pakai `systemd-timesyncd` lebih dulu (`paket ntp` tidak ada di bookworm minimal), penjaga OS kini menyebut versi yang didukung + menampilkan OS/versi yang terdeteksi.
