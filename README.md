@@ -1,28 +1,21 @@
-# 🦋 WIBUTUNNEL v4.0.8
+# 🦋 WIBUTUNNEL v4.0.9
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.0.8-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.0.9-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
 
-## ⚡ Instalasi — satu baris
+## ⚡ Instalasi
 
 ```bash
-curl -4 -fsSL https://wibu.loli.web.id/i | bash
+curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash
 ```
 
-Cek dulu isi skripnya (disarankan):
-
-```bash
-curl -4 -fsSL https://wibu.loli.web.id/i | less
-curl -4 -fsSL https://wibu.loli.web.id/sha         # hash rilis
-```
-
-Skrip pendek itu mengunduh `setup.sh` dari **tag rilis v4.0.8**, **memverifikasi sha256-nya**, baru menjalankan.
-Hash tidak cocok = berhenti sebelum memasang apa pun. `WIBU_BOOTSTRAP_ONLY=1` untuk sekadar verifikasi.
+Aset dari **Release resmi GitHub**. Skrip itu mengunduh `setup.sh` dari tag rilis, **memverifikasi sha256-nya**,
+baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 | Syarat | |
 |---|---|
@@ -31,43 +24,35 @@ Hash tidak cocok = berhenti sebelum memasang apa pun. `WIBU_BOOTSTRAP_ONLY=1` un
 | Akses | root |
 | Lisensi | IP VPS terdaftar di `izin.txt` ([@wibuvpn](https://t.me/wibuvpn)) |
 
-**Murni GitHub (tanpa link pendek)** — sama-sama satu baris, aset dari Release resmi:
+<details>
+<summary>🔧 Alternatif & cara manual</summary>
+
+**Domain pendek** (kalau malas mengetik / dibagikan ke pelanggan):
 
 ```bash
-curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash
+curl -4 -fsSL https://wibu.loli.web.id/i | bash
 ```
 
-<details>
-<summary>🔐 Cara manual (unduh → verifikasi → pasang) — atau kalau link pendek mati</summary>
-
-**Pasang**
+**Tanpa perantara sama sekali** (unduh → verifikasi → pasang):
 
 ```bash
-curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.8/setup.sh
-sha256sum setup.sh     # harap: 403f001787db4a2a6978195b128f354e0139fff3c9b0694e98c5fb476e59035d
+curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/download/v4.0.9/setup.sh
+sha256sum setup.sh     # harap: 6dbdc265db7bbb59eeff4207bb562084ff31080bde72f228f764ee2ff4de3344
 bash setup.sh
 ```
 
-**Hapus**
+**Hapus** (cadangan otomatis ke `/root/wibutunnel-backup-*/`):
 
 ```bash
-curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.8/uninstall.sh
+curl -4 -fsSL -o uninstall.sh https://github.com/WBVPN/wibutunnel/releases/download/v4.0.9/uninstall.sh
 sha256sum uninstall.sh   # harap: 310e0fa29f3bcac3d74ac76b86cfa05edd99a7c5c6078398f26112663823eebe
-bash uninstall.sh        # cadangan otomatis ke /root/wibutunnel-backup-*/
+bash uninstall.sh
 ```
 
 </details>
 
-- Semua berkas diambil dari **tag rilis `v4.0.8`** (bukan `main`) supaya kode yang kamu pasang tidak berubah di tengah jalan.
-- `setup.sh` memverifikasi sha256 tiap berkas terhadap `SHA256SUMS` dari tag yang sama; tidak cocok = instalasi DIHENTIKAN.
-- Tag lain: `WIBU_REF=v4.0.7 bash setup.sh` · bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
-- **Update menu ([5]) mengikuti rilis terbaru** (`main`) + verifikasi sha256 - jadi perbaikan setelah rilis tetap sampai; installer tetap memakai tag beku agar reproducible.
-
-> ⏱️ ~5-10 menit. **VPS IPv6 "blackhole" (umum di Indonesia):** semua perintah memakai `curl -4`;
-> `wget` bisa menggantung tanpa batas. GitHub mentok? Link pendek otomatis pakai mirror jsDelivr.
->
-> **Instalasi baru:** IP VPS harus terdaftar di `izin.txt` (hubungi @wibuvpn). Tanpa itu instalasi
-> berhenti di pemeriksaan lisensi - perilaku normal, bukan error jaringan.
+> ⏱️ ~5-10 menit. Instalasi baru: IP VPS harus terdaftar di `izin.txt`, kalau tidak berhenti di pemeriksaan lisensi
+> (memang begitu, bukan error jaringan). Semua perintah memakai `curl -4` karena VPS IPv6 "blackhole" umum di Indonesia.
 
 ## ✨ Fitur
 
@@ -222,6 +207,12 @@ curl -4 -fsSL https://wibu.loli.web.id/u | bash     # cadangan otomatis ke /root
 ---
 
 ## 📝 Changelog
+
+### v4.0.9 (2026-11-15)
+- **KRITIS:** `-4` nyasar di daftar paket apt + di `command -v curl -4` membuat **seluruh apt-get gagal** ->
+  haproxy/certbot/jq tidak terpasang -> "Failed to enable services". Ditemukan saat uji instalasi penuh (bukan dari hash).
+- apt gagal sekarang **fatal** (berhenti jelas, tidak lanjut setengah jalan) + menyebut layanan mana yang tidak aktif.
+- Cek harness baru: `-4` hanya boleh jadi argumen pertama `curl`/`wget`/`ip`.
 
 ### v4.0.8 (2026-11-15)
 - **Instalasi 1 baris:** `curl -4 -fsSL https://wibu.loli.web.id/i | bash` (bootstrap verifikasi hash dulu) + `install.sh`

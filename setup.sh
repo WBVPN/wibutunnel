@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.0.8
+# MASTER INSTALLER WIBU TUNNELING - v4.0.9
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
-# RESIDUAL RISK (v4.0.8):
+# RESIDUAL RISK (v4.0.9):
 #  * Pelanggan SSH masih mendapat shell /bin/bash. Mitigasi utama: port API Xray
 #    127.0.0.1:10085 dibatasi uid 0 via iptables owner-match + unit systemd
 #    wibutunnel-firewall.service (ditegakkan saat boot). Opt-in WIBU_SSH_NOLOGIN=1
@@ -24,7 +24,7 @@ if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
 fi
 
 # Pre-flight tool check
-command -v curl -4 >/dev/null 2>&1 || { apt-get update -y >/dev/null 2>&1 && apt-get install -y curl wget >/dev/null 2>&1; }
+command -v curl >/dev/null 2>&1 || { apt-get update -y >/dev/null 2>&1 && apt-get install -y curl wget >/dev/null 2>&1; }
 
 # [FIX Bug #1] Deteksi IP publik dengan validasi dan retry
 echo -e "\e[1;36m[+] Mendeteksi IP publik...\e[0m"
@@ -131,7 +131,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.0.8}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.0.9}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -268,7 +268,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.0.8" > /etc/wibutunnel/version
+echo "4.0.9" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -350,7 +350,14 @@ EOF
 # INSTALL PAKET (dibersihkan dari bloat nginx/python3/socat)
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl -4 jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3
+# [FIX-KRITIS] '-4' pernah nyasar masuk daftar paket di sini (akibat penyisiran curl -4),
+# membuat SELURUH apt-get gagal -> haproxy tidak terpasang -> "Failed to enable services".
+# apt gagal sekarang DIANGGAP FATAL: lanjut tanpa paket = instalasi setengah jalan.
+if ! apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3; then
+    echo -e "\e[1;31m[!] Gagal memasang paket dasar. Instalasi DIHENTIKAN supaya tidak setengah jalan.\e[0m"
+    echo -e "\e[1;33m    Cek koneksi repo: apt-get update && apt-get install -y curl\e[0m"
+    exit 1
+fi
 
 # [FIX] Enable iptables-persistent agar rules survive reboot
 systemctl enable netfilter-persistent >/dev/null 2>&1 || true
@@ -791,7 +798,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.0.8}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.0.9}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
