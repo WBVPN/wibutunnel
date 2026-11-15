@@ -143,6 +143,7 @@ t "portabilitas: dropbear tidak start otomatis sebelum konfigurasi siap" "grep -
 t "portabilitas: konfigurasi haproxy divalidasi + fallback" "grep -q 'haproxy -c menolak konfigurasi' \"\$REPO/setup.sh\""
 t "portabilitas: fallback AppArmor haproxy" "grep -q 'AppArmor memblokir haproxy' \"\$REPO/setup.sh\""
 t "portabilitas: laporan versi paket saat instalasi" "grep -q 'Versi: haproxy' \"\$REPO/setup.sh\""
+t "apt memakai --force-confold (conffile tidak pernah bertanya)" "grep -q 'Dpkg::Options::=--force-confold' \"\$REPO/setup.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""

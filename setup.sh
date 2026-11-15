@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.5
+# MASTER INSTALLER WIBU TUNNELING - v4.1.6
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
-# RESIDUAL RISK (v4.1.5):
+# RESIDUAL RISK (v4.1.6):
 #  * Pelanggan SSH masih mendapat shell /bin/bash. Mitigasi utama: port API Xray
 #    127.0.0.1:10085 dibatasi uid 0 via iptables owner-match + unit systemd
 #    wibutunnel-firewall.service (ditegakkan saat boot). Opt-in WIBU_SSH_NOLOGIN=1
@@ -134,7 +134,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.5}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.6}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -272,7 +272,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.5" > /etc/wibutunnel/version
+echo "4.1.6" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -374,9 +374,16 @@ if [[ -f /etc/default/dropbear ]]; then
     [[ -n "$_bn" && ! -f "$_bn" ]] && { mkdir -p "$(dirname "$_bn")" 2>/dev/null; : > "$_bn"; }
 fi
 # DEBIAN_FRONTEND=noninteractive: hindari prompt debconf (iptables-persistent) saat instalasi tanpa TTY.
-if ! DEBIAN_FRONTEND=noninteractive apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3 rsyslog; then
+# [FIX-KRITIS] -o Dpkg::Options::=--force-confold WAJIB: installer menulis beberapa berkas konfigurasi
+# (mis. /etc/default/dropbear untuk mencegah dropbear merebut port 22) SEBELUM paketnya dipasang.
+# Tanpa opsi ini dpkg bertanya soal conffile, dan karena stdin installer tidak interaktif (EOF),
+# dpkg gagal -> "end of file on stdin at conffile prompt" -> seluruh apt-get gagal.
+if ! DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef \
+        curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3 rsyslog; then
     echo -e "\e[1;31m[!] Gagal memasang paket dasar. Instalasi DIHENTIKAN supaya tidak setengah jalan.\e[0m"
-    echo -e "\e[1;33m    Cek koneksi repo: apt-get update && apt-get install -y curl\e[0m"
+    echo -e "\e[1;33m    Cek repo : apt-get update\e[0m"
+    echo -e "\e[1;33m    Paket setengah terpasang (kalau ada): DEBIAN_FRONTEND=noninteractive dpkg --configure -a\e[0m"
     exit 1
 fi
 
@@ -842,7 +849,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.5}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.6}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
@@ -1313,7 +1320,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.5" > /etc/wibutunnel/version
+echo "4.1.6" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
