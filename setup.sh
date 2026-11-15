@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.4
+# MASTER INSTALLER WIBU TUNNELING - v4.1.5
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
-# RESIDUAL RISK (v4.1.4):
+# RESIDUAL RISK (v4.1.5):
 #  * Pelanggan SSH masih mendapat shell /bin/bash. Mitigasi utama: port API Xray
 #    127.0.0.1:10085 dibatasi uid 0 via iptables owner-match + unit systemd
 #    wibutunnel-firewall.service (ditegakkan saat boot). Opt-in WIBU_SSH_NOLOGIN=1
@@ -134,7 +134,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.4}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.5}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -272,7 +272,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.4" > /etc/wibutunnel/version
+echo "4.1.5" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -362,6 +362,13 @@ apt-get update -y
 # Siapkan direktori+banner kosong lebih dulu, dan buat banner yang hilang jadi ada.
 mkdir -p /etc/wibutunnel 2>/dev/null || true
 [[ -f /etc/wibutunnel/ssh-banner ]] || : > /etc/wibutunnel/ssh-banner
+# [PORTABILITAS] Paket dropbear bawaan Debian/Ubuntu mendengarkan di port 22 dan postinst-nya
+# menjalankannya SEGERA saat apt memasang. Kalau dia menang balapan dengan sshd, admin bisa
+# kehilangan akses SSH. Tulis NO_START=1 lebih dulu supaya postinst tidak menyalakannya;
+# konfigurasi sebenarnya (143/109/2222) ditulis setelah semua paket terpasang.
+if [[ ! -f /etc/default/dropbear ]] || ! grep -q '^# WIBUTUNNEL' /etc/default/dropbear 2>/dev/null; then
+    printf '# WIBUTUNNEL: jangan start otomatis sebelum konfigurasi siap\nNO_START=1\nDROPBEAR_PORT=143\n' > /etc/default/dropbear
+fi
 if [[ -f /etc/default/dropbear ]]; then
     _bn=$(sed -n 's/^DROPBEAR_BANNER="\?\(.*\)"\?$/\1/p' /etc/default/dropbear | head -1)
     [[ -n "$_bn" && ! -f "$_bn" ]] && { mkdir -p "$(dirname "$_bn")" 2>/dev/null; : > "$_bn"; }
@@ -372,6 +379,10 @@ if ! DEBIAN_FRONTEND=noninteractive apt-get install -y curl jq uuid-runtime hapr
     echo -e "\e[1;33m    Cek koneksi repo: apt-get update && apt-get install -y curl\e[0m"
     exit 1
 fi
+
+# [PORTABILITAS] Catat versi paket kunci: memudahkan tahu kombinasi apa yang dipakai saat ada keluhan.
+echo -e "\e[1;36m[+] Versi: haproxy $(haproxy -v 2>/dev/null | head -1 | awk '{print $3}') | certbot $(certbot --version 2>&1 | awk '{print $2}') | dropbear $(dpkg -l dropbear 2>/dev/null | awk '/^ii/{print $3}') | python $(python3 -V 2>&1 | awk '{print $2}') | openssl $(openssl version 2>/dev/null | awk '{print $2}')\e[0m"
+[[ -e /dev/log ]] || echo -e "\e[1;33m[!] /dev/log tidak ada -> log HAProxy tidak tersimpan (pasang rsyslog).\e[0m"
 
 # [FIX] Enable iptables-persistent agar rules survive reboot
 systemctl enable netfilter-persistent >/dev/null 2>&1 || true
@@ -645,6 +656,25 @@ chmod 750 /etc/xray 2>/dev/null || true
 
 # HAProxy Config
 cat <<HFEOF > /etc/haproxy/haproxy.cfg
+
+# [PORTABILITAS] Rentang versi HAProxy yang didukung cukup lebar (2.0 Ubuntu 20.04 .. 2.8 Ubuntu 24.04).
+# Validasi konfigurasi lalu turunkan versi minimal kalau ada direktif yang tidak dikenal versi itu,
+# supaya instalasi tidak berhenti hanya karena satu baris direktif.
+if ! haproxy -c -f /etc/haproxy/haproxy.cfg >/tmp/hpcheck.log 2>&1; then
+    echo -e "\e[1;33m[!] haproxy -c menolak konfigurasi -> mencoba versi minimal (tanpa direktif khusus 2.2+)\e[0m"
+    grep -vE '^[[:space:]]*ssl-default-bind-ciphersuites' /etc/haproxy/haproxy.cfg > /tmp/hp.min.cfg
+    if ! haproxy -c -f /tmp/hp.min.cfg >/tmp/hpcheck2.log 2>&1; then
+        grep -vE '^[[:space:]]*(ssl-default-bind-ciphersuites|ssl-default-bind-options|ssl-default-bind-ciphers)' /etc/haproxy/haproxy.cfg > /tmp/hp.min.cfg
+    fi
+    if haproxy -c -f /tmp/hp.min.cfg >/dev/null 2>&1; then
+        install -m 644 /tmp/hp.min.cfg /etc/haproxy/haproxy.cfg
+        echo -e "\e[1;32m[+] Konfigurasi minimal diterima versi HAProxy ini ($(haproxy -v 2>/dev/null | head -1 | awk '{print $3}')).\e[0m"
+    else
+        echo -e "\e[1;31m[!] haproxy -c tetap gagal. Keluaran: $(tail -1 /tmp/hpcheck.log)\e[0m"
+    fi
+    rm -f /tmp/hp.min.cfg
+fi
+rm -f /tmp/hpcheck.log /tmp/hpcheck2.log
 global
     log /dev/log local0
     log /dev/log local1 notice
@@ -812,7 +842,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.4}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.5}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
@@ -1170,6 +1200,18 @@ cat <<EOF > /usr/local/bin/watchdog.sh
 #!/bin/bash
 systemctl is-active --quiet xray || systemctl restart xray
 systemctl is-active --quiet haproxy || systemctl restart haproxy
+# [PORTABILITAS] Ubuntu membawa profil AppArmor untuk haproxy; profil itu bisa memblokir
+# sertifikat/chroot sehingga haproxy gagal start walau `haproxy -c` lolos. Kalau terdeteksi
+# penolakan AppArmor, ubah profil ke mode complain lalu coba lagi.
+if ! systemctl is-active --quiet haproxy; then
+    if command -v aa-status >/dev/null 2>&1 && aa-status 2>/dev/null | grep -q haproxy \
+       && journalctl -k --no-pager -n 200 2>/dev/null | grep -qi 'apparmor.*haproxy'; then
+        echo -e "\e[1;33m[!] AppArmor memblokir haproxy -> profil diubah ke complain mode\e[0m"
+        aa-complain /etc/apparmor.d/usr.sbin.haproxy >/dev/null 2>&1 || true
+        systemctl restart haproxy >/dev/null 2>&1 || true
+    fi
+    systemctl is-active --quiet haproxy || echo -e "\e[1;31m[!] haproxy belum aktif. Periksa: journalctl -u haproxy -n 40\e[0m"
+fi
 EOF
 chmod +x /usr/local/bin/watchdog.sh
 
@@ -1271,7 +1313,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.4" > /etc/wibutunnel/version
+echo "4.1.5" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
