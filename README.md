@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.0.6 KURUMI
+# 🦋 WIBUTUNNEL v4.0.6-fixed
 
 Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu command, VPN langsung jalan.
 
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)](https://github.com/WBVPN/wibutunnel)
-[![Version](https://img.shields.io/badge/Version-v4.0.6%20KURUMI-blue.svg)](https://github.com/WBVPN/wibutunnel)
+[![Version](https://img.shields.io/badge/Version-v4.0.6-fixed-blue.svg)](https://github.com/WBVPN/wibutunnel)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)](https://github.com/WBVPN/wibutunnel)
 
 ---
@@ -116,7 +116,7 @@ Input expiry baru, IP limit, bandwidth → restored + notif Telegram.
 ```bash
 m-setting → [5] Update Script
 # Atau manual:
-cd /root/wibutunnel-repo && git pull origin main && bash setup.sh
+cd /root/wibutunnel && git pull origin main && bash setup.sh
 ```
 
 ---
@@ -222,7 +222,7 @@ cat /etc/xray/vless_exp.conf  # Format: username:YYYY-MM-DD HH:MM:SS
 **📊 Dashboard:**
 - Multi-service live monitor (`Online` / `Degraded`)
 - Clean SSH menu (hapus opsi usang)
-- 11 test suites automated
+- 11 test suite lama + `tests/test_hardening.sh` (32 cek keamanan, non-destruktif)
 
 **🐛 Critical Fixes:**
 - SSH-1: Parsing `ss` benar ($3/$5, PID via ps, filter dropbear|sshd)
@@ -263,3 +263,10 @@ MIT License - bebas pakai, modif, distribusi.
 ⭐ Star this repo if you find it useful!
 
 </div>
+
+
+## 🔐 Patch keamanan (2026-11-15)
+Rilis ini menutup temuan audit: rantai pasok (`curl|bash`) dipin+verifikasi hash, update fail-closed
+(`SHA256SUMS`), API Xray 10085 diblokir untuk non-root, token bot keluar dari `argv`, restore backup
+wajib password + validasi entri, izin berkas diperketat, dan tulis DB ber-`flock`.
+Rincian + cara verifikasi: **`docs/SECURITY_FIXES.md`** · uji: `bash tests/test_hardening.sh`.
