@@ -154,6 +154,7 @@ t "nama ISP bisa ditimpa manual lewat /etc/wibutunnel/isp.txt" "grep -q '/etc/wi
 t "unduhan punya rantai sumber + verifikasi hash per sumber" "grep -q 'for src in raw api jsdelivr raw2' \"\$REPO/setup.sh\" && grep -q 'hash tidak cocok (CDN kemungkinan masih basi)' \"\$REPO/setup.sh\""
 t "reinstall tidak menghapus daftar masa aktif akun" "grep -q 'if \[ ! -f /etc/xray/vless_exp.conf \]' \"\$REPO/setup.sh\""
 t "reinstall memasang kembali klien lama" "grep -q 'Akun lama dipasang kembali' \"\$REPO/setup.sh\" && grep -q 'KLIEN_LAMA' \"\$REPO/setup.sh\""
+t "cache manifest per-ref + divalidasi" "grep -q 'wibu-manifest-\${WIBU_REF}' \"\$REPO/setup.sh\" && grep -q 'wibu_manifest_valid()' \"\$REPO/setup.sh\""
 t "ada alat verifikasi rantai rilis" "test -x \"\$REPO/tools/verify-release.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
