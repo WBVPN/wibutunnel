@@ -53,7 +53,7 @@ t "limits.conf dicadangkan + blok berpenanda"  "grep -q 'wibutunnel' \"\$REPO/se
 t "restore zip: wajib password + validasi entri" "grep -q 'unzip -P' \"\$REPO/menu/m-backup.sh\" && grep -qE '\\.\\.|entri|entry' \"\$REPO/menu/m-backup.sh\""
 t "m-backup pakai mktemp"                      "grep -q 'mktemp' \"\$REPO/menu/m-backup.sh\""
 t "password backup acak (openssl rand / mktemp), bukan CHAT_ID" "grep -qE 'openssl rand|\$RANDOM|mktemp' \"\$REPO/menu/m-backup.sh\" && ! grep -qE 'password.*\"\$CHAT_ID\"' \"\$REPO/menu/m-backup.sh\""
-t "penanda versi 4.0.7"                        "grep -q '4\\.0\\.8' \"\$REPO/setup.sh\""
+t "penanda versi = tag rilis di setup.sh (tidak bisa melenceng)" "V=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+. > /etc/wibutunnel/version' $REPO/setup.sh | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); [[ -n \"$V\" ]] && grep -q \"WIBU_REF:-v$V\" $REPO/setup.sh"
 t "restart-all memuat telegram-bot + network-tune" "grep -q 'telegram-bot' \"\$REPO/menu/m-setting.sh\" && grep -q 'network-tune' \"\$REPO/menu/m-setting.sh\""
 t "hitungan trafik pakai kolom 2 saja"          "! grep -qE 'down=\\(\\\$2==\"null\"' \"\$REPO/menu/bot-daemon.sh\""
 
@@ -127,6 +127,8 @@ t "restore mematikan bot agar tak tabrakan token" "grep -q 'layanan bot DIMATIKA
 t "audit menampilkan jumlah catatan dummy (tidak senyap)" "grep -q 'Catatan dummy installer' \"\$REPO/sbin/wibu-audit-akun\""
 t "update menu ikut rilis terbaru (main), bukan tag beku" "grep -q 'WIBU_REF:-main' \"\$REPO/menu/m-setting.sh\""
 t "update memperbarui penanda versi" "grep -q 'wibutunnel/version' \"\$REPO/menu/m-setting.sh\" && grep -q 'wibutunnel/version' \"\$REPO/setup.sh\""
+t "tidak ada '-4' nyasar di daftar paket apt" "! grep -nE '^[[:space:]]*apt(-get)? install[^|]*[[:space:]]-4([[:space:]]|$)' \"\$REPO/setup.sh\""
+t "apt gagal = fatal (tidak lanjut setengah jalan)" "grep -q 'Instalasi DIHENTIKAN supaya tidak setengah jalan' \"\$REPO/setup.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""
