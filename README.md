@@ -37,7 +37,7 @@ curl -4 -fsSL https://wibu.loli.web.id/i | bash
 
 ```bash
 curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/download/v4.0.9/setup.sh
-sha256sum setup.sh     # harap: 85f4a9ccecbbfc56714a43551a35e94d4f111de50a70c89e061af6519c001448
+sha256sum setup.sh     # harap: cd51985934e06f24e5edb86e395e910f06e2671bd368f021efd118c27297500b
 bash setup.sh
 ```
 
