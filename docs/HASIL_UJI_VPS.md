@@ -222,3 +222,34 @@ VPS `103.150.60.84` di-rebuild ke Debian 11 (kernel 5.10, 978 MB RAM, 18 GB disk
    (`mr.heru.id/debian bullseye-backports` tanpa Release file) -> apt mustahil (v4.1.14: alih otomatis ke `archive.debian.org`).
 3. `awk` = **mawk 1.3.4** tidak mendukung interval `{64}` -> manifest dinilai tidak sah -> semua berkas ditolak
    (v4.1.15: regex portabel `length($1) == 64 && $1 ~ /^[0-9a-f]+$/`).
+
+
+---
+
+## 10. Uji lapangan: Ubuntu 24.04 (noble) - 2026-11-15
+
+VPS `103.150.60.84` di-rebuild ke Ubuntu 24.04.1 LTS (kernel 6.8, 961 MB RAM, 13 GB disk).
+Ini OS terakhir dalam matriks; sekaligus penutup uji portabilitas 5 OS.
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Penjaga OS | `[+] OS terdeteksi: Ubuntu 24.04.1 LTS (24.04)` |
+| Galat apt/dpkg · berkas gagal | **0** · **0** |
+| HAProxy | **2.8.30** - `Configuration file is valid` |
+| certbot | **2.9.0**, sertifikat Let's Encrypt s/d 2027-02-13 (jalur flag certbot 2.x) |
+| Xray | **26.11.9** - dipasang lewat **jalur cadangan** (installer resmi gagal karena 403 API) |
+| Layanan | 8/8 `active` + `enabled`; port 80/443/143/109 + API 127.0.0.1:10085 |
+| Reboot | BOOT_ID berubah, 8/8 naik sendiri, aturan `:10085` = 1 di iptables **dan** rules.v4 |
+| Keamanan | config 640 root:xray, exp 600, dir 750, API root-only (gRPC `statsquery` jalan), lisensi LOLOS |
+| Jam | `systemd-timesyncd` aktif dan tersinkron |
+| Uji klien | Xray sebagai klien VLESS TLS+WS -> keluar sukses, HTTP via tunnel 200 |
+
+**Dua temuan khas Ubuntu 24.04 (keduanya diperbaiki di v4.1.16):**
+1. **`/tmp` = tmpfs `noexec`** (`tmpfs /tmp rw,nosuid,nodev,noexec`) - installer resmi Xray menjalankan biner
+   pemeriksa versi dari `/tmp` -> `error: Local Xray binary cannot run` (terbukti: biner sama jalan dari
+   `/root` dan `/usr/local/bin`, gagal dari `/tmp`). Perbaikan: `TMPDIR=/usr/local/src` sebelum installer resmi.
+2. **Installer resmi Xray butuh kuota API GitHub** - terukur `core: limit 60, remaining 0, used 60`
+   (verifikasi berkas juga memakai API) -> `Failed to get release list`, HTTP **403** -> `[FATAL] Xray gagal
+   terpasang`. Perbaikan: **jalur cadangan tanpa API** (unduh `Xray-linux-64.zip` dari aset rilis versi terpin,
+   verifikasi hash biner `e87bce58...a66d`, pasang biner + geodata + user + unit systemd) + rantai unduhan
+   berhenti memakai API setelah 403/429. Jalur cadangan ini benar-benar terpakai saat uji ulang.
