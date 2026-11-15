@@ -362,10 +362,16 @@ case $sub_setting in
         # lalu terapkan aturan firewall versi terbaru (dedupe) tanpa perlu instalasi ulang.
         # [FIX] Penanda versi ikut diperbarui: sebelumnya /etc/wibutunnel/version tetap versi lama
     # setelah update, sehingga dashboard menampilkan versi yang salah.
-    _ver=$(curl -4 -fsSL --max-time 30 "https://api.github.com/repos/WBVPN/wibutunnel/contents/setup.sh?ref=${WIBU_REF}" \
-             -H 'Accept: application/vnd.github.raw' -H 'User-Agent: wibu' 2>/dev/null \
-             | sed -n 's/^echo "\([0-9][0-9.]*\)" > \/etc\/wibutunnel\/version.*/\1/p' | head -1)
-    [[ -n "${_ver:-}" ]] && echo "$_ver" > /etc/wibutunnel/version
+    _ver=""
+    for _src in "https://api.github.com/repos/WBVPN/wibutunnel/contents/setup.sh?ref=${WIBU_REF}" \
+                "https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@${WIBU_REF}/setup.sh" \
+                "https://raw.githubusercontent.com/WBVPN/wibutunnel/${WIBU_REF}/setup.sh?cb=$(date +%s)"; do
+        [[ -n "$_ver" ]] && break
+        _ver=$(curl -4 -fsSL --max-time 30 -H 'Accept: application/vnd.github.raw' -H 'User-Agent: wibu' "$_src" 2>/dev/null \
+                 | sed -n 's/^echo "\([0-9][0-9.]*\)" > \/etc\/wibutunnel\/version.*/\1/p' | head -1)
+    done
+    # Sumber bisa kena rate-limit API / CDN basi, jadi dicoba tiga sumber; gagal semua = penanda lama dibiarkan.
+[[ -n "${_ver:-}" ]] && echo "$_ver" > /etc/wibutunnel/version
 
     ln -sf /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.sh 2>/dev/null || true
         ln -sf /usr/local/sbin/network-tune /usr/local/sbin/network-tune.sh 2>/dev/null || true
