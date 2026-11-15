@@ -102,7 +102,7 @@ add_user() {
     trojan_tls="trojan://${uuid}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
     trojan_grpc="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan&sni=${domain}#${user}"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VPN ACCOUNT - TROJAN
@@ -184,7 +184,7 @@ trial_user() {
     trojan_tls="trojan://${uuid}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
     trojan_grpc="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan&sni=${domain}#${user}"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VPN ACCOUNT - TROJAN
@@ -278,7 +278,7 @@ cek_user() {
     trojan_tls="trojan://${uuid}@${domain}:443?path=/trojan&security=tls&host=${domain}&type=ws&sni=${domain}#${user}"
     trojan_grpc="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan&sni=${domain}#${user}"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="TROJAN - CEK AKUN

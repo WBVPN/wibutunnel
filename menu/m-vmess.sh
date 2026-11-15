@@ -107,7 +107,7 @@ add_user() {
     vmess_ntls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"80","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess-ntls","type":"none","host":"'$domain'","tls":"","sni":""}' | base64 -w 0)"
     vmess_grpc="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"443","id":"'$uuid'","aid":"0","net":"grpc","path":"vmess","type":"none","host":"'$domain'","tls":"tls","sni":"'$domain'"}' | base64 -w 0)"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VPN ACCOUNT - VMESS
@@ -203,7 +203,7 @@ trial_user() {
     vmess_ntls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"80","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess-ntls","type":"none","host":"'$domain'","tls":"","sni":""}' | base64 -w 0)"
     vmess_grpc="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"443","id":"'$uuid'","aid":"0","net":"grpc","path":"vmess","type":"none","host":"'$domain'","tls":"tls","sni":"'$domain'"}' | base64 -w 0)"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VPN ACCOUNT - VMESS
@@ -311,7 +311,7 @@ cek_user() {
     vmess_ntls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"80","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess-ntls","type":"none","host":"'$domain'","tls":"","sni":""}' | base64 -w 0)"
     vmess_grpc="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"443","id":"'$uuid'","aid":"0","net":"grpc","path":"vmess","type":"none","host":"'$domain'","tls":"tls","sni":"'$domain'"}' | base64 -w 0)"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VMESS - CEK AKUN

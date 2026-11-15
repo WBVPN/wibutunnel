@@ -86,7 +86,7 @@ systemctl disable netfilter-persistent >/dev/null 2>&1
 # [FIX] Daftar hapus lengkap: sebelumnya algojo-ssh, lock-user, unlock-user, ws-stunnel & wibu-daemon
 # tertinggal di /usr/local/sbin|bin setelah uninstall.
 for _f in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemon lock-user unlock-user \
-          unlocker-wibu ws-stunnel wibu-daemon wibu-repair wibu-audit-akun wibu-ssl-ulang wibutunnel-firewall \
+          unlocker-wibu ws-stunnel wibu-daemon wibu-repair wibu-audit-akun wibu-ssl-ulang wibu-isp wibutunnel-firewall \
           wibutunnel-firewall.sh network-tune network-tune.sh; do
     rm -f "/usr/local/sbin/$_f" "/usr/local/bin/$_f" 2>/dev/null
 done

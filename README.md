@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.9
+# 🦋 WIBUTUNNEL v4.1.10
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.9-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.10-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 312d51179e5a1edae1f251b193b447d6870af2cc6e94380718e4d3397febc2da
+sha256sum setup.sh     # harap: 8afcd38ceed42037daa51c67bcce805795970c131b83b3f48993d93ea096b864
 bash setup.sh
 ```
 
@@ -39,7 +39,7 @@ bash setup.sh
 
 ```bash
 curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
-sha256sum uninstall.sh   # harap: 9890f65787a47ffde0d4d093a5abda2914c277d766fb7c6f7ee24e533b1345c3
+sha256sum uninstall.sh   # harap: a86290d9a5ae070d69b9c0719c682800e0bbdecd96450a78ad5ae978efde6c61
 bash uninstall.sh
 ```
 
@@ -202,6 +202,16 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.10 (2026-11-15)
+- **Nama ISP pendek.** Sebelumnya menu & pesan akun menampilkan mentah dari `ip-api.com`, contoh:
+  `Shenzhen Tencent Computer Systems Company Limited`. Sekarang diringkas otomatis (`Tencent Cloud`,
+  `AWS`, `Alibaba Cloud`, `Contabo`, `Contabo`, `Hetzner`, ...).
+- **Bisa ditimpa manual** (menang atas deteksi otomatis):
+  ```bash
+  echo "WIBU Cloud" > /etc/wibutunnel/isp.txt     # boleh nama brand sendiri
+  ```
+  Berguna kalau mau menampilkan brand toko sendiri di info akun pelanggan.
 
 ### v4.1.9 (2026-11-15)
 - **Tahan batas laju Let's Encrypt.** Let's Encrypt membatasi 5 sertifikat / 7 hari per domain; pelanggan yang

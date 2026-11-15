@@ -12,7 +12,7 @@ OS_SYSTEM=$(grep PRETTY_NAME /etc/os-release | awk -F '"' '{print $2}')
 # Pindah ke tmp terisolasi
 curl -4 -s --max-time 6 "http://ip-api.com/line/?fields=city,isp" > /etc/wibutunnel/tmp/ipapi.txt
 CITY=$(sed -n '1p' /etc/wibutunnel/tmp/ipapi.txt)
-ISP=$(sed -n '2p' /etc/wibutunnel/tmp/ipapi.txt)
+ISP=$(wibu-isp)
 [[ -z "$CITY" ]] && CITY="Unknown"
 [[ -z "$ISP" ]] && ISP="Unknown"
 
