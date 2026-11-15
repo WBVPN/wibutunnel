@@ -52,17 +52,45 @@ clear
 echo -e "\e[1;36m[+] Memeriksa Lisensi Script...\e[0m"
 
 LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
-if [[ -f "./izin.txt" ]] && grep -w "$MYIP" "./izin.txt" >/dev/null 2>&1; then
-    GET_DATA=$(grep -w "$MYIP" "./izin.txt")
-else
-    GET_DATA=$(curl -4 -sS --max-time 20 --connect-timeout 10 $LINK_IZIN | grep -w "$MYIP")
+LINK_IZIN_MIRROR="https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@main/izin.txt"
+# [FIX] Daftar lisensi HANYA dari sumber resmi. Sebelumnya berkas ./izin.txt di
+# direktori kerja ikut dipercaya -> cukup `printf 'x lifetime <IP>' > izin.txt`
+# untuk melewati gerbang. Kini berkas lokal DIABAIKAN saat instalasi.
+IZIN_LIST=""
+for _coba in 1 2 3; do
+    IZIN_LIST=$(curl -4 -sS --max-time 15 --connect-timeout 8 "$LINK_IZIN" 2>/dev/null) || IZIN_LIST=""
+    [[ -n "$IZIN_LIST" ]] && break
+    IZIN_LIST=$(curl -4 -sS --max-time 15 --connect-timeout 8 "$LINK_IZIN_MIRROR" 2>/dev/null) || IZIN_LIST=""
+    [[ -n "$IZIN_LIST" ]] && break
+    sleep 2
+done
+if [[ -z "$IZIN_LIST" ]]; then
+    clear
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[1;31m        GAGAL MEMVERIFIKASI LISENSI (JARINGAN)     \e[0m"
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    echo -e "\e[1;33m IP VPS Anda  : $MYIP\e[0m"
+    echo -e "\e[1;37m Daftar lisensi tidak bisa diambil. Periksa koneksi\e[0m"
+    echo -e "\e[1;37m lalu jalankan ulang instalasi.\e[0m"
+    echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+    exit 1
 fi
+
+# Cocokkan PERSIS pada kolom IP (bukan grep kabur: titik di IP = karakter apa pun)
+GET_DATA=$(printf '%s\n' "$IZIN_LIST" | awk -v ip="$MYIP" '{ for (i = 1; i <= NF; i++) if ($i == ip) { print; exit } }')
 
 CLIENT_NAME=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
 EXP_DATE=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')
 REGISTERED_IP=$(echo "$GET_DATA" | awk '{print $4}' | tr -d '\r' | tr -d ' ')
 
-if [[ "$MYIP" == "$REGISTERED_IP" ]]; then
+if [[ -n "$GET_DATA" ]]; then
+    if [[ -z "$CLIENT_NAME" || -z "$EXP_DATE" ]]; then
+        clear
+        echo -e "\e[1;31m                 AKSES DITOLAK!                   \e[0m"
+        echo -e "\e[1;33m IP VPS Anda  : $MYIP\e[0m"
+        echo -e "\e[1;33m Status       : Entri lisensi rusak, hubungi Admin.\e[0m"
+        exit 1
+    fi
     if [[ "${EXP_DATE,,}" != "lifetime" ]]; then
         DATE_NOW=$(date -u +%s)
         exp_parse="$EXP_DATE"
@@ -85,6 +113,8 @@ if [[ "$MYIP" == "$REGISTERED_IP" ]]; then
         fi
     fi
     echo -e "\e[1;32m[+] Lisensi Valid! Selamat Datang, $CLIENT_NAME.\e[0m"
+    # Simpan salinan resmi -> dipakai sebagai cadangan saat VPS offline
+    mkdir -p /etc/wibutunnel && printf '%s\n' "$IZIN_LIST" > /etc/wibutunnel/izin.txt && chmod 600 /etc/wibutunnel/izin.txt
     sleep 1
 else
     clear
@@ -93,6 +123,7 @@ else
     echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
     echo -e "\e[1;33m IP VPS Anda  : $MYIP\e[0m"
     echo -e "\e[1;33m Status       : Ilegal / Tidak Terdaftar\e[0m"
+    echo -e "\e[1;36m Telegram     : t.me/wibuvpn\e[0m"
     echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
     exit 1
 fi
@@ -561,7 +592,7 @@ defaults
 
 # ===================== TAHAP 1 =====================
 frontend ssl_sni
-    bind *:443 ssl crt /etc/haproxy/certs/${domain}.pem alpn h2,http/1.1
+    bind 0.0.0.0:443 ssl crt /etc/haproxy/certs/${domain}.pem alpn h2,http/1.1
     mode tcp
     tcp-request inspect-delay 5s
     tcp-request content accept if { req.payload(0,4) -m str SSH- }
@@ -580,7 +611,7 @@ frontend ssl_sni
     default_backend ws_tunnel
 
 frontend port_80_front
-    bind *:80
+    bind 0.0.0.0:80
     mode tcp
     tcp-request inspect-delay 5s
     tcp-request content accept if { req.payload(0,4) -m str SSH- }

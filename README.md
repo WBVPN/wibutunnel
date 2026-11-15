@@ -30,7 +30,7 @@ Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu comman
 ### One-Liner
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/setup.sh
-sha256sum setup.sh     # harap: 49b03a0d58bc2f1f7d43fc98e68450bd5df6ac5459cf8a50dbaa493e6c84c6e6
+sha256sum setup.sh     # harap: 38b5decf01a3c2170714a3e8d3cf787e489caa2aa6249c368f6829d492f39464
 bash setup.sh
 ```
 
@@ -105,7 +105,8 @@ tail -f /var/log/xray/access.log        # izin 0640 (tidak lagi terbaca semua us
 ```
 /usr/local/etc/xray/config.json     # Xray config (kanonik; /etc/xray/config.json = symlink)
 /etc/wibutunnel/version             # Penanda versi (4.0.6-fixed)
-/etc/wibutunnel/izin.txt            # Daftar lisensi lokal (opsional)
+/etc/wibutunnel/izin.txt            # Salinan resmi daftar lisensi (ditulis saat instalasi,
+                                     # dipakai sebagai cadangan saat VPS offline, maks 7 hari)
 /etc/xray/{vless,vmess,trojan,ssh}_exp.conf   # User expiry
 /etc/wibutunnel/bot.conf            # Telegram credentials
 /etc/wibutunnel/limit_ip.db         # IP limit (sesi simultan)
@@ -181,9 +182,33 @@ Backup otomatis ke `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum hapus.
 - **Token bot tidak lagi lewat `argv`** (dibaca `curl -K -`), jadi tidak terlihat di `ps` oleh user lokal.
 - **Restore backup:** wajib `https`, wajib password, isi arsip divalidasi (tolak path absolut/`..`), ekstrak di `mktemp -d`.
 - **Akun pelanggan tetap ber-shell** (perilaku produk). Ingin mode nologin? Pasang dengan `WIBU_SSH_NOLOGIN=1`.
-- ⚠️ **Catatan lisensi:** pemeriksaan lisensi menerima juga `./izin.txt` atau `/etc/wibutunnel/izin.txt` yang memuat
-  IP VPS — jadi gate ini **penghalang, bukan pengaman** (siapa pun yang punya root di VPS-nya bisa melewatinya).
-  Rincian temuan & perbaikan: [`docs/SECURITY_FIXES.md`](docs/SECURITY_FIXES.md).
+- **Gerbang lisensi (perilaku pasti):**
+  - IP **tidak terdaftar** di daftar resmi → instalasi berhenti, dan saat menu/bot dibuka muncul `AKSES DITOLAK`.
+  - Lisensi **kedaluwarsa** → instalasi berhenti, dan **menu tidak bisa dibuka** (`LISENSI KEDALUWARSA` + tanggal exp).
+    Pemeriksaan ini dijalankan setiap menu / aksi akun / perintah bot dibuka, bukan hanya saat instalasi.
+  - Daftar lisensi diambil **hanya dari sumber resmi** (`main/izin.txt` di repo ini, cadangan jsDelivr). Berkas
+    `./izin.txt` di direktori kerja **diabaikan** saat instalasi (sebelumnya bisa dipakai melewati gerbang).
+  - Pencocokan IP **persis per kolom** (bukan `grep` kabur), dan cache lokal menyimpan IP + tanggal exp.
+  - **Offline:** kalau daftar tidak bisa diambil, dipakai salinan resmi yang disimpan saat instalasi
+    (`/etc/wibutunnel/izin.txt`) atau cache — **maksimal 7 hari**, dan tanggal exp tetap ditegakkan.
+  - ⚠️ Jujur soal batasnya: pemegang **root** di VPS-nya selalu bisa menambal kode lokal. Jadi gate ini
+    **penghalang + penegak masa aktif**, bukan pengaman kriptografis. Uji: `bash tests/test_license_enforcement.sh`
+    (12 kasus, memanggil fungsi asli `check_license`).
+  Rincian temuan & perbaikan lain: [`docs/SECURITY_FIXES.md`](docs/SECURITY_FIXES.md).
+
+---
+
+### 🔄 Memperbarui pin installer Xray
+
+Installer Xray di-pin (`XRAY_INSTALL_SHA256`) supaya hulu XTLS yang diretas tidak otomatis jadi root di VPS Anda.
+Bila XTLS merilis ulang skripnya, pin lama membuat instalasi **ditolak** (memang fail-closed). Perbarui dengan:
+
+```bash
+bash tools/update-xray-pin.sh          # unduh -> hitung sha256 -> tulis pin baru
+bash tests/test_hardening.sh && bash tests/test_license_enforcement.sh
+rm -f SHA256SUMS && find . -type f -not -path './.git/*' -not -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS
+git add -A && git commit -m "chore: perbarui pin installer Xray"
+```
 
 ---
 

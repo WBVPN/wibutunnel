@@ -451,7 +451,7 @@ EOFBOT
             if [[ -f "/etc/letsencrypt/live/${new_domain}/fullchain.pem" ]]; then
                 cat "/etc/letsencrypt/live/${new_domain}/fullchain.pem" "/etc/letsencrypt/live/${new_domain}/privkey.pem" > "/etc/haproxy/certs/${new_domain}.pem"
                 echo "$new_domain" > /etc/xray/domain
-                sed -i "s|bind \*:443 ssl crt .*\.pem|bind *:443 ssl crt /etc/haproxy/certs/${new_domain}.pem|g" /etc/haproxy/haproxy.cfg
+                sed -i "s|bind \(\*\|0\.0\.0\.0\):443 ssl crt .*\.pem|bind 0.0.0.0:443 ssl crt /etc/haproxy/certs/${new_domain}.pem|g" /etc/haproxy/haproxy.cfg
                 systemctl start haproxy xray
                 trap - EXIT
                 echo -e "${GREEN}Domain berhasil diganti!${NC}"

@@ -1,147 +1,84 @@
 #!/bin/bash
-set -e
-
-echo "=== Testing License Enforcement System ==="
-REPO_DIR="/root/wibutunnel-repo"
-source "${REPO_DIR}/common.sh"
-
-TEST_TMP="/tmp/test_lic_$$"
-mkdir -p "$TEST_TMP"
-FAKE_IZIN="${TEST_TMP}/izin.txt"
-FAKE_CACHE="${TEST_TMP}/license.cache"
-
-cleanup() {
-    rm -rf "$TEST_TMP"
+# ==========================================================================
+# Uji NYATA gerbang lisensi. Versi sebelumnya hanya MENGULANG logikanya
+# sendiri lalu menguji ulang salinannya (tautologi) + `REPO_DIR` dikunci ke
+# "/root/wibutunnel-repo", jadi tidak membuktikan apa pun soal kode asli.
+# Sekarang: panggil fungsi ASLI `check_license` dari common.sh.
+# Jalankan: bash tests/test_license_enforcement.sh
+# ==========================================================================
+set -u
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+PASS=0; FAIL=0
+ck() { # $1=nama $2=dapat $3=harap
+    if [[ "$2" == "$3" ]]; then echo "  PASS  $1"; PASS=$((PASS+1));
+    else echo "  FAIL  $1 (dapat '$2', harap '$3')"; FAIL=$((FAIL+1)); fi
 }
-trap cleanup EXIT
 
-# 1. Test Unregistered IP
-echo "1. Testing unregistered IP rejection..."
-cat << 'EOF' > "$FAKE_IZIN"
-### USERNAME EXPIRY_DATE IP_ADDRESS
-### USER1 2099-12-31 1.2.3.4
-EOF
+LIST="$TMP/izin.txt"; CACHE="$TMP/license.cache"; DEAD="file://$TMP/tidak-ada.txt"
 
-out=$(
-    export MYIP="192.168.1.100"
-    export LINK_IZIN="file://${FAKE_IZIN}"
-    # override check_license to read FAKE_IZIN
-    CACHE_FILE="$FAKE_CACHE"
-    if (
-        GET_DATA=$(grep -w "$MYIP" "$FAKE_IZIN" 2>/dev/null || true)
-        if [[ -z "$GET_DATA" ]]; then
-            show_license_denied "$MYIP"
-            exit 1
-        fi
-    ); then
-        echo "SHOULD_FAIL"
-    else
-        echo "DENIED_OK"
-    fi
-)
-[[ "$out" == *"DENIED_OK"* ]] || { echo "ASSERT_FAILED: unregistered IP was not denied"; exit 1; }
-[[ "$out" == *"AKSES DITOLAK"* ]] || { echo "ASSERT_FAILED: denied banner missing"; exit 1; }
-echo "Unregistered IP check: PASS"
+# $1=nama $2=ip $3=isi-daftar $4=cache $5=url $6=harap (ALLOW|DENY|EXPIRED)
+case_run() {
+    local name="$1" ip="$2" list="$3" cache="$4" url="$5" harap="$6"
+    printf '%s\n' "$list" > "$LIST"
+    rm -f "$CACHE"; [[ -n "$cache" ]] && printf '%s\n' "$cache" > "$CACHE"
+    local out rc got
+    out=$(MYIP="$ip" LICENSE_URL="$url" LICENSE_MIRROR="" LICENSE_CACHE="$CACHE" LICENSE_OFFLINE_GRACE=604800 \
+        bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; check_license; echo \"ALLOW|CLIENT=\$CLIENT_NAME|EXP=\$EXP_DATE\"" 2>&1)
+    rc=$?
+    got="RC=$rc"
+    [[ "$out" == *"ALLOW|"* ]] && got="ALLOW"
+    [[ "$out" == *"KEDALUWARSA"* ]] && got="EXPIRED"
+    [[ "$got" == "RC=1" ]] && got="DENY"
+    ck "$name" "$got" "$harap"
+}
 
-# 2. Test Expired IP
-echo "2. Testing expired IP rejection..."
-cat << 'EOF' > "$FAKE_IZIN"
-### USERNAME EXPIRY_DATE IP_ADDRESS
-### EXPIRED_USER 2020-01-01 192.168.1.100
-EOF
+U="file://$LIST"
+case_run "1. IP tidak terdaftar -> ditolak" "192.168.1.100" \
+"### USER EXP IP
+### USER1 2099-12-31 10.0.0.1" "" "$U" "DENY"
 
-out_exp=$(
-    export MYIP="192.168.1.100"
-    CURRENT_TIME=$(date -u +%s)
-    if (
-        GET_DATA=$(grep -w "$MYIP" "$FAKE_IZIN" 2>/dev/null || true)
-        c_name=$(echo "$GET_DATA" | awk '{print $2}')
-        c_exp=$(echo "$GET_DATA" | awk '{print $3}')
-        exp_parse="$c_exp"
-        [[ "$exp_parse" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && exp_parse="${exp_parse} 23:59:59"
-        exp_sec=$(date -u -d "$exp_parse" +%s 2>/dev/null)
-        if [[ -z "$exp_sec" || $CURRENT_TIME -gt $exp_sec ]]; then
-            show_license_expired "$c_name" "$c_exp"
-            exit 1
-        fi
-    ); then
-        echo "SHOULD_FAIL"
-    else
-        echo "EXPIRED_OK"
-    fi
-)
-[[ "$out_exp" == *"EXPIRED_OK"* ]] || { echo "ASSERT_FAILED: expired IP was not rejected"; exit 1; }
-[[ "$out_exp" == *"LISENSI KEDALUWARSA"* ]] || { echo "ASSERT_FAILED: expired banner missing"; exit 1; }
-echo "Expired IP check: PASS"
+case_run "2. Lisensi kedaluwarsa -> ditolak" "192.168.1.100" \
+"### USER EXP IP
+### EXPIRED_USER 2020-01-01 192.168.1.100" "" "$U" "EXPIRED"
 
-# 3. Test Active Future Date IP
-echo "3. Testing active future date IP..."
-cat << 'EOF' > "$FAKE_IZIN"
-### USERNAME EXPIRY_DATE IP_ADDRESS
-### ACTIVE_USER 2099-12-31 192.168.1.100
-EOF
+case_run "3. Lisensi aktif -> lolos" "192.168.1.100" \
+"### USER EXP IP
+### USER1 2099-12-31 192.168.1.100" "" "$U" "ALLOW"
 
-out_active=$(
-    export MYIP="192.168.1.100"
-    CURRENT_TIME=$(date -u +%s)
-    if (
-        GET_DATA=$(grep -w "$MYIP" "$FAKE_IZIN" 2>/dev/null || true)
-        c_name=$(echo "$GET_DATA" | awk '{print $2}')
-        c_exp=$(echo "$GET_DATA" | awk '{print $3}')
-        if [[ "${c_exp,,}" != "lifetime" ]]; then
-            exp_parse="$c_exp"
-            [[ "$exp_parse" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && exp_parse="${exp_parse} 23:59:59"
-            exp_sec=$(date -u -d "$exp_parse" +%s 2>/dev/null)
-            if [[ -z "$exp_sec" || $CURRENT_TIME -gt $exp_sec ]]; then
-                show_license_expired "$c_name" "$c_exp"
-                exit 1
-            fi
-        fi
-        echo "ACTIVE_OK"
-        exit 0
-    ); then
-        echo "PASS"
-    else
-        echo "FAIL"
-    fi
-)
-[[ "$out_active" == *"ACTIVE_OK"* ]] || { echo "ASSERT_FAILED: active IP rejected"; exit 1; }
-echo "Active future date check: PASS"
+case_run "4. lifetime -> lolos" "192.168.1.100" \
+"### USER EXP IP
+### USER1 lifetime 192.168.1.100" "" "$U" "ALLOW"
 
-# 4. Test Lifetime IP
-echo "4. Testing lifetime IP..."
-cat << 'EOF' > "$FAKE_IZIN"
-### USERNAME EXPIRY_DATE IP_ADDRESS
-### LIFETIME_USER lifetime 192.168.1.100
-EOF
+case_run "5. IP mirip tidak boleh cocok (.85 vs .84)" "103.150.60.85" \
+"### USER EXP IP
+### USER1 2099-12-31 103.150.60.84" "" "$U" "DENY"
 
-out_life=$(
-    export MYIP="192.168.1.100"
-    if (
-        GET_DATA=$(grep -w "$MYIP" "$FAKE_IZIN" 2>/dev/null || true)
-        c_name=$(echo "$GET_DATA" | awk '{print $2}')
-        c_exp=$(echo "$GET_DATA" | awk '{print $3}')
-        if [[ "${c_exp,,}" == "lifetime" ]]; then
-            echo "LIFETIME_OK"
-            exit 0
-        fi
-        exit 1
-    ); then
-        echo "PASS"
-    else
-        echo "FAIL"
-    fi
-)
-[[ "$out_life" == *"LIFETIME_OK"* ]] || { echo "ASSERT_FAILED: lifetime IP rejected"; exit 1; }
-echo "Lifetime IP check: PASS"
+case_run "6. Entri rusak (tanpa tanggal) -> ditolak" "192.168.1.100" \
+"### USER EXP IP
+### USER1 192.168.1.100" "" "$U" "DENY"
 
-# 5. Test Live check_license() with actual registered IP
-echo "5. Testing check_license() on current VPS IP..."
-if check_license_silent; then
-    echo "Current VPS IP check_license_silent: PASS (Registered and Valid)"
-else
-    echo "ASSERT_FAILED: current VPS IP failed license check"
-    exit 1
-fi
+case_run "7. Cache milik IP LAIN tidak dipercaya" "192.168.1.100" \
+"### USER EXP IP
+### USER1 2099-12-31 10.0.0.1" "VALID|USER1|2099-12-31|9.9.9.9" "$U" "DENY"
 
-echo "ALL_LICENSE_ENFORCEMENT_ASSERTS_PASSED"
+case_run "8. Offline + cache segar (IP sama) -> lolos" "192.168.1.100" \
+"### USER EXP IP" "VALID|USER1|2099-12-31|192.168.1.100" "$DEAD" "ALLOW"
+
+case_run "9. Cache kedaluwarsa -> ditolak walau offline" "192.168.1.100" \
+"### USER EXP IP" "VALID|USER1|2020-01-01|192.168.1.100" "$DEAD" "EXPIRED"
+
+# 10. Sumber bawaan = daftar resmi (bukan berkas lokal)
+D=$(grep -m1 '^LICENSE_URL=' "$REPO_DIR/common.sh" | grep -c 'raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt')
+ck "10. sumber bawaan = daftar resmi GitHub" "$D" "1"
+
+# 11. Gerbang instalasi tidak lagi memercayai ./izin.txt di direktori kerja
+L=$(grep -c '"./izin.txt"' "$REPO_DIR/setup.sh" || true)
+ck "11. setup.sh tidak memercayai ./izin.txt lokal" "$L" "0"
+
+# 12. Cache menyimpan IP (syarat kasus 7 & 8 bisa bekerja)
+C=$(grep -c 'VALID|%s|%s|%s' "$REPO_DIR/common.sh" || true)
+ck "12. cache lisensi menyimpan IP" "$C" "1"
+
+echo "=========== LISENSI: $PASS PASS / $FAIL FAIL ==========="
+[[ $FAIL -eq 0 ]]
