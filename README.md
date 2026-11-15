@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.14
+# 🦋 WIBUTUNNEL v4.1.15
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.14-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.15-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 98386a29062a93929decaba2859e8701e366993e97f065515528d9f43d875f17
+sha256sum setup.sh     # harap: dc522b6f48d837a38122d08dbeaadf338ebb8a69f0c8640fd17b0a663517f639
 bash setup.sh
 ```
 
@@ -202,6 +202,15 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.15 (2026-11-15)
+- **Regex awk portabel (penyebab instalasi setengah jadi di Debian 11).** Validasi manifest memakai
+  `$1 ~ /^[0-9a-f]{64}$/`. Debian 11 memakai **mawk 1.3.4** yang **tidak mendukung interval `{64}`**,
+  sehingga manifest yang isinya benar dinilai tidak sah:
+  `[!] Manifest SHA256SUMS (ref ...) tidak dapat diambil.` -> semua berkas `hash tidak cocok` -> ditolak
+  -> `[!] Ada file yang gagal diunduh`. Terukur di VPS: bentuk `{64}` = **0** baris sah, bentuk
+  `length($1)==64` = **59** baris sah. Sekarang memakai bentuk portabel (`length($1) == 64 && $1 ~ /^[0-9a-f]+$/`)
+  dan ada cek harness agar pola ber-interval tidak kembali.
 
 ### v4.1.14 (2026-11-15)
 - **Debian 11 (EOL) sekarang bisa dipasang.** Bullseye sudah EOL: `security.debian.org` menjawab **404**
