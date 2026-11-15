@@ -184,7 +184,7 @@ case $sub_setting in
         # paralel seperti CLI resmi (single stream under-report di link cepat).
         # ponytail: 6 stream tetap. Naikkan kalau link > 5 Gbps.
         STREAMS=6
-        SRV_JSON=$(curl -fsSL --max-time 20 'https://www.speedtest.net/api/js/servers?engine=js&limit=10' 2>/dev/null)
+        SRV_JSON=$(curl -4 -fsSL --max-time 20 'https://www.speedtest.net/api/js/servers?engine=js&limit=10' 2>/dev/null)
         if [ -z "$SRV_JSON" ]; then
             echo -e "${RED}Gagal ambil daftar server Ookla (speedtest.net tidak terjangkau).${NC}"
             read -n 1 -s -r -p "Tekan tombol apa saja..."; exec m-setting
@@ -199,7 +199,7 @@ case $sub_setting in
             _hn=${_h%%:*}; _pn=${_h##*:}
             _hs=$(echo "$SRV_JSON" | jq -r ".[$_i].https_functional // 0" 2>/dev/null)
             _sch=http; [ "$_hs" = "1" ] && _sch=https
-            _t=$(curl -fsS -o /dev/null -w '%{time_total}' --max-time 6 "$_sch://$_hn:$_pn/speedtest/latency.txt" 2>/dev/null) || continue
+            _t=$(curl -4 -fsS -o /dev/null -w '%{time_total}' --max-time 6 "$_sch://$_hn:$_pn/speedtest/latency.txt" 2>/dev/null) || continue
             _ms=$(awk -v t="$_t" 'BEGIN{printf "%d", t*1000}')
             if [ "$_ms" -lt "$S_MS" ]; then
                 S_MS=$_ms; BASE="$_sch://$_hn:$_pn/speedtest"
@@ -214,22 +214,22 @@ case $sub_setting in
         fi
 
         echo -e "${CYAN}[*] Server : ${S_NAME} (Ookla id ${S_ID}) - ${S_MS} ms${NC}"
-        curl -fsS -o /dev/null --max-time 10 "$BASE/random1000x1000.jpg" 2>/dev/null  # warmup
+        curl -4 -fsS -o /dev/null --max-time 10 "$BASE/random1000x1000.jpg" 2>/dev/null  # warmup
 
         echo -e "${CYAN}[*] Ping...${NC}"
         PING_MS=$(for _n in 1 2 3 4 5; do
-            curl -fsS -o /dev/null -w '%{time_total}\n' --max-time 10 "$BASE/latency.txt" 2>/dev/null
+            curl -4 -fsS -o /dev/null -w '%{time_total}\n' --max-time 10 "$BASE/latency.txt" 2>/dev/null
         done | sort -n | head -1 | awk '{printf "%.0f", $1*1000}')
 
         echo -e "${CYAN}[*] Download (${STREAMS} koneksi)...${NC}"
         DL_BPS=$({ for _n in $(seq 1 $STREAMS); do
-            curl -fsS -o /dev/null -w '%{speed_download}\n' --max-time 10 "$BASE/random3500x3500.jpg" 2>/dev/null &
+            curl -4 -fsS -o /dev/null -w '%{speed_download}\n' --max-time 10 "$BASE/random3500x3500.jpg" 2>/dev/null &
         done; wait; } | awk '{s+=$1} END{printf "%.0f", s}')
         DL_MBPS=$(awk -v b="${DL_BPS:-0}" 'BEGIN{printf "%.2f", (b*8)/1000000}')
 
         echo -e "${CYAN}[*] Upload (${STREAMS} koneksi)...${NC}"
         UL_BPS=$({ for _n in $(seq 1 $STREAMS); do
-            head -c 30000000 /dev/zero | curl -fsS -o /dev/null -w '%{speed_upload}\n' --max-time 10 -X POST --data-binary @- "$BASE/upload.php" 2>/dev/null &
+            head -c 30000000 /dev/zero | curl -4 -fsS -o /dev/null -w '%{speed_upload}\n' --max-time 10 -X POST --data-binary @- "$BASE/upload.php" 2>/dev/null &
         done; wait; } | awk '{s+=$1} END{printf "%.0f", s}')
         UL_MBPS=$(awk -v b="${UL_BPS:-0}" 'BEGIN{printf "%.2f", (b*8)/1000000}')
 
@@ -352,7 +352,7 @@ case $sub_setting in
                 input_chatid=$(echo "$input_chatid" | tr -d '[:space:]"')
 
                 echo -e "\n ${CYAN}[+] Memverifikasi token ke Telegram API...${NC}"
-                bot_info=$(curl -sS --max-time 7 "https://api.telegram.org/bot${input_token}/getMe" 2>/dev/null)
+                bot_info=$(curl -4 -sS --max-time 7 "https://api.telegram.org/bot${input_token}/getMe" 2>/dev/null)
                 if ! echo "$bot_info" | jq -e '.ok == true' >/dev/null 2>&1; then
                     echo -e " ${RED}[!] BOT TOKEN tidak valid atau server Telegram tidak merespon!${NC}"
                     echo -e " ${YELLOW}    Periksa kembali token yang Anda dapatkan dari @BotFather.${NC}"
@@ -369,11 +369,11 @@ EOFBOT
                     echo "0" > /etc/wibutunnel/tmp/bot_offset
                     rm -f /etc/wibutunnel/tmp/bot_state_* 2>/dev/null
 
-                    curl -s -X POST "https://api.telegram.org/bot${input_token}/deleteWebhook" >/dev/null 2>&1
+                    curl -4 -s -X POST "https://api.telegram.org/bot${input_token}/deleteWebhook" >/dev/null 2>&1
                     systemctl restart telegram-bot >/dev/null 2>&1
 
                     echo -e " ${CYAN}[+] Mengirim pesan konfirmasi koneksi...${NC}"
-                    test_res=$(curl -sS --max-time 7 -X POST "https://api.telegram.org/bot${input_token}/sendMessage" \
+                    test_res=$(curl -4 -sS --max-time 7 -X POST "https://api.telegram.org/bot${input_token}/sendMessage" \
                         -d "chat_id=${input_chatid}" \
                         -d "text=🤖 <b>Bot Wibu Tunneling Berhasil Terhubung!</b>%0ABot: @${bot_user}%0AAdmin: <code>${input_chatid}</code>" \
                         -d "parse_mode=HTML" 2>/dev/null)
@@ -392,7 +392,7 @@ EOFBOT
                 if [[ -z "$BOT_TOKEN" ]]; then
                     echo -e "${RED}[!] BOT TOKEN belum dikonfigurasi. Pilih opsi [1] dahulu.${NC}"
                 else
-                    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
+                    curl -4 -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
                     systemctl start telegram-bot >/dev/null 2>&1
                     echo -e "${GREEN}Bot Telegram berhasil dihidupkan!${NC}"
                 fi

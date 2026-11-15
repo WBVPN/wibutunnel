@@ -109,7 +109,7 @@ for user in "${!user_sessions[@]}"; do
 <b>Domain   :</b> <code>${DOMAIN}</code>
 
 <i>Account akan otomatis dibuka setelah durasi habis.</i>"
-            curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                 -F "chat_id=${CHAT_ID}" \
                 -F "disable_web_page_preview=true" \
                 -F "parse_mode=html" \

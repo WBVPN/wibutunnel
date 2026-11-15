@@ -24,8 +24,8 @@ XRAY_LOCK="/etc/wibutunnel/tmp/xray_config.lock"
 MYIP="${MYIP:-}"
 detect_myip() {
     [[ -n "$MYIP" ]] && { printf '%s' "$MYIP"; return 0; }
-    MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null)
-    [[ -z "$MYIP" ]] && MYIP=$(curl -sS --max-time 5 ifconfig.me 2>/dev/null)
+    MYIP=$(curl -4 -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null)
+    [[ -z "$MYIP" ]] && MYIP=$(curl -4 -sS --max-time 5 ifconfig.me 2>/dev/null)
     export MYIP
     printf '%s' "$MYIP"
 }
@@ -384,7 +384,7 @@ check_license() {
     elif [[ -f "./izin.txt" ]] && grep -qw "$MYIP" "./izin.txt" 2>/dev/null; then
         GET_DATA=$(grep -w "$MYIP" "./izin.txt")
     else
-        GET_DATA=$(curl -sS --max-time 7 "$LINK_IZIN" 2>/dev/null | grep -w "$MYIP")
+        GET_DATA=$(curl -4 -sS --max-time 7 "$LINK_IZIN" 2>/dev/null | grep -w "$MYIP")
     fi
 
     if [[ -z "$GET_DATA" ]]; then

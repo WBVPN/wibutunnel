@@ -24,7 +24,7 @@ if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
 fi
 
 # Pre-flight tool check
-command -v curl >/dev/null 2>&1 || { apt-get update -y >/dev/null 2>&1 && apt-get install -y curl wget >/dev/null 2>&1; }
+command -v curl -4 >/dev/null 2>&1 || { apt-get update -y >/dev/null 2>&1 && apt-get install -y curl wget >/dev/null 2>&1; }
 
 # [FIX Bug #1] Deteksi IP publik dengan validasi dan retry
 echo -e "\e[1;36m[+] Mendeteksi IP publik...\e[0m"
@@ -319,7 +319,7 @@ EOF
 # INSTALL PAKET (dibersihkan dari bloat nginx/python3/socat)
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3
+apt-get install -y curl -4 jq uuid-runtime haproxy certbot cron net-tools zip unzip wget iptables iptables-persistent iproute2 bc logrotate dos2unix dropbear python3
 
 # [FIX] Enable iptables-persistent agar rules survive reboot
 systemctl enable netfilter-persistent >/dev/null 2>&1 || true
@@ -383,8 +383,17 @@ cat > /usr/local/sbin/wibutunnel-firewall.sh << 'FWEOF'
 API_PORTS="10085"
 rc=0
 for p in $API_PORTS; do
-    iptables -C OUTPUT -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null || \
-        iptables -I OUTPUT 1 -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT || rc=1
+    # [FIX] Buang SEMUA salinan lama dulu. `iptables -C` tidak mengenali aturan hasil
+    # restore /etc/iptables/rules.v4 (spesifikasi target REJECT dinormalisasi berbeda),
+    # sehingga tiap boot menambah satu salinan lagi. Dedupe lewat spesifikasi persis
+    # dari `iptables -S` -> pasti terhapus, lalu pasang tepat satu aturan.
+    while :; do
+        spec=$(iptables -S OUTPUT 2>/dev/null | awk -v p="$p" 'index($0,"-j REJECT") && index($0,"--dport "p){sub(/^-A OUTPUT /,"");print;exit}')
+        [ -z "$spec" ] && break
+        # shellcheck disable=SC2086
+        iptables -D OUTPUT $spec 2>/dev/null || break
+    done
+    iptables -I OUTPUT 1 -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT || rc=1
 done
 exit $rc
 FWEOF

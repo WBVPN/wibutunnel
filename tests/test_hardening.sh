@@ -11,7 +11,7 @@ t()    { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
 echo "== A. Rahasia / argv =="
 t "token bot tidak lagi di argv (bot-daemon)"  "! grep -q 'api.telegram.org/bot\${BOT_TOKEN}' \"\$REPO/menu/bot-daemon.sh\""
-t "helper tg_api (curl -K -) ada"              "grep -q 'curl -s -K -' \"\$REPO/menu/bot-daemon.sh\""
+t "helper tg_api (curl -K -) ada"              "grep -qE 'curl (-4 )?-s -K -' \"\$REPO/menu/bot-daemon.sh\""
 t "tidak ada rahasia hardcode di kode"         "[[ \$(grep -rE '(BOT_TOKEN|PASSWORD)=[A-Za-z0-9:_-]{12,}' \"\$REPO/common.sh\" \"\$REPO/setup.sh\" \"\$REPO/menu\" \"\$REPO/sbin\" 2>/dev/null | wc -l) -eq 0 ]]"
 
 echo "== B. Enforcement =="
@@ -86,6 +86,9 @@ done
 for n in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemon lock-user unlock-user unlocker-wibu ws-stunnel wibu-daemon; do
   grep -q "$n" "$REPO/README.md" || { echo "     README belum menyebut daemon: $n"; _rmiss=1; }
 done
+t "semua curl/wget runtime dipaksa IPv4 (-4)" "! grep -rnE '(curl|wget) ' --include='*.sh' \"\$REPO/menu\" \"\$REPO/common.sh\" \"\$REPO/sbin\" 2>/dev/null | grep -vE 'curl -4|wget -4|:[0-9]+:[[:space:]]*#|curl -6' | grep -q ."
+t "skrip firewall mendedupe aturan (tahan reboot berkali-kali)" "grep -q 'Buang SEMUA salinan lama' \"\$REPO/setup.sh\""
+t "IPv6 dimatikan permanen saat instalasi" "grep -q 'net.ipv6.conf.all.disable_ipv6' \"\$REPO/setup.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/setup.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""

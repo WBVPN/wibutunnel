@@ -11,7 +11,7 @@ if ! command -v jq &> /dev/null; then apt-get install -y jq &>/dev/null; fi
 
 source /etc/wibutunnel/bot.conf 2>/dev/null
 
-IP_VPS="${MYIP:-$(curl -sS --max-time 5 ipv4.icanhazip.com)}"
+IP_VPS="${MYIP:-$(curl -4 -sS --max-time 5 ipv4.icanhazip.com)}"
 [[ -z "$IP_VPS" ]] && IP_VPS="Unknown"
 
 VPS_NAME="PROJECT-WIBU"
@@ -72,7 +72,7 @@ if [[ "$1" == "auto" ]]; then
     TGL=$(date "+%Y-%m-%d %H:%M:%S")
     CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔐 <b>Password:</b> <code>${BACKUP_PASS}</code>")
 
-    RESPONSE=$(curl -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+    RESPONSE=$(curl -4 -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
         -F "chat_id=${CHAT_ID}" \
         -F "document=@${BACKUP_FILE}" \
         -F "caption=${CAPTION}" \
@@ -83,7 +83,7 @@ if [[ "$1" == "auto" ]]; then
     
     if [[ -n "$FILE_ID" && -n "$MSG_ID" ]]; then
         NEW_CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${FILE_ID}</code>\n\n🔐 <b>Password:</b> <code>${BACKUP_PASS}</code>")
-        curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
+        curl -4 -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
             -F "chat_id=${CHAT_ID}" \
             -F "message_id=${MSG_ID}" \
             -F "caption=${NEW_CAPTION}" \
@@ -145,7 +145,7 @@ do_backup() {
     TGL=$(date "+%Y-%m-%d %H:%M:%S")
     CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔐 <b>Password:</b> <code>${BACKUP_PASS}</code>")
 
-    RESPONSE=$(curl -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
+    RESPONSE=$(curl -4 -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
         -F "chat_id=${CHAT_ID}" \
         -F "document=@${BACKUP_FILE}" \
         -F "caption=${CAPTION}" \
@@ -158,7 +158,7 @@ do_backup() {
         
         if [[ -n "$FILE_ID" && -n "$MSG_ID" ]]; then
             NEW_CAPTION=$(echo -e "📦 <b>Backup Wibutunnel VPS</b>\n🗓 Tanggal: <code>${TGL}</code>\n\n🔑 <b>DATA RESTORE:</b>\n<code>${FILE_ID}</code>\n\n🔐 <b>Password:</b> <code>${BACKUP_PASS}</code>")
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
+            curl -4 -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageCaption" \
                 -F "chat_id=${CHAT_ID}" \
                 -F "message_id=${MSG_ID}" \
                 -F "caption=${NEW_CAPTION}" \
@@ -197,17 +197,17 @@ do_restore() {
         echo -e "${RED}[!] Hanya URL https yang diizinkan.${NC}"; read -p "Tekan Enter..." dummy; return
     elif [[ "$link_backup" =~ ^https:// ]]; then
         echo -e "${CYAN}[+] Mendeteksi Link URL...${NC}"
-        wget -q -O "$restore_zip" "$link_backup" 2>/dev/null
+        wget -4 -q --timeout=20 --tries=2 -O "$restore_zip" "$link_backup" 2>/dev/null
     elif [[ "$link_backup" =~ ^documents/ ]] || [[ "$link_backup" =~ \.zip$ ]]; then
         echo -e "${CYAN}[+] Mendeteksi File Path Telegram...${NC}"
         [[ -z "$BOT_TOKEN" ]] && { echo -e "${RED}Bot Token belum diatur!${NC}"; read -p "Enter..."; return; }
-        wget -q -O "$restore_zip" "https://api.telegram.org/file/bot${BOT_TOKEN}/${link_backup}" 2>/dev/null
+        wget -4 -q --timeout=20 --tries=2 -O "$restore_zip" "https://api.telegram.org/file/bot${BOT_TOKEN}/${link_backup}" 2>/dev/null
     else
         echo -e "${CYAN}[+] Mendeteksi File ID Telegram...${NC}"
         [[ -z "$BOT_TOKEN" ]] && { echo -e "${RED}Bot Token belum diatur!${NC}"; read -p "Enter..."; return; }
-        FILE_PATH=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${link_backup}" | jq -r '.result.file_path // empty')
+        FILE_PATH=$(curl -4 -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${link_backup}" | jq -r '.result.file_path // empty')
         if [[ -n "$FILE_PATH" ]]; then
-            wget -q -O "$restore_zip" "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}" 2>/dev/null
+            wget -4 -q --timeout=20 --tries=2 -O "$restore_zip" "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}" 2>/dev/null
         else
             echo -e "${RED}[!] File ID tidak valid.${NC}"
         fi

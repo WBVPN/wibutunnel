@@ -107,7 +107,7 @@ add_user() {
     vmess_ntls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"80","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess-ntls","type":"none","host":"'$domain'","tls":"","sni":""}' | base64 -w 0)"
     vmess_grpc="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"443","id":"'$uuid'","aid":"0","net":"grpc","path":"vmess","type":"none","host":"'$domain'","tls":"tls","sni":"'$domain'"}' | base64 -w 0)"
 
-    CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VPN ACCOUNT - VMESS
@@ -166,7 +166,7 @@ ${THICKLINE}
 <b>LINK VMESS GRPC</b>
 <code>${vmess_grpc}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
+        curl -4 -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -203,7 +203,7 @@ trial_user() {
     vmess_ntls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"80","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess-ntls","type":"none","host":"'$domain'","tls":"","sni":""}' | base64 -w 0)"
     vmess_grpc="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"443","id":"'$uuid'","aid":"0","net":"grpc","path":"vmess","type":"none","host":"'$domain'","tls":"tls","sni":"'$domain'"}' | base64 -w 0)"
 
-    CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VPN ACCOUNT - VMESS
@@ -262,7 +262,7 @@ ${THICKLINE}
 <b>LINK VMESS GRPC</b>
 <code>${vmess_grpc}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
+        curl -4 -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -311,7 +311,7 @@ cek_user() {
     vmess_ntls="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"80","id":"'$uuid'","aid":"0","net":"ws","path":"/vmess-ntls","type":"none","host":"'$domain'","tls":"","sni":""}' | base64 -w 0)"
     vmess_grpc="vmess://$(echo -n '{"v":"2","ps":"'$user'","add":"'$domain'","port":"443","id":"'$uuid'","aid":"0","net":"grpc","path":"vmess","type":"none","host":"'$domain'","tls":"tls","sni":"'$domain'"}' | base64 -w 0)"
 
-    CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VMESS - CEK AKUN
@@ -370,7 +370,7 @@ ${THICKLINE}
 <b>LINK VMESS GRPC</b>
 <code>${vmess_grpc}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
+        curl -4 -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "parse_mode=html" --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=${PESAN_HTML}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -405,7 +405,7 @@ ${THICKLINE}
 <b>Added     :</b> <code>${tambahan} Days</code>
 <b>Expires   :</b> <code>${new_exp}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_RENEW}" >/dev/null 2>&1
+        curl -4 -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_RENEW}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -429,7 +429,7 @@ ${THICKLINE}
 <b>User      :</b> <code>${user}</code>
 <b>Limit IP  :</b> <code>${new_limit}</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_IP}" >/dev/null 2>&1
+        curl -4 -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_IP}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }
@@ -454,7 +454,7 @@ ${THICKLINE}
 <b>User      :</b> <code>${user}</code>
 <b>Limit BW  :</b> <code>${new_limit} GB</code>
 ${THICKLINE}"
-        curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_BW}" >/dev/null 2>&1
+        curl -4 -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" --data-urlencode "chat_id=${CHAT_ID}" --data-urlencode "disable_web_page_preview=true" --data-urlencode "parse_mode=html" --data-urlencode "text=${PESAN_BW}" >/dev/null 2>&1
     fi
     echo ""; read -p "Tekan Enter..." dummy
 }

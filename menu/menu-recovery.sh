@@ -178,8 +178,8 @@ fi
 source /etc/wibutunnel/bot.conf 2>/dev/null
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
     domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-    CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null || echo "Unknown")
-    ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null || echo "Unknown")
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null || echo "Unknown")
+    ISP=$(curl -4 -s --max-time 6 ip-api.com/line?fields=isp 2>/dev/null || echo "Unknown")
     
     if [[ "$proto" == "VLESS" ]]; then
         uuid=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' /etc/xray/config.json 2>/dev/null | head -n1)
@@ -305,7 +305,7 @@ if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
 <i>\"Seseorang akan menjadi kuat jika melindungi seseorang yang dicintainya.\" - Haku</i>"
     fi
     
-    curl -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    curl -4 -s --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
         --data-urlencode "chat_id=${CHAT_ID}" \
         --data-urlencode "parse_mode=html" \
         --data-urlencode "disable_web_page_preview=true" \
