@@ -1133,6 +1133,8 @@ if [[ -s /etc/wibutunnel/bot.conf ]] && grep -qE '^BOT_TOKEN="[^"]+' /etc/wibutu
 else
     systemctl disable telegram-bot.service >/dev/null 2>&1 || true
     systemctl stop telegram-bot.service >/dev/null 2>&1 || true
+    # Hapus status "failed" sisa percobaan sebelumnya supaya `systemctl status` bersih.
+    systemctl reset-failed telegram-bot.service >/dev/null 2>&1 || true
     echo -e "\e[1;33m[i] Bot Telegram belum diatur -> unit tidak diaktifkan (Setting -> [6] Setup Bot Telegram).\e[0m"
 fi
 systemctl enable dropbear.service ws-stunnel.service >/dev/null 2>&1
