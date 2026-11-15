@@ -165,7 +165,8 @@ Detail: [`docs/SECURITY_FIXES.md`](docs/SECURITY_FIXES.md) · hasil uji nyata di
 ## 🧪 Uji
 
 ```bash
-bash tests/test_hardening.sh            # 82 cek keamanan (non-destruktif)
+bash tools/verify-release.sh            # pastikan link rilis masih valid (dipakai VPS baru)
+bash tests/test_hardening.sh            # cek keamanan (non-destruktif)
 bash tests/test_license_enforcement.sh  # 12 kasus lisensi (fungsi asli)
 sha256sum -c SHA256SUMS                 # integritas berkas
 ```
