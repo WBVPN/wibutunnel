@@ -52,5 +52,5 @@ Harness verifikasi: `bash tests/test_hardening.sh` → **32 PASS / 0 FAIL**.
 
 ## Tidak diubah (sengaja)
 - Model produk: akun SSH tetap ber-shell kecuali admin memilih `WIBU_SSH_NOLOGIN=1`.
-- `config/config.json` & `config/haproxy.cfg` hanya referensi — `setup.sh` menulis konfigurasi inline.
+- `config/haproxy.cfg` dipakai `wibu-repair` sebagai template rebuild; `config/config.json` dipakai suite uji `test_auto_repair.sh`. `setup.sh` sendiri menulis konfigurasi secara inline.
 - Lisensi vendor (GitHub + override lokal) belum diperketat: butuh keputusan pemilik soal alur distribusinya.
