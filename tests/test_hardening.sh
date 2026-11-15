@@ -77,6 +77,20 @@ if [[ -f "$REPO/SHA256SUMS" ]]; then
   [[ $miss -eq 0 ]] && ok "SHA256SUMS mencakup semua sbin/* + menu/*" || bad "SHA256SUMS kurang $miss berkas"
 else bad "SHA256SUMS belum ada"; fi
 
+
+echo "== H. Kesesuaian README dengan kode =="
+_rmiss=0
+for n in menu m-vless m-vmess m-trojan m-ssh m-setting m-backup cek-trafik menu-lock menu-unlock menu-recovery xp wibu-repair; do
+  grep -q "$n" "$REPO/README.md" || { echo "     README belum menyebut perintah: $n"; _rmiss=1; }
+done
+for n in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemon lock-user unlock-user unlocker-wibu ws-stunnel wibu-daemon; do
+  grep -q "$n" "$REPO/README.md" || { echo "     README belum menyebut daemon: $n"; _rmiss=1; }
+done
+for u in xray haproxy dropbear ws-stunnel telegram-bot algojo-expired wibu-daemon network-tune wibutunnel-firewall; do
+  grep -q "$u" "$REPO/README.md" || { echo "     README belum menyebut unit: $u"; _rmiss=1; }
+done
+[[ $_rmiss -eq 0 ]] && ok "README menyebut semua perintah, daemon & unit yang dikelola" || bad "README ketinggalan dari kode"
+
 echo
 echo "=========== HASIL: $PASS PASS / $FAIL FAIL ==========="
 exit 0
