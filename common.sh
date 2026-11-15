@@ -345,84 +345,136 @@ show_license_denied() {
     echo -e "${LINE}"
 }
 
+# ---------------------------------------------------------------------------
+# LISENSI — sumber daftar (dapat dioverride untuk pengujian/pemulihan)
+LICENSE_URL="${LICENSE_URL:-https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt}"
+LICENSE_MIRROR="${LICENSE_MIRROR:-https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@main/izin.txt}"
+LICENSE_CACHE="${LICENSE_CACHE:-/etc/wibutunnel/tmp/wibu_license.cache}"
+# Tanpa jaringan: pakai salinan lokal/cache, tapi maksimal 7 hari (setelah itu tolak).
+LICENSE_OFFLINE_GRACE="${LICENSE_OFFLINE_GRACE:-604800}"
+
+# Ambil daftar lisensi (IPv4, timeout, mirror). Gagal -> return 1.
+license_fetch() {
+    local out
+    out=$(curl -4 -sS --max-time 8 --connect-timeout 5 "$LICENSE_URL" 2>/dev/null) || out=""
+    if [[ -z "$out" && -n "$LICENSE_MIRROR" ]]; then
+        out=$(curl -4 -sS --max-time 8 --connect-timeout 5 "$LICENSE_MIRROR" 2>/dev/null) || out=""
+    fi
+    [[ -n "$out" ]] || return 1
+    printf '%s' "$out"
+}
+
+# Cari entri untuk IP tertentu. Pencocokan HARUS persis pada kolom IP
+# (sebelumnya `grep -w` bisa cocok kabur karena titik = karakter apa pun).
+license_lookup() { # $1=daftar  $2=ip  -> cetak baris entri
+    printf '%s\n' "$1" | awk -v ip="$2" '{ for (i = 1; i <= NF; i++) if ($i == ip) { print; exit } }'
+}
+
+# Validasi satu entri -> set LICENSE_NAME/LICENSE_EXP, kembalikan 1 bila exp.
+license_entry() { # $1=baris entri  -> 0 valid, 1 kedaluwarsa, 2 rusak
+    LICENSE_NAME=$(printf '%s' "$1" | awk '{print $2}' | tr -d '\r')
+    LICENSE_EXP=$(printf '%s' "$1" | awk '{print $3}' | tr -d '\r')
+    [[ -n "$LICENSE_NAME" && -n "$LICENSE_EXP" ]] || return 2
+    [[ "${LICENSE_EXP,,}" == "lifetime" ]] && return 0
+    local e="$LICENSE_EXP"
+    [[ "$e" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && e="$e 23:59:59"
+    local s; s=$(date -u -d "$e" +%s 2>/dev/null) || return 2
+    [[ -z "$s" ]] && return 2
+    [[ $(date -u +%s) -gt $s ]] && return 1
+    return 0
+}
+
 check_license() {
-    local CACHE_FILE="/etc/wibutunnel/tmp/wibu_license.cache"
-    local CACHE_TTL=3600
-    local CURRENT_TIME=$(date -u +%s)
+    local CURRENT_TIME; CURRENT_TIME=$(date -u +%s)
+    local CACHE_IP="" CACHE_EXP="" CACHE_NAME=""
 
-    detect_myip >/dev/null
+    detect_myip >/dev/null 2>&1
+    if [[ -z "${MYIP:-}" ]]; then
+        show_license_denied "tidak terdeteksi (jaringan bermasalah)"
+        exit 1
+    fi
 
-    # Cek Cache & Ekstrak Data (Format: STATUS|NAMA|EXPIRED)
-    if [[ -f "$CACHE_FILE" ]]; then
-        local FILE_MOD_TIME=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)
-        local TIME_DIFF=$((CURRENT_TIME - FILE_MOD_TIME))
-        if [[ $TIME_DIFF -le $CACHE_TTL ]]; then
-            IFS='|' read -r c_status c_name c_exp < "$CACHE_FILE"
-            if [[ "$c_status" == "VALID" && -n "$c_name" && -n "$c_exp" ]]; then
-                if [[ "${c_exp,,}" != "lifetime" ]]; then
-                    local exp_parse="$c_exp"
-                    [[ "$exp_parse" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && exp_parse="${exp_parse} 23:59:59"
-                    local exp_sec; exp_sec=$(date -u -d "$exp_parse" +%s 2>/dev/null)
-                    if [[ -z "$exp_sec" || $CURRENT_TIME -gt $exp_sec ]]; then
-                        rm -f "$CACHE_FILE"
-                        show_license_expired "$c_name" "$c_exp"
-                        exit 1
-                    fi
+    # --- 1) Cache lokal: hanya berlaku bila IP-nya SAMA dengan VPS ini
+    if [[ -f "$LICENSE_CACHE" ]]; then
+        local mtime; mtime=$(stat -c %Y "$LICENSE_CACHE" 2>/dev/null || echo 0)
+        IFS='|' read -r _st CACHE_NAME CACHE_EXP CACHE_IP < "$LICENSE_CACHE" 2>/dev/null || true
+        if [[ "$CACHE_IP" == "$MYIP" && -n "$CACHE_EXP" ]]; then
+            if [[ "${CACHE_EXP,,}" != "lifetime" ]]; then
+                local e="$CACHE_EXP"
+                [[ "$e" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && e="$e 23:59:59"
+                local s; s=$(date -u -d "$e" +%s 2>/dev/null)
+                if [[ -z "$s" || $CURRENT_TIME -gt $s ]]; then
+                    rm -f "$LICENSE_CACHE"
+                    show_license_expired "$CACHE_NAME" "$CACHE_EXP"
+                    exit 1
                 fi
-                export CLIENT_NAME="$c_name"
-                export EXP_DATE="$c_exp"
+            fi
+            # masih segar -> langsung dipakai (hemat jaringan)
+            if [[ $((CURRENT_TIME - mtime)) -le 3600 ]]; then
+                export CLIENT_NAME="$CACHE_NAME" EXP_DATE="$CACHE_EXP"
                 return 0
+            fi
+        else
+            rm -f "$LICENSE_CACHE"   # cache milik IP lain: jangan dipercaya
+        fi
+    fi
+
+    # --- 2) Daftar resmi (selalu dari jaringan bila bisa)
+    local LIST="" GET_DATA=""
+    if LIST=$(license_fetch); then
+        GET_DATA=$(license_lookup "$LIST" "$MYIP")
+        if [[ -z "$GET_DATA" ]]; then
+            rm -f "$LICENSE_CACHE"
+            show_license_denied "$MYIP"
+            exit 1
+        fi
+        license_entry "$GET_DATA"; local rc=$?
+        if [[ $rc -eq 1 ]]; then
+            rm -f "$LICENSE_CACHE"
+            show_license_expired "$LICENSE_NAME" "$LICENSE_EXP"
+            exit 1
+        elif [[ $rc -ne 0 ]]; then
+            rm -f "$LICENSE_CACHE"
+            show_license_denied "$MYIP (entri rusak, hubungi admin)"
+            exit 1
+        fi
+        export CLIENT_NAME="$LICENSE_NAME" EXP_DATE="$LICENSE_EXP"
+        mkdir -p "$(dirname "$LICENSE_CACHE")"
+        printf 'VALID|%s|%s|%s\n' "$CLIENT_NAME" "$EXP_DATE" "$MYIP" > "$LICENSE_CACHE"
+        chmod 600 "$LICENSE_CACHE"
+        return 0
+    fi
+
+    # --- 3) Jaringan gagal: salinan lokal / cache lama, maksimal 7 hari
+    local FALLBACK_LIST=""
+    [[ -f /etc/wibutunnel/izin.txt ]] && FALLBACK_LIST=$(cat /etc/wibutunnel/izin.txt 2>/dev/null)
+    if [[ -n "$FALLBACK_LIST" ]]; then
+        GET_DATA=$(license_lookup "$FALLBACK_LIST" "$MYIP")
+        if [[ -n "$GET_DATA" ]]; then
+            license_entry "$GET_DATA"; local rc2=$?
+            if [[ $rc2 -eq 0 ]]; then
+                echo -e "${YELLOW}[!] Daftar lisensi tidak bisa diambil (jaringan). Memakai salinan lokal.${NC}" >&2
+                export CLIENT_NAME="$LICENSE_NAME" EXP_DATE="$LICENSE_EXP"
+                return 0
+            elif [[ $rc2 -eq 1 ]]; then
+                show_license_expired "$LICENSE_NAME" "$LICENSE_EXP"
+                exit 1
             fi
         fi
     fi
 
-    # Tarik dari GitHub (atau fallback local izin.txt)
-    local LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
-    local GET_DATA=""
-    if [[ -f "/etc/wibutunnel/izin.txt" ]] && grep -qw "$MYIP" "/etc/wibutunnel/izin.txt" 2>/dev/null; then
-        GET_DATA=$(grep -w "$MYIP" "/etc/wibutunnel/izin.txt")
-    elif [[ -f "./izin.txt" ]] && grep -qw "$MYIP" "./izin.txt" 2>/dev/null; then
-        GET_DATA=$(grep -w "$MYIP" "./izin.txt")
-    else
-        GET_DATA=$(curl -4 -sS --max-time 7 "$LINK_IZIN" 2>/dev/null | grep -w "$MYIP")
-    fi
-
-    if [[ -z "$GET_DATA" ]]; then
-        rm -f "$CACHE_FILE"
-        show_license_denied "$MYIP"
-        exit 1
-    fi
-
-    local c_name c_exp reg_ip
-    c_name=$(echo "$GET_DATA" | awk '{print $2}' | tr -d '\r' | tr -d ' ')
-    c_exp=$(echo "$GET_DATA" | awk '{print $3}' | tr -d '\r' | tr -d ' ')
-    reg_ip=$(echo "$GET_DATA" | awk '{print $4}' | tr -d '\r' | tr -d ' ')
-
-    if [[ -n "$reg_ip" && "$reg_ip" != "$MYIP" ]]; then
-        rm -f "$CACHE_FILE"
-        show_license_denied "$MYIP"
-        exit 1
-    fi
-
-    if [[ "${c_exp,,}" != "lifetime" ]]; then
-        local exp_parse="$c_exp"
-        [[ "$exp_parse" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && exp_parse="${exp_parse} 23:59:59"
-        local exp_sec; exp_sec=$(date -u -d "$exp_parse" +%s 2>/dev/null)
-        if [[ -z "$exp_sec" || $CURRENT_TIME -gt $exp_sec ]]; then
-            rm -f "$CACHE_FILE"
-            show_license_expired "$c_name" "$c_exp"
-            exit 1
+    if [[ -n "$CACHE_IP" && "$CACHE_IP" == "$MYIP" && -n "$CACHE_EXP" ]]; then
+        local mtime2; mtime2=$(stat -c %Y "$LICENSE_CACHE" 2>/dev/null || echo 0)
+        if [[ $((CURRENT_TIME - mtime2)) -le $LICENSE_OFFLINE_GRACE ]]; then
+            echo -e "${YELLOW}[!] Offline: memakai lisensi tersimpan (maks 7 hari).${NC}" >&2
+            export CLIENT_NAME="$CACHE_NAME" EXP_DATE="$CACHE_EXP"
+            return 0
         fi
     fi
 
-    export CLIENT_NAME="$c_name"
-    export EXP_DATE="$c_exp"
-
-    # Simpan ke Cache
-    mkdir -p "$(dirname "$CACHE_FILE")"
-    echo "VALID|${CLIENT_NAME}|${EXP_DATE}" > "$CACHE_FILE"
-    chmod 600 "$CACHE_FILE"
-    return 0
+    rm -f "$LICENSE_CACHE"
+    show_license_denied "$MYIP"
+    exit 1
 }
 
 check_license_silent() {
