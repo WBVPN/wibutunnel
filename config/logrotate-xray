@@ -1,6 +1,6 @@
 /var/log/xray/*.log {
-    su xray xray
-    create 0644 xray xray
+    su xray adm
+    create 0640 xray adm
     daily
     rotate 3
     size 10M

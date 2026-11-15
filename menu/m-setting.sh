@@ -11,6 +11,9 @@ check_license
 source /etc/wibutunnel/bot.conf 2>/dev/null
 source /etc/wibutunnel/lock.conf 2>/dev/null || LOCK_DURATION=15
 
+# B2: ref repo dipin untuk update (override: WIBU_REF=... m-setting)
+WIBU_REF="${WIBU_REF:-v4.0.6-fixed}"
+
 if [[ -z "$BOT_TOKEN" ]]; then
     STATUS_TOKEN="${RED}Belum disetting${NC}"
 else
@@ -36,10 +39,47 @@ safe_update() {
     local target_name="${base_name%.sh}"
     if [[ "$base_name" == "common.sh" ]]; then target_name="common.sh"; fi
     
-    local raw_url="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/${repo_path}?$(date +%s)"
-    local tmp_file="/etc/wibutunnel/tmp/${base_name}"
+    local raw_base="https://raw.githubusercontent.com/WBVPN/wibutunnel/${WIBU_REF}"
+    local raw_url="${raw_base}/${repo_path}?$(date +%s)"
+    local tmp_file="/etc/wibutunnel/tmp/${base_name}.dl.$$"
+    local manifest_file="/etc/wibutunnel/tmp/SHA256SUMS.$$"
     
-    wget -q -O "$tmp_file" "$raw_url" 2>/dev/null
+    # B2: unduh dengan curl -f (gagal pada HTTP 4xx/5xx) — fail-closed
+    if ! curl -fSL --retry 3 --max-time 60 -o "$tmp_file" "$raw_url" 2>/dev/null || [[ ! -s "$tmp_file" ]]; then
+        echo -e "${RED}× Gagal mengunduh ${base_name} (HTTP error / berkas kosong). Tidak ada yang diubah.${NC}"
+        rm -f "$tmp_file"
+        return 1
+    fi
+
+    # B2: verifikasi SHA256 terhadap manifest SHA256SUMS (fail-closed)
+    if [[ "${WIBUTUNNEL_ALLOW_UNVERIFIED:-0}" == "1" ]]; then
+        echo -e "${RED}!!! PERINGATAN BESAR: VERIFIKASI SHA256 DILEWATI (WIBUTUNNEL_ALLOW_UNVERIFIED=1) untuk ${repo_path} !!!${NC}"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] UNVERIFIED UPDATE (bypass): ${repo_path}" >> /etc/wibutunnel/tmp/bot_error.log
+    else
+        local expected actual
+        if ! curl -fSL --retry 3 --max-time 30 -o "$manifest_file" "${raw_base}/SHA256SUMS" 2>/dev/null || [[ ! -s "$manifest_file" ]]; then
+            echo -e "${RED}× Manifest SHA256SUMS tidak dapat diunduh. Update DITOLAK (fail-closed).${NC}"
+            rm -f "$tmp_file" "$manifest_file"
+            return 1
+        fi
+        expected=$(awk -v f="$repo_path" '$2 == f {print $1}' "$manifest_file" 2>/dev/null | head -n1)
+        if [[ -z "$expected" ]]; then
+            echo -e "${RED}× Manifest SHA256SUMS tidak memuat ${repo_path}. Update DITOLAK (fail-closed).${NC}"
+            rm -f "$tmp_file" "$manifest_file"
+            return 1
+        fi
+        actual=$(sha256sum "$tmp_file" | awk '{print $1}')
+        if [[ "$actual" != "$expected" ]]; then
+            echo -e "${RED}× HASH TIDAK COCOK untuk ${repo_path} — Update DITOLAK.${NC}"
+            echo -e "${RED}  manifest : ${expected}${NC}"
+            echo -e "${RED}  unduhan  : ${actual}${NC}"
+            rm -f "$tmp_file" "$manifest_file"
+            return 1
+        fi
+        echo -e "${GREEN}✓ SHA256 ${repo_path} cocok.${NC}"
+        rm -f "$manifest_file"
+    fi
+
     if [[ -s "$tmp_file" ]]; then
         local shebang=$(head -n 1 "$tmp_file")
         if [[ "$shebang" =~ ^#!.*(bash|sh) ]]; then
@@ -63,13 +103,19 @@ safe_update() {
             fi
         fi
 
+        # B2: cadangkan berkas lama sebelum menimpa (rollback)
+        local backup_dir="/usr/local/share/wibutunnel/backup"
+        local ts=$(date +%Y%m%d-%H%M%S)
+        mkdir -p "$backup_dir"
         if [[ "$repo_path" =~ ^sbin/ ]]; then
+            [[ -f "/usr/local/sbin/${target_name}" ]] && cp -a "/usr/local/sbin/${target_name}" "${backup_dir}/${base_name}.${ts}"
             cp -f "$tmp_file" "/usr/local/sbin/${target_name}"
             chmod +x "/usr/local/sbin/${target_name}"
             cp -f "$tmp_file" "/usr/local/bin/${target_name}"
             chmod +x "/usr/local/bin/${target_name}"
             rm -f "$tmp_file"
         else
+            [[ -f "/usr/local/bin/${target_name}" ]] && cp -a "/usr/local/bin/${target_name}" "${backup_dir}/${base_name}.${ts}"
             mv "$tmp_file" "/usr/local/bin/${target_name}"
             chmod +x "/usr/local/bin/${target_name}"
         fi
@@ -114,7 +160,7 @@ case $sub_setting in
             /usr/local/bin/wibu-repair
         else
             echo -e "$LINE"; echo -e "         ${WHITE}MERESTART SERVICES...${NC}"; echo -e "$LINE"
-            systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon cron 2>/dev/null || true
+            systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon telegram-bot network-tune cron 2>/dev/null || true
             echo -e "${GREEN}Semua service berhasil direstart!${NC}"
         fi
         echo ""
@@ -420,8 +466,14 @@ EOFBOT
         clear; echo -e "$LINE"; echo -e "         ${WHITE}ATUR DURASI LOCK OTOMATIS${NC}"; echo -e "$LINE"
         echo -e "${CYAN}Saat ini durasi lock otomatis: ${GREEN}${LOCK_DURATION} menit${NC}\n"
         read -p "Durasi Lock (menit): " new_duration
-        if [[ ! "$new_duration" =~ ^[0-9]+$ ]] || [ "$new_duration" -lt 1 ]; then
-            echo -e "${RED}Durasi minimal 1!${NC}"
+        if [[ ! "$new_duration" =~ ^[0-9]+$ ]]; then
+            echo -e "${RED}Durasi harus berupa angka!${NC}"
+            sleep 2
+            exec m-setting
+        fi
+        new_duration=$((10#$new_duration))   # B3: normalkan (08/09 bukan oktal)
+        if [ "$new_duration" -lt 1 ] || [ "$new_duration" -gt 1440 ]; then
+            echo -e "${RED}Durasi harus 1-1440 menit!${NC}"
             sleep 2
             exec m-setting
         fi

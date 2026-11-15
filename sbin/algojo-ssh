@@ -66,15 +66,25 @@ for user in "${!user_sessions[@]}"; do
     
     user_esc=$(escape_grep "$user")
     max_sess=$(grep "^${user_esc}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
+    # A4: validasi numerik sebelum banding. Non-numerik (DB korup) -> anggap limit 0.
+    if [[ -n "$max_sess" && ! "$max_sess" =~ ^[0-9]+$ ]]; then
+        echo "[WARN] algojo-ssh: limit_ip.db nilai non-numerik '$max_sess' untuk '$user', anggap 0" >&2
+        max_sess=0
+    fi
     [[ "$max_sess" == "0" || -z "$max_sess" ]] && continue
-    
+
     sess_count=${user_sessions[$user]}
-    
-    # [FIX SSH-3] Guard against octal interpretation (08, 09, 010)
+
+    # [FIX SSH-3] Guard against octal interpretation (08, 09, 010) + A2 guard
     if (( 10#$sess_count > 10#$max_sess )); then
         locked_users["$user"]=1
         now=$(date -u +%s)
-        unlock_time=$((now + (LOCK_DURATION * 60)))
+        # A2: guard oktal 10# + fallback bila LOCK_DURATION non-numerik
+        if [[ ! "$LOCK_DURATION" =~ ^[0-9]+$ ]]; then
+            echo "[WARN] algojo-ssh: LOCK_DURATION non-numerik ('$LOCK_DURATION'), fallback 15 menit" >&2
+            LOCK_DURATION=15
+        fi
+        unlock_time=$((now + (10#${LOCK_DURATION} * 60)))
         
         # Kill all user sessions
         pkill -u "$user" 2>/dev/null
@@ -82,8 +92,8 @@ for user in "${!user_sessions[@]}"; do
         # Lock password (direct passwd -l, field3 > 0 for timed auto-unlock)
         passwd -l "$user" 2>/dev/null || usermod -L "$user" 2>/dev/null
         
-        # Add to lock DB AFTER lock (timed entry)
-        echo "${user}:${now}:${unlock_time}:SSH_IP_LIMIT" >> "$DB_LOCK"
+        # A1: tulis DB via helper ber-flock (bukan append langsung)
+        db_append "$user" "${now}:${unlock_time}:SSH_IP_LIMIT" "$DB_LOCK"
         
         # Telegram notification
         (

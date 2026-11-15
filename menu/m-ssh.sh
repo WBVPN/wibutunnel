@@ -303,11 +303,12 @@ lock_unlock_ssh_menu() {
             lock_ssh_user "$SELECTED_USER" "LOCK" && echo -e "\n ${GREEN}${SELECTED_USER} terkunci.${NC}"
             ;;
         2)
-            mapfile -t locked_users < <(awk -F: '{print $1}' "$DB_LOCK" 2>/dev/null | sort -u)
+            # B8: hanya user SSH (punya akun sistem). DB_LOCK memuat semua protokol.
+            mapfile -t locked_users < <(awk -F: '{print $1}' "$DB_LOCK" 2>/dev/null | sort -u | while read -r u; do id "$u" >/dev/null 2>&1 && echo "$u"; done)
             if [ "${#locked_users[@]}" -eq 0 ] || [[ -z "${locked_users[0]}" ]]; then
-                echo -e "\n ${YELLOW}Tidak ada akun terkunci.${NC}"
+                echo -e "\n ${YELLOW}Tidak ada akun SSH terkunci.${NC}"
             else
-                echo -e "\n ${CYAN}Akun terkunci:${NC}"
+                echo -e "\n ${CYAN}Akun SSH terkunci:${NC}"
                 for i in "${!locked_users[@]}"; do
                     printf " ${GREEN}%2d.${NC} %s\n" "$((i+1))" "${locked_users[$i]}"
                 done

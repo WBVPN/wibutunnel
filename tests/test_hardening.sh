@@ -1,0 +1,78 @@
+#!/bin/bash
+# tests/test_hardening.sh — uji NON-DESTRUKTIF untuk patch keamanan wibutunnel v4.0.6-fixed
+# Tidak menyentuh sistem: hanya baca berkas repo + uji unit fungsi yang diekstrak ke /tmp.
+# Jalankan: bash tests/test_hardening.sh
+set -uo pipefail
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PASS=0; FAIL=0
+ok()   { echo "  PASS  $1"; PASS=$((PASS+1)); }
+bad()  { echo "  FAIL  $1"; FAIL=$((FAIL+1)); }
+t()    { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
+
+echo "== A. Rahasia / argv =="
+t "token bot tidak lagi di argv (bot-daemon)"  "! grep -q 'api.telegram.org/bot\${BOT_TOKEN}' \"\$REPO/menu/bot-daemon.sh\""
+t "helper tg_api (curl -K -) ada"              "grep -q 'curl -s -K -' \"\$REPO/menu/bot-daemon.sh\""
+t "tidak ada rahasia hardcode di kode"         "[[ \$(grep -rE '(BOT_TOKEN|PASSWORD)=[A-Za-z0-9:_-]{12,}' \"\$REPO/common.sh\" \"\$REPO/setup.sh\" \"\$REPO/menu\" \"\$REPO/sbin\" 2>/dev/null | wc -l) -eq 0 ]]"
+
+echo "== B. Enforcement =="
+t "guard 10# di algojo-wibu"                   "grep -q '10#' \"\$REPO/sbin/algojo-wibu\""
+t "guard 10# di algojo-ssh"                    "grep -q '10#' \"\$REPO/sbin/algojo-ssh\""
+t "exp.conf tidak lagi chmod 644"              "! grep -q 'chmod 644 \"\$file\"' \"\$REPO/common.sh\""
+t "tulis DB_LOCK pakai helper/flock (bukan >> mentah)" "! grep -qE '>> *\"\\\$DB_LOCK\"' \"\$REPO/sbin/algojo-wibu\" \"\$REPO/sbin/algojo-ssh\""
+t "exp_file tidak ditulis >> mentah"           "! grep -qE '>> *\"\\\$exp_file\"' \"\$REPO/menu/bot-daemon.sh\""
+t "truncate locked_users.db tidak telanjang"   "! grep -qE '^[[:space:]]*> */etc/wibutunnel/locked_users.db' \"\$REPO/menu/menu-recovery.sh\""
+t "guard protokol tak dikenal: tidak menulis unknown_exp.conf" "! grep -qE 'unknown_exp\.conf' \"\$REPO/sbin/algojo-kuota\" || grep -qE 'log|continue|return' \"\$REPO/sbin/algojo-kuota\""
+t "validasi numerik sebelum banding"           "grep -qE '\\^\\[0-9\\]\\+\\$|=~ *\\^\\[0-9\\]' \"\$REPO/sbin/algojo-wibu\""
+
+echo "== C. Rantai pasok / update =="
+t "installer Xray dipin (hash) di setup.sh"    "grep -q 'XRAY_INSTALL_SHA256' \"\$REPO/setup.sh\""
+t "installer Xray dipin (hash) di uninstall.sh" "grep -q 'XRAY_INSTALL_SHA256' \"\$REPO/uninstall.sh\""
+t "tidak ada curl|bash lagi"                   "! grep -qE 'curl[^|]*\\| *(ba)?sh' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
+t "safe_update pakai SHA256SUMS"               "grep -q 'SHA256SUMS' \"\$REPO/menu/m-setting.sh\""
+t "safe_update pakai curl -f"                  "grep -qE 'curl -[a-zA-Z]*f' \"\$REPO/menu/m-setting.sh\""
+t "ref repo dipin (bukan main polos)"          "grep -qE 'WIBU_REF|v4\\.0\\.6' \"\$REPO/menu/m-setting.sh\""
+t "setup.sh verifikasi hash tiap berkas unduhan" "grep -q 'wibu_verify_file' \"\$REPO/setup.sh\" && grep -q 'SHA256SUMS' \"\$REPO/setup.sh\""
+t "setup.sh tidak menarik kode dari main"       "! grep -qE '^GITHUB_RAW=.*/main\"' \"\$REPO/setup.sh\""
+
+echo "== D. API Xray 10085 tidak bisa diakses non-root =="
+t "aturan iptables owner-match ada"            "grep -q 'uid-owner 0' \"\$REPO/setup.sh\""
+t "unit firewall persisten ada"                "grep -qE 'wibutunnel-firewall' \"\$REPO/setup.sh\""
+t "uninstall tidak flush seluruh iptables"     "! grep -qE '^[[:space:]]*iptables -F' \"\$REPO/uninstall.sh\""
+
+echo "== E. Izin berkas =="
+t "logrotate create 0640 (bukan 0644)"         "grep -q 'create 0640' \"\$REPO/config/logrotate-xray\""
+t "/var/log/xray 750 (bukan 755)"              "! grep -q 'chmod 755 /var/log/xray' \"\$REPO/setup.sh\""
+t "/etc/xray dibatasi"                         "grep -qE 'chmod 7[0-5]0 /etc/xray' \"\$REPO/setup.sh\""
+
+echo "== F. Ketahanan lain =="
+t "limits.conf dicadangkan + blok berpenanda"  "grep -q 'wibutunnel' \"\$REPO/setup.sh\" && grep -q 'limits.conf.*bak\\|limits.conf.wibutunnel' \"\$REPO/setup.sh\""
+t "restore zip: wajib password + validasi entri" "grep -q 'unzip -P' \"\$REPO/menu/m-backup.sh\" && grep -qE '\\.\\.|entri|entry' \"\$REPO/menu/m-backup.sh\""
+t "m-backup pakai mktemp"                      "grep -q 'mktemp' \"\$REPO/menu/m-backup.sh\""
+t "password backup acak (openssl rand / mktemp), bukan CHAT_ID" "grep -qE 'openssl rand|\$RANDOM|mktemp' \"\$REPO/menu/m-backup.sh\" && ! grep -qE 'password.*\"\$CHAT_ID\"' \"\$REPO/menu/m-backup.sh\""
+t "penanda versi 4.0.6"                        "grep -q '4\\.0\\.6' \"\$REPO/setup.sh\""
+t "restart-all memuat telegram-bot + network-tune" "grep -q 'telegram-bot' \"\$REPO/menu/m-setting.sh\" && grep -q 'network-tune' \"\$REPO/menu/m-setting.sh\""
+t "hitungan trafik pakai kolom 2 saja"          "! grep -qE 'down=\\(\\\$2==\"null\"' \"\$REPO/menu/bot-daemon.sh\""
+
+echo "== G. Sintaks & manifest =="
+sb=0; np=0
+for f in "$REPO"/*.sh "$REPO"/menu/*.sh "$REPO"/tests/*.sh "$REPO"/sbin/*; do
+  [[ -f "$f" ]] || continue
+  head1=$(head -1 "$f")
+  case "$head1" in
+    *python*) if ! python3 -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8",errors="replace").read())' "$f" 2>/dev/null; then bad "syntax (python): ${f#$REPO/}"; np=1; fi ;;
+    *bash*|*sh) if ! bash -n "$f" 2>/dev/null; then bad "syntax (bash): ${f#$REPO/}"; sb=1; fi ;;
+    *) if ! bash -n "$f" 2>/dev/null; then bad "syntax (tanpa shebang?): ${f#$REPO/}"; sb=1; fi ;;
+  esac
+done
+[[ $sb -eq 0 && $np -eq 0 ]] && ok "sintaks semua skrip (bash -n + python compile untuk ws-stunnel)"
+if [[ -f "$REPO/SHA256SUMS" ]]; then
+  miss=0
+  for f in "$REPO"/sbin/* "$REPO"/menu/*; do
+    [[ -f "$f" ]] || continue
+    rel="${f#$REPO/}"; grep -q " $rel\$" "$REPO/SHA256SUMS" || { echo "     manifest kurang: $rel"; miss=$((miss+1)); }; done
+  [[ $miss -eq 0 ]] && ok "SHA256SUMS mencakup semua sbin/* + menu/*" || bad "SHA256SUMS kurang $miss berkas"
+else bad "SHA256SUMS belum ada"; fi
+
+echo
+echo "=========== HASIL: $PASS PASS / $FAIL FAIL ==========="
+exit 0

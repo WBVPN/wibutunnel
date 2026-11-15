@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.0.6 KURUMI
+# 🦋 WIBUTUNNEL v4.0.6-fixed
 
 Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu command, VPN langsung jalan.
 
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)](https://github.com/WBVPN/wibutunnel)
-[![Version](https://img.shields.io/badge/Version-v4.0.6%20KURUMI-blue.svg)](https://github.com/WBVPN/wibutunnel)
+[![Version](https://img.shields.io/badge/Version-v4.0.6-fixed-blue.svg)](https://github.com/WBVPN/wibutunnel)
 [![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)](https://github.com/WBVPN/wibutunnel)
 
 ---
@@ -29,9 +29,21 @@ Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu comman
 
 ### One-Liner
 ```bash
-wget -qO setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh && bash setup.sh
+wget -qO setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/setup.sh
+sha256sum setup.sh     # harap: 518d8b98f86617ab57d4d271242ae84a773d12001c36b5f8316b1b705023eb14
+bash setup.sh
 ```
 
+
+`setup.sh` mengambil kode (`menu/*`, `sbin/*`, `common.sh`) dari **tag rilis** (bukan `main`) dan
+memverifikasi sha256 setiap berkas terhadap `SHA256SUMS`; hash tidak cocok = instalasi DIHENTIKAN.
+Ganti ref: `WIBU_REF=v4.0.6-fixed bash setup.sh` · bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
+
+**Instalasi versi rilis (terpin):** perintah di atas mengambil dari tag `v4.0.6-fixed`.
+Bila ingin versi terbaru dari cabang `main`, ganti `v4.0.6-fixed` menjadi `main` (hash `setup.sh` akan berbeda).
+
+> **Instalasi baru:** IP VPS harus terdaftar di `izin.txt` (hubungi @wibuvpn). Tanpa itu instalasi
+> berhenti di pemeriksaan lisensi — perilaku normal, bukan error jaringan.
 **Proses:** Install dependencies → SSL cert → Xray config → Telegram bot → Services. Waktu: ~5-10 menit.
 
 ---
@@ -114,9 +126,9 @@ Input expiry baru, IP limit, bandwidth → restored + notif Telegram.
 ## 🔄 Update
 
 ```bash
-m-setting → [5] Update Script
-# Atau manual:
-cd /root/wibutunnel-repo && git pull origin main && bash setup.sh
+m-setting   # Settings → [5] Update Script (verifikasi SHA256SUMS)
+            # hash tidak cocok = update DITOLAK (fail-closed); cadangan disimpan
+            # ke /usr/local/share/wibutunnel/backup/ sebelum menimpa
 ```
 
 ---
@@ -124,8 +136,13 @@ cd /root/wibutunnel-repo && git pull origin main && bash setup.sh
 ## 🗑️ Uninstall
 
 ```bash
-curl -sS -L https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh | bash
+wget -qO uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/uninstall.sh
+sha256sum uninstall.sh   # harap: 3fe0992fadd28373d8ace41e5f9bd7fcc50e711c3e472eddc6d117f305b7df26
+bash uninstall.sh
 ```
+
+> Hindari `curl … | bash` untuk uninstall: skrip ini menghapus layanan/data, jadi periksa dulu.
+> Installer Xray di dalam `uninstall.sh` juga diverifikasi sha256 sebelum dijalankan.
 Backup otomatis ke `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum hapus.
 
 ---
@@ -222,7 +239,7 @@ cat /etc/xray/vless_exp.conf  # Format: username:YYYY-MM-DD HH:MM:SS
 **📊 Dashboard:**
 - Multi-service live monitor (`Online` / `Degraded`)
 - Clean SSH menu (hapus opsi usang)
-- 11 test suites automated
+- 11 test suite lama + `tests/test_hardening.sh` (32 cek keamanan, non-destruktif)
 
 **🐛 Critical Fixes:**
 - SSH-1: Parsing `ss` benar ($3/$5, PID via ps, filter dropbear|sshd)
@@ -263,3 +280,10 @@ MIT License - bebas pakai, modif, distribusi.
 ⭐ Star this repo if you find it useful!
 
 </div>
+
+
+## 🔐 Patch keamanan (2026-11-15)
+Rilis ini menutup temuan audit: rantai pasok (`curl|bash`) dipin+verifikasi hash, update fail-closed
+(`SHA256SUMS`), API Xray 10085 diblokir untuk non-root, token bot keluar dari `argv`, restore backup
+wajib password + validasi entri, izin berkas diperketat, dan tulis DB ber-`flock`.
+Rincian + cara verifikasi: **`docs/SECURITY_FIXES.md`** · uji: `bash tests/test_hardening.sh`.

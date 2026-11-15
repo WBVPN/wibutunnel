@@ -1,8 +1,13 @@
+> **CATATAN VERIFIKASI (2026-11-15):** dokumen ini ditulis untuk rilis 4.0.6. Angka yang terverifikasi:
+> **51 berkas** total di paket (39 skrip bash, 2 python), uji: **11 suite lama + `tests/test_hardening.sh` (32 cek)**.
+> Hash commit yang tertulis di dokumen lama **tidak valid**. Versi saat ini: **4.0.6-fixed** (lihat `CHANGELOG.md`).
+> Rilis 4.0.6 yang diaudit punya beberapa temuan keamanan — lihat `docs/SECURITY_FIXES.md`.
+
 # WIBUTUNNEL - AI Assistant Documentation
 
 **Last Updated:** 2026-10-26  
 **Version:** 4.0 KURUMI  
-**HEAD Commit:** 74fa709a09925964810e4f520f31d0737042d1be
+**HEAD Commit:** (monospace ini tidak valid — hash di dokumen lama tidak dapat diverifikasi; lihat `git log` repo sebenarnya)
 
 ## Quick Context for AI Assistants
 
@@ -72,7 +77,7 @@ bash setup.sh
    - Configure nginx/HAProxy as frontend
 
 3. **File Installation** (lines 500-800)
-   - Download 20 files dari repo via `_need()` wrapper
+   - Download 25 berkas dari repo via `_need()` wrapper
    - Install ke /usr/local/{bin,sbin}
    - Set executable permissions
 
@@ -461,7 +466,7 @@ curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getMe"
 ## Development Workflow
 
 ### Making Changes
-1. **Edit files** di /root/wibutunnel-repo/
+1. **Edit files** di /root/wibutunnel/
 2. **Test locally:**
    ```bash
    bash -n <file>  # syntax check
@@ -469,7 +474,7 @@ curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getMe"
    ```
 3. **Commit:**
    ```bash
-   cd /root/wibutunnel-repo
+   cd /root/wibutunnel
    git add <files>
    git commit -m "Brief description"
    ```
@@ -545,10 +550,10 @@ systemctl restart xray telegram-bot algojo-expired
 cp -r /etc/xray /root/xray-backup-$(date +%s)
 
 # Uninstall
-bash /root/wibutunnel-repo/uninstall.sh
+bash /root/wibutunnel/uninstall.sh
 
 # Fresh install
-cd /root/wibutunnel-repo
+cd /root/wibutunnel
 bash setup.sh
 
 # Restore user data
@@ -565,7 +570,7 @@ When user says:
 
 **"Install wibutunnel"**
 ```bash
-cd /root/wibutunnel-repo && bash setup.sh
+cd /root/wibutunnel && bash setup.sh
 ```
 
 **"Check status"**
@@ -725,6 +730,6 @@ echo "✓ Backup valid"
 **Original Author:** wibuvpnstore@gmail.com  
 **Version:** 4.0.6 KURUMI  
 **Last Audit:** 2026-11-01 (Auto-Repair Engine & Service Monitoring Dashboard)  
-**Verified Commit:** 8fda589
+**Verified Commit:** (tidak dapat diverifikasi — lihat `git log`)
 
 **AI Assistants:** This documentation updated untuk memudahkan context transfer antar session. Baca ini first sebelum perform operations.
