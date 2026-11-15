@@ -47,7 +47,7 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
                     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                     WAKTU=$(date '+%d %b %Y %H:%M WIB')
                     PESAN=$(printf "🗑 <b>TRIAL ACCOUNT DIHAPUS OTOMATIS</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Expired\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>" "$user" "$proto" "$WAKTU" "$DOMAIN")
-                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                    curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                         -F "chat_id=${CHAT_ID}" \
                         -F "disable_web_page_preview=true" \
                         -F "parse_mode=html" \
@@ -132,7 +132,7 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
                     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                     WAKTU=$(date '+%d %b %Y %H:%M WIB')
                     PESAN=$(printf '💾 <b>USER PINDAH KE RECOVERY (EXPIRED)</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Expired\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Admin bisa restore via menu-recovery dengan limit baru.</i>' "$user" "$proto" "$WAKTU" "$DOMAIN")
-                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                    curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                         -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" \
                         -F "parse_mode=HTML" -F "text=${PESAN}" >/dev/null 2>&1 &
                 fi

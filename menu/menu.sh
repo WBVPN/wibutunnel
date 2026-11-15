@@ -6,11 +6,11 @@
 source /usr/local/bin/common.sh
 check_license
 
-IP_SERVER="${MYIP:-$(curl -sS ipv4.icanhazip.com)}"
+IP_SERVER="${MYIP:-$(curl -4 -sS --max-time 5 ipv4.icanhazip.com)}"
 OS_SYSTEM=$(grep PRETTY_NAME /etc/os-release | awk -F '"' '{print $2}')
 
 # Pindah ke tmp terisolasi
-curl -s "http://ip-api.com/line/?fields=city,isp" > /etc/wibutunnel/tmp/ipapi.txt
+curl -4 -s --max-time 6 "http://ip-api.com/line/?fields=city,isp" > /etc/wibutunnel/tmp/ipapi.txt
 CITY=$(sed -n '1p' /etc/wibutunnel/tmp/ipapi.txt)
 ISP=$(sed -n '2p' /etc/wibutunnel/tmp/ipapi.txt)
 [[ -z "$CITY" ]] && CITY="Unknown"

@@ -47,7 +47,7 @@ log_bot_error() {
 # B1: Token TIDAK boleh muncul di argv. curl membaca URL dari STDIN (-K -).
 tg_api() {  # $1=method (mis. sendMessage), sisanya diteruskan ke curl
   local m="$1"; shift
-  printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$BOT_TOKEN" "$m" | curl -s -K - "$@"
+  printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$BOT_TOKEN" "$m" | curl -4 -s -K - "$@"
 }
 
 send_msg() {
@@ -153,10 +153,10 @@ format_online_users() {
 ssh_bot_config_message() {
     local user="$1" pass="$2" exp="$3" lip="$4" lbw="$5"
     local domain; domain=$(cat /etc/xray/domain 2>/dev/null)
-    [[ -z "$domain" ]] && domain="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+    [[ -z "$domain" ]] && domain="${MYIP:-$(curl -4 -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
 
-    local ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
-    local CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null)
+    local ISP=$(curl -4 -s --max-time 6 ip-api.com/line?fields=isp 2>/dev/null)
+    local CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null)
     [[ -z "$ISP" ]] && ISP="Unknown"; [[ -z "$CITY" ]] && CITY="Unknown"
 
     local THICKLINE="━━━━━━━━━━━━━━━━━━━━"
@@ -311,8 +311,8 @@ create_account() {
     [[ "$limit_ip" -eq 0 ]] && limit_ip="Bebas" || limit_ip="${limit_ip} IP"
     [[ "$limit_bw" -eq 0 ]] && limit_bw="Unlimited" || limit_bw="${limit_bw} GB"
 
-    local CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null)
-    local ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    local CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null)
+    local ISP=$(curl -4 -s --max-time 6 ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
     local THICKLINE="━━━━━━━━━━━━━━━━━━━━"
     local pesan="<b>VPN ACCOUNT - ${proto}</b>\n"
@@ -681,7 +681,7 @@ backup_vps() {
     local load_msg_id=$(echo "$load_resp" | jq -r '.result.message_id // empty')
 
     local domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-    local ip_vps=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null || echo "Unknown")
+    local ip_vps=$(curl -4 -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null || echo "Unknown")
     # B7/B6: direktori kerja mktemp (700, di bawah /etc/wibutunnel yang 700) + password acak.
     local backup_dir; backup_dir=$(mktemp -d /etc/wibutunnel/tmp/backup.XXXXXX) || { send_msg "❌ <b>Gagal membuat direktori backup.</b>"; return 1; }
     local BACKUP_PASS; BACKUP_PASS=$(openssl rand -hex 12 2>/dev/null || tr -dc 'a-f0-9' </dev/urandom | head -c 24)
@@ -801,8 +801,8 @@ detail_account() {
         link2="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan&sni=${domain}#${user}"
     fi
 
-    local CITY=$(curl -s ip-api.com/line?fields=city 2>/dev/null)
-    local ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    local CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null)
+    local ISP=$(curl -4 -s --max-time 6 ip-api.com/line?fields=isp 2>/dev/null)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     local THICKLINE="━━━━━━━━━━━━━━━━━━━━"
@@ -1080,7 +1080,7 @@ while true; do
                         fi
                         ;;
                     info)
-                        IP=$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)
+                        IP=$(curl -4 -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)
                         UPTIME=$(uptime -p | cut -d' ' -f2-)
                         RAM=$(free -m | awk '/Mem:/ {print $3" MB / "$2" MB"}')
                         CPU=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}')

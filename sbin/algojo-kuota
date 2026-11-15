@@ -71,7 +71,7 @@ while read -r line; do
             # Log ke stderr lalu skip user ini.
             if [[ "$proto" != "VLESS" && "$proto" != "VMESS" && "$proto" != "TROJAN" ]]; then
                 echo "[WARN] algojo-kuota: protokol tak dikenal untuk '$user' (proto=$proto), lewati (tidak menulis berkas)" >&2
-                [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]] && curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=[WARN] protokol tak dikenal untuk <code>${user}</code> (proto=${proto}), dilewati" >/dev/null 2>&1
+                [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]] && curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=[WARN] protokol tak dikenal untuk <code>${user}</code> (proto=${proto}), dilewati" >/dev/null 2>&1
                 continue
             fi
 
@@ -95,7 +95,7 @@ while read -r line; do
                     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                     WAKTU=$(date '+%d %b %Y %H:%M WIB')
                     PESAN=$(printf "🗑 <b>TRIAL ACCOUNT DIHAPUS OTOMATIS</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Kuota Habis\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>" "$user" "$proto" "$WAKTU" "$DOMAIN")
-                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+                    curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                         -F "chat_id=${CHAT_ID}" \
                         -F "disable_web_page_preview=true" \
                         -F "parse_mode=html" \
@@ -148,7 +148,7 @@ while read -r line; do
                     DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
                     WAKTU=$(date '+%d %b %Y %H:%M WIB')
                     PESAN=$(printf "💾 <b>USER PINDAH KE RECOVERY (KUOTA HABIS)</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Protocol :</b> %s\n<b>Alasan   :</b> Kuota Habis\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>\n\n<i>Admin bisa restore via menu-recovery dengan limit baru.</i>" "$user" "$proto" "$WAKTU" "$DOMAIN")
-                    curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
+                    curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
                 ) &
 
                 xray_sync_user del "$proto" "$user"

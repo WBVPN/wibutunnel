@@ -71,7 +71,7 @@ select_ssh_user() {
 ssh_config_message() {
     local user="$1" pass="$2" exp="$3" lip="$4" lbw="$5"
     local domain; domain=$(cat "$DOMAIN_FILE" 2>/dev/null)
-    [[ -z "$domain" ]] && domain="${MYIP:-$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
+    [[ -z "$domain" ]] && domain="${MYIP:-$(curl -4 -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
 
     [[ "$lip" == "0" || -z "$lip" ]] && lip="Bebas" || lip="${lip} IP"
     [[ "$lbw" == "0" || -z "$lbw" ]] && lbw="Unlimited" || lbw="${lbw} GB"
@@ -134,7 +134,7 @@ add_ssh_menu() {
     if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
         (
         PESAN="<b>SSH ACCOUNT CREATED</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>User</b> : <code>${user}</code>\n<b>Pass</b> : <code>${pass}</code>\n<b>Exp</b> : <code>${exp_date}</code>\n<b>Limit IP</b> : <code>${limit_ip}</code>\n<b>Kuota</b> : <code>${limit_kuota} GB</code>"
-        curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
+        curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
         ) &
     fi
 
