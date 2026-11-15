@@ -142,7 +142,7 @@ xray_installer_run() {
             exit 1
         fi
     fi
-    bash "$XRAY_TMP" -s -- "$action"
+    bash "$XRAY_TMP" "$action"   # [FIX] bentuk berkas: aksi jadi $1 (bukan "-s --" yang untuk pipa)
 }
 
 clear
@@ -470,6 +470,12 @@ chmod 600 /etc/haproxy/certs/*.pem
 
 # XRAY CORE
 xray_installer_run install
+# [FIX] gagal dini dengan pesan jelas bila Xray tidak terpasang
+if ! command -v xray >/dev/null 2>&1 || ! id xray >/dev/null 2>&1; then
+    echo -e "\\e[1;31m[FATAL] Xray gagal terpasang (binary/user 'xray' tidak ada).\\e[0m"
+    echo -e "\\e[33m        Cek koneksi ke github.com/XTLS atau jalankan ulang; instalasi DIHENTIKAN sebelum merusak konfigurasi.\\e[0m"
+    exit 1
+fi
 # user xray baru ada setelah install-release.sh di atas
 chown -R xray:adm /var/log/xray
 chmod 750 /var/log/xray
