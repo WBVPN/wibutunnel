@@ -360,7 +360,14 @@ case $sub_setting in
         # [FIX] Skrip firewall & network-tune kini berkas repo (nama tanpa .sh). Unit systemd
         # di VPS yang sudah terpasang masih menunjuk nama .sh -> pasang symlink kompatibilitas,
         # lalu terapkan aturan firewall versi terbaru (dedupe) tanpa perlu instalasi ulang.
-        ln -sf /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.sh 2>/dev/null || true
+        # [FIX] Penanda versi ikut diperbarui: sebelumnya /etc/wibutunnel/version tetap versi lama
+    # setelah update, sehingga dashboard menampilkan versi yang salah.
+    _ver=$(curl -4 -fsSL --max-time 30 "https://api.github.com/repos/WBVPN/wibutunnel/contents/setup.sh?ref=${WIBU_REF}" \
+             -H 'Accept: application/vnd.github.raw' -H 'User-Agent: wibu' 2>/dev/null \
+             | sed -n 's/^echo "\([0-9][0-9.]*\)" > \/etc\/wibutunnel\/version.*/\1/p' | head -1)
+    [[ -n "${_ver:-}" ]] && echo "$_ver" > /etc/wibutunnel/version
+
+    ln -sf /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.sh 2>/dev/null || true
         ln -sf /usr/local/sbin/network-tune /usr/local/sbin/network-tune.sh 2>/dev/null || true
         systemctl daemon-reload >/dev/null 2>&1 || true
         [[ -x /usr/local/sbin/wibutunnel-firewall ]] && /usr/local/sbin/wibutunnel-firewall >/dev/null 2>&1 || true
