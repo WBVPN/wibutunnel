@@ -35,7 +35,9 @@ t "setup.sh verifikasi hash tiap berkas unduhan" "grep -q 'wibu_verify_file' \"\
 t "setup.sh tidak menarik kode dari main"       "! grep -qE '^GITHUB_RAW=.*/main\"' \"\$REPO/setup.sh\""
 
 echo "== D. API Xray 10085 tidak bisa diakses non-root =="
-t "aturan iptables owner-match ada"            "grep -q 'uid-owner 0' \"\$REPO/setup.sh\""
+t "aturan iptables owner-match (sintaks nft benar)" "grep -q -- '-m owner ! --uid-owner 0' \"\$REPO/setup.sh\"" 
+t "tidak memakai bentuk '! -m owner' (tidak valid di nft)" "! grep -q -- '! -m owner --uid-owner 0' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
+t "loop domain punya penjaga EOF"              "grep -q 'Input berakhir (EOF)' \"\$REPO/setup.sh\""
 t "unit firewall persisten ada"                "grep -qE 'wibutunnel-firewall' \"\$REPO/setup.sh\""
 t "uninstall tidak flush seluruh iptables"     "! grep -qE '^[[:space:]]*iptables -F' \"\$REPO/uninstall.sh\""
 
