@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.0.6-fixed
+# MASTER INSTALLER WIBU TUNNELING - v4.0.7
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
-# RESIDUAL RISK (v4.0.6-fixed):
+# RESIDUAL RISK (v4.0.7):
 #  * Pelanggan SSH masih mendapat shell /bin/bash. Mitigasi utama: port API Xray
 #    127.0.0.1:10085 dibatasi uid 0 via iptables owner-match + unit systemd
 #    wibutunnel-firewall.service (ditegakkan saat boot). Opt-in WIBU_SSH_NOLOGIN=1
@@ -268,7 +268,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.0.6-fixed" > /etc/wibutunnel/version
+echo "4.0.7" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf

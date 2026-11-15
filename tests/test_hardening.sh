@@ -30,7 +30,7 @@ t "installer Xray dipin (hash) di uninstall.sh" "grep -q 'XRAY_INSTALL_SHA256' \
 t "tidak ada curl|bash lagi"                   "! grep -qE 'curl[^|]*\\| *(ba)?sh' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "safe_update pakai SHA256SUMS"               "grep -q 'SHA256SUMS' \"\$REPO/menu/m-setting.sh\""
 t "safe_update pakai curl -f"                  "grep -qE 'curl -[a-zA-Z]*f' \"\$REPO/menu/m-setting.sh\""
-t "ref repo dipin (bukan main polos)"          "grep -qE 'WIBU_REF|v4\\.0\\.6' \"\$REPO/menu/m-setting.sh\""
+t "ref repo dipin (bukan main polos)"          "grep -qE 'WIBU_REF|v4\\.0\\.7' \"\$REPO/menu/m-setting.sh\""
 t "setup.sh verifikasi hash tiap berkas unduhan" "grep -q 'wibu_verify_file' \"\$REPO/setup.sh\" && grep -q 'SHA256SUMS' \"\$REPO/setup.sh\""
 t "setup.sh tidak menarik kode dari main"       "! grep -qE '^GITHUB_RAW=.*/main\"' \"\$REPO/setup.sh\""
 
@@ -53,7 +53,7 @@ t "limits.conf dicadangkan + blok berpenanda"  "grep -q 'wibutunnel' \"\$REPO/se
 t "restore zip: wajib password + validasi entri" "grep -q 'unzip -P' \"\$REPO/menu/m-backup.sh\" && grep -qE '\\.\\.|entri|entry' \"\$REPO/menu/m-backup.sh\""
 t "m-backup pakai mktemp"                      "grep -q 'mktemp' \"\$REPO/menu/m-backup.sh\""
 t "password backup acak (openssl rand / mktemp), bukan CHAT_ID" "grep -qE 'openssl rand|\$RANDOM|mktemp' \"\$REPO/menu/m-backup.sh\" && ! grep -qE 'password.*\"\$CHAT_ID\"' \"\$REPO/menu/m-backup.sh\""
-t "penanda versi 4.0.6"                        "grep -q '4\\.0\\.6' \"\$REPO/setup.sh\""
+t "penanda versi 4.0.7"                        "grep -q '4\\.0\\.7' \"\$REPO/setup.sh\""
 t "restart-all memuat telegram-bot + network-tune" "grep -q 'telegram-bot' \"\$REPO/menu/m-setting.sh\" && grep -q 'network-tune' \"\$REPO/menu/m-setting.sh\""
 t "hitungan trafik pakai kolom 2 saja"          "! grep -qE 'down=\\(\\\$2==\"null\"' \"\$REPO/menu/bot-daemon.sh\""
 

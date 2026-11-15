@@ -1,416 +1,214 @@
-# 🦋 WIBUTUNNEL v4.0.6-fixed
+# 🦋 WIBUTUNNEL v4.0.7
 
-Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu command, VPN langsung jalan.
+Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
-[![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)](https://github.com/WBVPN/wibutunnel)
-[![Version](https://img.shields.io/badge/Version-v4.0.6-fixed-blue.svg)](https://github.com/WBVPN/wibutunnel)
-[![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)](https://github.com/WBVPN/wibutunnel)
+![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
+![Version](https://img.shields.io/badge/Version-v4.0.7-blue.svg)
+![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
+
+---
+
+## ⚡ Instalasi
+
+```bash
+curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.7/setup.sh
+sha256sum setup.sh     # harap: 671b844a1ad60baacb3b633a233b30fc88c7793f9eecd487e33ef1c0c22aff22
+bash setup.sh
+```
+
+| Syarat | |
+|---|---|
+| OS | Ubuntu 20.04+ / Debian 11+ |
+| Domain | A record mengarah ke IP VPS *(tanpa AAAA)* |
+| Akses | root |
+| Lisensi | IP VPS terdaftar di `izin.txt` ([@wibuvpn](https://t.me/wibuvpn)) |
+
+**Kenapa 3 baris?** Supaya berkasnya diverifikasi dulu — hash tidak cocok = berhenti sebelum menjalankan apa pun.
+Mirror jsDelivr (isi sama): `https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@v4.0.7/setup.sh`
+Kalau GitHub mentok: pakai `curl -4` (jangan `wget`, bisa menggantung di VPS IPv6 *blackhole*).
+
+> ⏱️ ~5–10 menit. Lisensi tidak valid → instalasi berhenti (memang begitu, bukan error jaringan).
 
 ---
 
 ## ✨ Fitur
 
-- 🔐 **VLESS, VMESS, TROJAN, SSH** - 3 protokol VPN + SSH tunnel (Dropbear, WebSocket, Direct 80/443, Split Payload)
-- 🛠️ **Auto-Repair** - Self-healing stack: basmi parasit port 80/443, fix SSL HAProxy, validasi Xray JSON, regenerate SSH keys
-- ⚡ **Zero-Downtime Sync** - Tambah/hapus user live via gRPC API tanpa restart Xray
-- 🤖 **Telegram Bot** - Kelola akun, lock/unlock, backup dari HP
-- 🎯 **Auto Enforcement** - Kuota/expired = lock otomatis + notif real-time
-- 🔄 **Recovery System** - User expired disimpan, bisa restore dengan limit baru
+| | |
+|---|---|
+| 🔐 **4 protokol** | VLESS · VMESS · TROJAN · SSH (Dropbear, WS, Direct 80/443, split payload) |
+| ⚡ **Live sync** | Tambah/hapus akun tanpa restart Xray (gRPC API) |
+| 🎯 **Enforcement** | Kuota / expired / limit IP → kunci otomatis + notifikasi |
+| 💾 **Recovery** | Akun expired disimpan, bisa dipulihkan dengan limit baru |
+| 🛠️ **Auto-repair** | Bersihkan parasit port, SSL, config Xray, host key SSH |
+| 🤖 **Bot Telegram** | Kelola akun, backup, cek trafik dari HP |
+| 🕵️ **Audit akun** | Deteksi akun tanpa masa aktif (gratis selamanya) |
 
 ---
 
-## 🚀 Instalasi
+## 🤖 Bot Telegram
 
-### Prerequisites
-- Ubuntu 20.04+ / Debian 11+
-- Domain dengan A record ke IP VPS
-- Root access
-- IP VPS terdaftar di `izin.txt` (hubungi @wibuvpn)
+Metode: **long polling** (tanpa webhook / SSL tambahan).
 
-### Instalasi (unduh -> verifikasi -> pasang)
+1. Token → `/newbot` ke [@BotFather](https://t.me/BotFather)
+2. Chat ID → `/start` ke [@userinfobot](https://t.me/userinfobot)
+3. Pasang: `menu` → Setting → **[6] Setup Bot Telegram**
 
-```bash
-curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.7/setup.sh
-sha256sum setup.sh     # harap: f14b02b8b6ea22ad6c7d03469f9ba4ada883dfbc06fde18bea9abb59becba3df
-bash setup.sh
-```
-
-Kenapa tiga baris, bukan `curl | bash`? Supaya berkasnya **diverifikasi lebih dulu** - kalau hash tidak
-cocok kamu berhenti sebelum menjalankan apa pun. Angka di baris kedua berasal dari rilis ini dan
-**setiap rilis punya tag tetap (immutable) sendiri**, jadi hash di README selalu cocok dengan tag di
-baris pertama.
-
-- Baris 1 mengambil `setup.sh` dari **tag rilis `v4.0.7`** (bukan `main`) agar kode yang kamu pasang
-  tidak berubah di tengah jalan.
-- `setup.sh` lalu mengambil `menu/*`, `sbin/*`, `common.sh` dari **tag yang sama** dan memverifikasi
-  sha256 tiap berkas terhadap `SHA256SUMS`; hash tidak cocok = instalasi DIHENTIKAN.
-- Tag lain: `WIBU_REF=v4.0.7 bash setup.sh` · tag lama `v4.0.6-fixed` tetap ada (beku) ·
-  bypass sadar: `WIBUTUNNEL_ALLOW_UNVERIFIED=1`.
-
-> **Penting - VPS dengan IPv6 "blackhole" (umum di Indonesia):** perintah di atas memakai `curl -4`
-> karena `wget` bisa **menggantung tanpa batas** dan `curl` tanpa `-4` menunggu ~24 detik per unduhan
-> (installer ada 25 unduhan). Kalau GitHub mentok dari jaringanmu, pakai mirror:
-> `https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@v4.0.7/setup.sh` (hash-nya sama).
-
-> **Instalasi baru:** IP VPS harus terdaftar di `izin.txt` (hubungi @wibuvpn). Tanpa itu instalasi
-> berhenti di pemeriksaan lisensi - perilaku normal, bukan error jaringan.
-
-**Proses:** Install dependencies → SSL cert → Xray config → Telegram bot → Services. Waktu: ~5-10 menit.
+Trial: format `trial-xxxx` · 1 jam · 1 GB · hapus permanen saat habis.
 
 ---
 
-## 📱 Telegram Bot
+## 🧰 Perintah
 
-Bot pakai **long polling** (tidak perlu SSL/domain).
+| Perintah | Fungsi |
+|---|---|
+| `menu` | Dashboard & status stack |
+| `m-vless` `m-vmess` `m-trojan` | Kelola akun per protokol |
+| `m-ssh` | SSH (cek login [9], banner [12], respon WS [13]) |
+| `m-setting` | Setting (auto-repair [1], update [5], bot [6]) |
+| `m-backup` | Backup & restore (password wajib) |
+| `cek-trafik` | Trafik & IP per akun |
+| `menu-lock` `menu-unlock` | Kunci / buka kunci massal |
+| `menu-recovery` | Pulihkan akun dari recovery |
+| `xp` | Tambah / kurangi masa aktif |
+| `wibu-repair` | Diagnosa & perbaikan stack |
+| `wibu-audit-akun` | Audit akun tanpa masa aktif (`--fix` = karantina) |
 
-**Dapatkan Credentials:**
-1. Token: Chat `/newbot` ke [@BotFather](https://t.me/BotFather)
-2. Chat ID: Chat `/start` ke [@userinfobot](https://t.me/userinfobot)
-
-**Menu:** VLESS/VMESS/TROJAN (create, delete, renew, cek login, limit IP/BW), CEK TRAFIK, BACKUP, INFO VPS.
-
-**Trial Account:** Format `trial-xxxx`, expired 1 jam, quota 1GB, auto-delete permanen.
+**Daemon** (`/usr/local/sbin/`): `algojo-wibu` `algojo-kuota` `algojo-ssh` `algojo-expired`
+`algojo-expired-daemon` `lock-user` `unlock-user` `unlocker-wibu` `ws-stunnel` `wibu-daemon` `wibu-repair`
 
 ---
 
-## 🔧 Command Line
+## ⚙️ Enforcement
 
-### Menu Utama
-```bash
-menu              # Dashboard & status stack
-m-vless           # Kelola VLESS
-m-vmess           # Kelola VMESS
-m-trojan          # Kelola TROJAN
-m-ssh             # Kelola SSH (Cek Login: [9], Banner: [12], Respon WS: [13])
-m-setting         # Settings (Auto-repair: [1], Update: [5])
-m-backup          # Backup & restore (password wajib, validasi isi arsip)
-cek-trafik        # Monitor trafik & IP per user
-menu-lock         # Kunci massal
-menu-unlock       # Buka kunci massal
-menu-recovery     # Restore user dari recovery
-xp                # Kelola masa aktif (add/reduce hari)
-wibu-repair       # Diagnostic & repair stack
-```
+| Daemon | Cek | Aksi |
+|---|---|---|
+| `algojo-ssh` | limit sesi SSH | kunci 15 menit (auto-unlock) |
+| `algojo-wibu` | limit IP Xray | kunci 15 menit (auto-unlock) |
+| `algojo-kuota` | kuota bandwidth | akun biasa → recovery · trial → hapus |
+| `algojo-expired` | masa aktif | akun biasa → recovery · trial → hapus |
 
-Daemon pendukung (dipasang di `/usr/local/sbin/`):
-`algojo-wibu` `algojo-kuota` `algojo-ssh` `algojo-expired` `algojo-expired-daemon`
-`lock-user` `unlock-user` `unlocker-wibu` `ws-stunnel` `wibu-repair` `wibu-daemon`
+---
 
-### Service
-Unit yang dikelola panel (9):
+## 🩺 Service & Berkas
+
 ```bash
 systemctl status xray haproxy dropbear ws-stunnel telegram-bot \
                  algojo-expired wibu-daemon network-tune wibutunnel-firewall
 journalctl -u telegram-bot -f
-journalctl -u wibu-daemon --since "10 minutes ago"
-tail -f /var/log/xray/access.log        # izin 0640 (tidak lagi terbaca semua user)
+wibu-audit-akun                      # akun tanpa masa aktif
+tail -f /var/log/xray/access.log
 ```
-`wibutunnel-firewall` menegakkan ulang aturan "hanya root boleh ke API Xray (:10085)" setiap kali boot.
 
-### File Penting
 ```
-/usr/local/etc/xray/config.json     # Xray config (kanonik; /etc/xray/config.json = symlink)
-/etc/wibutunnel/version             # Penanda versi (4.0.6-fixed)
-/etc/wibutunnel/izin.txt            # Salinan resmi daftar lisensi (ditulis saat instalasi,
-                                     # dipakai sebagai cadangan saat VPS offline, maks 7 hari)
-/etc/xray/{vless,vmess,trojan,ssh}_exp.conf   # User expiry
-/etc/wibutunnel/bot.conf            # Telegram credentials
-/etc/wibutunnel/limit_ip.db         # IP limit (sesi simultan)
-/etc/wibutunnel/limit_bw.db         # Bandwidth limit (GB)
-/etc/wibutunnel/locked_users.db     # Locked users
-/etc/wibutunnel/recovery/           # Recovery JSON
-/usr/local/sbin/algojo-*            # Enforcement daemons
-/usr/local/sbin/wibu-repair         # Auto-repair engine
+/usr/local/etc/xray/config.json   # config Xray (kanonik; /etc/xray/config.json = symlink)
+/etc/xray/*_exp.conf              # masa aktif akun (600)
+/etc/wibutunnel/bot.conf          # token bot (600)
+/etc/wibutunnel/limit_ip.db       # limit IP · limit_bw.db = kuota · locked_users.db = terkunci
+/etc/wibutunnel/recovery/         # sidik akun expired (bisa dipulihkan)
+/etc/wibutunnel/izin.txt          # salinan lisensi resmi (cadangan saat offline)
 ```
 
 ---
 
-## 🛡️ Enforcement
+## 🌐 Port & Alur
 
-| Daemon | Fungsi | Interval | Action |
-|--------|--------|----------|--------|
-| `algojo-ssh` | SSH session limit | 60s | Lock 15 min auto-unlock |
-| `algojo-wibu` | IP limit (Xray) | 60s | Lock 15 min auto-unlock |
-| `algojo-kuota` | Bandwidth limit | 60s | Delete + recovery (regular) / delete (trial) |
-| `algojo-expired` | Expiry check | 5s | Delete + recovery (regular) / delete (trial) |
+| Port | Untuk |
+|---|---|
+| 443 / 80 | HAProxy → VLESS · VMESS · TROJAN · SSH direct · SSH WS |
+| 143 · 109 | Dropbear (SSH publik) |
+| 22 | sshd admin (rate-limit anti-bruteforce) |
+| 10015 | ws-stunnel (lokal) |
+| 10085–10093 | API & inbound Xray (**lokal, hanya root**) |
 
-**Regular:** Lock temporary, recovery room saat expired/habis quota.  
-**Trial:** Delete permanen, no recovery.
-
----
-
-## 🔄 Recovery
-
-User regular expired/habis quota masuk recovery room, bisa restore:
-```bash
-menu-recovery     # CLI
-# Atau: Telegram bot → Protokol → Recovery
-```
-Input expiry baru, IP limit, bandwidth → restored + notif Telegram.
-
----
-
-## 🔄 Update
-
-```bash
-m-setting   # Settings → [5] Update Script (verifikasi SHA256SUMS)
-            # hash tidak cocok = update DITOLAK (fail-closed); cadangan disimpan
-            # ke /usr/local/share/wibutunnel/backup/ sebelum menimpa
-```
-
----
-
-## 🗑️ Uninstall
-
-```bash
-curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/uninstall.sh
-sha256sum uninstall.sh   # harap: e4f8639b3b9eeba9ccd78f2246b2c7ae4d04a98099fb503fafd6be61bf548654
-bash uninstall.sh
-```
-
-> Hindari `curl … | bash` untuk uninstall: skrip ini menghapus layanan/data, jadi periksa dulu.
-> Installer Xray di dalam `uninstall.sh` juga diverifikasi sha256 sebelum dijalankan.
-Backup otomatis ke `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum hapus.
-
----
-
-## 🔐 Keamanan (4.0.6-fixed)
-
-- **Rantai pasang diverifikasi.** `setup.sh` mengambil `menu/*`, `sbin/*`, `common.sh` dari **tag rilis**
-  (bukan `main`) dan membandingkan sha256 setiap berkas dengan `SHA256SUMS`; tidak cocok = instalasi **dihentikan**.
-  Installer Xray juga dipin hash-nya. Bypass sadar hanya `WIBUTUNNEL_ALLOW_UNVERIFIED=1` (dengan peringatan + log).
-- **Update fail-closed.** `m-setting → [5]` memverifikasi manifest sebelum menimpa, dan menyimpan cadangan
-  ke `/usr/local/share/wibutunnel/backup/`.
-- **API Xray (:10085) hanya untuk root.** Aturan iptables `-m owner ! --uid-owner 0 … REJECT` + unit
-  `wibutunnel-firewall` yang menegakkan ulang setelah reboot — mencegah satu pelanggan mengubah/menghapus user lain.
-- **Izin berkas:** `/etc/wibutunnel` 700 · `*_exp.conf` 600 · `/etc/xray` 750 · `/var/log/xray` 750 dengan log 0640
-  (daftar pelanggan & IP tidak lagi terbaca semua user lokal).
-- **Token bot tidak lagi lewat `argv`** (dibaca `curl -K -`), jadi tidak terlihat di `ps` oleh user lokal.
-- **Restore backup:** wajib `https`, wajib password, isi arsip divalidasi (tolak path absolut/`..`), ekstrak di `mktemp -d`.
-- **Akun pelanggan tetap ber-shell** (perilaku produk). Ingin mode nologin? Pasang dengan `WIBU_SSH_NOLOGIN=1`.
-- **Gerbang lisensi (perilaku pasti):**
-  - IP **tidak terdaftar** di daftar resmi → instalasi berhenti, dan saat menu/bot dibuka muncul `AKSES DITOLAK`.
-  - Lisensi **kedaluwarsa** → instalasi berhenti, dan **menu tidak bisa dibuka** (`LISENSI KEDALUWARSA` + tanggal exp).
-    Pemeriksaan ini dijalankan setiap menu / aksi akun / perintah bot dibuka, bukan hanya saat instalasi.
-  - Daftar lisensi diambil **hanya dari sumber resmi** (`main/izin.txt` di repo ini, cadangan jsDelivr). Berkas
-    `./izin.txt` di direktori kerja **diabaikan** saat instalasi (sebelumnya bisa dipakai melewati gerbang).
-  - Pencocokan IP **persis per kolom** (bukan `grep` kabur), dan cache lokal menyimpan IP + tanggal exp.
-  - **Offline:** kalau daftar tidak bisa diambil, dipakai salinan resmi yang disimpan saat instalasi
-    (`/etc/wibutunnel/izin.txt`) atau cache — **maksimal 7 hari**, dan tanggal exp tetap ditegakkan.
-  - ⚠️ Jujur soal batasnya: pemegang **root** di VPS-nya selalu bisa menambal kode lokal. Jadi gate ini
-    **penghalang + penegak masa aktif**, bukan pengaman kriptografis. Uji: `bash tests/test_license_enforcement.sh`
-    (12 kasus, memanggil fungsi asli `check_license`).
-  Rincian temuan & perbaikan lain: [`docs/SECURITY_FIXES.md`](docs/SECURITY_FIXES.md) · hasil uji nyata di VPS (15 bug + matriks uji): [`docs/HASIL_UJI_VPS.md`](docs/HASIL_UJI_VPS.md) · rancangan API (belum dikerjakan): [`docs/RENCANA_API.md`](docs/RENCANA_API.md).
-
----
-
-> **Audit akun:** `wibu-audit-akun` memeriksa klien di config Xray yang **tidak punya catatan masa aktif**
-> (akun seperti itu tidak akan pernah kedaluwarsa). Laporan: `wibu-audit-akun`. Perbaiki dengan karantina lewat
-> mesin recovery yang ada: `wibu-audit-akun --fix`. Hasil pemeriksaan juga muncul di Setting → [1] Auto-Repair.
-
-### 🔁 Mengganti token bot (dan metode yang dipakai)
-
-Bot panel memakai **polling**, bukan webhook: `bot-daemon` memanggil `deleteWebhook` saat start lalu
-melakukan loop `getUpdates` (long polling 30 dtk) dengan offset tersimpan di `/etc/wibutunnel/tmp/bot_offset`.
-Cek sendiri: `curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"` -> `url` harus **kosong**.
-
-Konsekuensi penting: **satu token = satu poller.** Kalau token yang sama dipakai di dua VPS (mis. hasil
-restore backup ke VPS baru), keduanya berebut `getUpdates` dan Telegram membalas **409 Conflict** - bot
-menjawab tidak konsisten. Karena itu proses restore **mematikan layanan bot lebih dulu** bila `bot.conf`
-ikut dipulihkan.
-
-Ganti token (aman, tidak menghapus data akun):
-
-```bash
-# 1. BotFather -> /revoke  (token lama langsung mati)
-# 2. Tulis token baru + chat id (owner) ke berkas yang sudah ada
-nano /etc/wibutunnel/bot.conf      # BOT_TOKEN="..."  CHAT_ID="..."   (berkas sudah 600)
-#    atau lewat menu: Setting -> [6] Setup Bot Telegram
-chmod 600 /etc/wibutunnel/bot.conf
-systemctl restart telegram-bot
-systemctl is-active telegram-bot
-```
-
-Kalau bot diam setelah ganti token, buktinya sekarang ada di log (sebelumnya tidak):
-`/etc/wibutunnel/tmp/bot_error.log` + `journalctl -u telegram-bot` - **401** = token salah/dicabut,
-**409** = token itu dipakai poller lain.
-
-### 🔄 Memperbarui pin installer Xray
-
-Installer Xray di-pin (`XRAY_INSTALL_SHA256`) supaya hulu XTLS yang diretas tidak otomatis jadi root di VPS Anda.
-Bila XTLS merilis ulang skripnya, pin lama membuat instalasi **ditolak** (memang fail-closed). Perbarui dengan:
-
-```bash
-bash tools/update-xray-pin.sh          # unduh -> hitung sha256 -> tulis pin baru
-bash tests/test_hardening.sh && bash tests/test_license_enforcement.sh
-rm -f SHA256SUMS && find . -type f -not -path './.git/*' -not -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS
-git add -A && git commit -m "chore: perbarui pin installer Xray"
-```
-
----
-
-## 📊 Network
-
-### Ports
-
-| Port | Protocol | Path | Backend |
-|------|----------|------|---------|
-| 443/80 | VLESS | `/vless` | WS-TLS/WS |
-| 443 | VLESS | `vless` | gRPC-TLS |
-| 443/80 | VMESS | `/vmess` | WS-TLS/WS |
-| 443 | VMESS | `vmess` | gRPC-TLS |
-| 443 | TROJAN | `/trojan` | WS-TLS |
-| 443 | TROJAN | `trojan` | gRPC-TLS |
-| 443/80 | SSH Direct | `SSH-` | Dropbear :143 |
-| 443/80 | SSH WS | `/` | ws-stunnel :10015 → Dropbear :109 |
-
-### Architecture
 ```
 Internet → HAProxy (80/443)
-            ├→ Xray :10086-10093 (9 inbounds)
-            ├→ Dropbear :143 (Direct SSH)
-            └→ ws-stunnel :10015 → Dropbear :109 (SSH WS)
+             ├→ Xray (inbound 10086–10093)
+             ├→ Dropbear 143            (SSH direct)
+             └→ ws-stunnel 10015 → Dropbear 109  (SSH via WS)
 ```
 
 ---
 
-## 🧪 Pengujian
+## 🔐 Keamanan
 
-```bash
-bash tests/test_hardening.sh        # 38 cek keamanan, non-destruktif (tidak menyentuh sistem)
-sha256sum -c SHA256SUMS             # integritas seluruh berkas rilis
-```
+- **Rantai pasang terverifikasi.** Semua berkas diambil dari **tag rilis** + dicek `SHA256SUMS`; gagal = berhenti.
+- **Update fail-closed.** Manifest diambil dari **API GitHub** (CDN raw bisa menyajikan versi lama) + cadangan sebelum menimpa.
+- **API Xray `:10085` hanya root.** Aturan iptables + unit & timer yang menegakkan ulang setiap boot.
+- **Izin ketat:** `*_exp.conf` 600 · config 640 `root:xray` · `/etc/wibutunnel` 700 · log 0640.
+- **Lisensi:** IP tak terdaftar → ditolak · lisensi exp → **menu tidak bisa dibuka** · offline maks 7 hari.
+- **Backup:** wajib `https` + password, isi arsip divalidasi, `bot.conf` ikut (restore mematikan bot agar token tidak bentrok).
+- **Token bot** tidak lewat `argv` (tidak terlihat di `ps`); gagal polling (401/409) kini tercatat di log.
 
-> ⚠️ Jangan jalankan suite lama (`tests/test_auto_repair.sh`, `test_xray_api_sync.sh`,
-> `test_expiry_and_xp.sh`, dll) di VPS produksi — sebagian menulis `/etc` dan me-restart stack.
-> Prosedur aman ada di [`docs/STAGING_TEST.md`](docs/STAGING_TEST.md).
+> Jujur soal batasnya: pemegang **root** di VPS bisa menambal kode lokal — gerbang lisensi adalah penghalang + penegak masa aktif, bukan pengaman kriptografis.
+
+Detail: [`docs/SECURITY_FIXES.md`](docs/SECURITY_FIXES.md) · hasil uji nyata di VPS: [`docs/HASIL_UJI_VPS.md`](docs/HASIL_UJI_VPS.md) · rancangan API: [`docs/RENCANA_API.md`](docs/RENCANA_API.md)
 
 ---
 
-## 🐛 Troubleshooting
+## 🧪 Uji
 
-### Auto-Repair
 ```bash
-wibu-repair
-# Atau: m-setting → [1]
-```
-Fix: Port parasit, SSL HAProxy, Xray JSON corrupt, SSH keys, service restart.
-
-### Manual Debug
-
-**Bot tidak respon:**
-```bash
-systemctl status telegram-bot
-journalctl -u telegram-bot --since "5 minutes ago"
-source /etc/wibutunnel/bot.conf
-curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getMe" | jq .
+bash tests/test_hardening.sh            # 82 cek keamanan (non-destruktif)
+bash tests/test_license_enforcement.sh  # 12 kasus lisensi (fungsi asli)
+sha256sum -c SHA256SUMS                 # integritas berkas
 ```
 
-**User tidak bisa connect:**
+> ⚠️ Suite lama (`test_auto_repair`, `test_xray_api_sync`, `test_expiry_and_xp`, …) **jangan** di VPS produksi —
+> sebagian menulis `/etc` dan me-restart layanan. Jalankan di VPS uji: [`docs/STAGING_TEST.md`](docs/STAGING_TEST.md)
+
+---
+
+## 🔧 Troubleshooting
+
+| Gejala | Cek |
+|---|---|
+| Bot tidak menjawab | `journalctl -u telegram-bot` · `/etc/wibutunnel/tmp/bot_error.log` → **401** token salah · **409** token dipakai VPS lain |
+| Akun tidak bisa connect | `systemctl status xray` · `xray -test -config /usr/local/etc/xray/config.json` |
+| Limit IP tidak jalan | `jq '.log.loglevel' /usr/local/etc/xray/config.json` (harus `info`) · `systemctl status wibu-daemon` |
+| Trial tidak terhapus | `journalctl -u algojo-expired --since "1 minute ago"` |
+| Umum | `wibu-repair` atau `m-setting` → [1] Auto-Repair |
+
+---
+
+## 🔄 Update & Hapus
+
 ```bash
-systemctl status xray
-xray -test -config /etc/xray/config.json
-tail -50 /var/log/xray/error.log
-jq '.inbounds[1].settings.clients[]? | .email' /etc/xray/config.json
+m-setting          # [5] Update Script (verifikasi SHA256, cadangan otomatis)
+wibu-audit-akun    # akun tanpa masa aktif (--fix = karantina)
 ```
 
-**IP limit tidak jalan:**
 ```bash
-jq '.log.loglevel' /etc/xray/config.json  # Harus "info"
-tail -20 /var/log/xray/access.log | grep "accepted"
-systemctl status wibu-daemon
-```
-
-**Trial tidak auto-delete:**
-```bash
-systemctl status algojo-expired
-journalctl -u algojo-expired --since "1 minute ago"
-cat /etc/xray/vless_exp.conf  # Format: username:YYYY-MM-DD HH:MM:SS
+curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.7/uninstall.sh
+sha256sum uninstall.sh   # harap: 310e0fa29f3bcac3d74ac76b86cfa05edd99a7c5c6078398f26112663823eebe
+bash uninstall.sh        # cadangan otomatis ke /root/wibutunnel-backup-*/
 ```
 
 ---
 
 ## 📝 Changelog
 
-### v4.0.6-fixed (2026-11-15) - Patch keamanan
-- Rantai pasang: `curl | bash` dihapus, ref dipin ke tag, semua unduhan diverifikasi `SHA256SUMS` (fail-closed)
-- Update menu fail-closed + cadangan rollback
-- API Xray `:10085` diblokir untuk non-root (iptables owner-match + unit firewall persisten)
-- Token bot keluar dari `argv` (11 titik → `curl -K -`)
-- Restore backup: password wajib + validasi entri + `mktemp`; backup pakai password acak
-- Izin berkas diperketat (`*_exp.conf` 600, `/etc/xray` 750, log 0640)
-- Tulis DB ber-`flock`, guard oktal `10#`, hitungan trafik diperbaiki, resolver indeks inbound via tag
-- Penjaga EOF pada input domain (sebelumnya loop tanpa henti bila input habis)
-- Alat baru: `SHA256SUMS`, `tests/test_hardening.sh` (38 cek non-destruktif), `docs/`
+### v4.0.7 (2026-11-15) — hasil uji nyata di VPS
+- **Keamanan:** rantai pasang & update terverifikasi hash (fail-closed) · API Xray root-only · izin 600/640 · token bot keluar dari `argv`
+- **Lisensi:** IP wajib terdaftar, lisensi exp → menu ditolak · pencocokan IP persis · cache ber-IP · offline maks 7 hari
+- **Jaringan:** semua unduhan paksa IPv4 (VPS IPv6 *blackhole*) · HAProxy IPv4-only
+- **Update:** berkas firewall & network-tune jadi berkas repo (ikut ter-update) · manifest dari API GitHub
+- **Backup:** restore memperbaiki pemilik config (Xray sempat gagal start) · `bot.conf` ikut · bot dimatikan agar token tidak bentrok
+- **Baru:** `wibu-audit-akun` (audit akun tanpa masa aktif) · timer firewall idempoten · `tools/update-xray-pin.sh`
+- **Perbaikan:** menu tidak lagi berputar saat stdin EOF · `wibu-repair` tidak melonggarkan izin · 19 bug nyata dari uji VPS
 
-### v4.0.6 KURUMI (2026-11-02) - Production Ready
-
-**🛠️ Auto-Repair & Diagnostic:**
-- Self-healing stack: port parasit, SSL HAProxy, Xray JSON, SSH keys
-- Anti-wipe safety guard: validasi backup ketat
-- Dynamic HAProxy template (`${__DOMAIN__}`)
-
-**⚡ Zero-Downtime & Enforcement:**
-- User sync live via gRPC API (`127.0.0.1:10085`)
-- Atomic DB locking (`flock -w 10`)
-- Enforcement harmonization: reguler → recovery, trial → purge
-- Auto-restore unlock dari sidecar JSON
-
-**🔒 SSH Module:**
-- Dropbear publik (109, 143) + dropbear lokal `127.0.0.1:2222` (backend HAProxy), ws-stunnel (10015),
-  HAProxy multiplexer (80/443). Port 22 tetap sshd admin, dengan rate-limit anti-bruteforce
-- Enhanced split-payload (`HTTP/ 69`)
-- SSH session enforcement (akurat untuk relay loopback)
-- Strict license validation
-
-**📊 Dashboard:**
-- Multi-service live monitor (`Online` / `Degraded`)
-- Clean SSH menu (hapus opsi usang)
-- 11 test suite lama
-
-**🐛 Critical Fixes:**
-- SSH-1: Parsing `ss` benar ($3/$5, PID via ps, filter dropbear|sshd)
-- SSH-2: Metrik sesi aktif (bukan IP unik, akurat untuk relay 127.0.0.1)
-- SSH-3: Oktal guard `10#` (08/09/010)
-- SSH-4: Menu Cek Login SSH [9] pakai `ssh_session_count`
-- REG-SSH: Auto-unlock regression (field3 timestamp > 0, bukan 0 permanen)
-
----
-
-## 🤝 Contributing
-
-Fork → Branch → Commit → Push → Pull Request
-
----
-
-## 📄 License
-
-MIT License - bebas pakai, modif, distribusi.  
-**Disclaimer:** No warranty. Use at your own risk.
+### v4.0.6 KURUMI (2026-11-02)
+Auto-repair, live sync gRPC, enforcement kuota/expired, modul SSH, dashboard monitor.
 
 ---
 
 ## 💬 Support
 
-- 🐛 Issues: [GitHub Issues](https://github.com/WBVPN/wibutunnel/issues)
-- 💬 Telegram: [@wibuvpn](https://t.me/wibuvpn)
-- 📧 Email: wibuvpnstore@gmail.com
+🐛 [GitHub Issues](https://github.com/WBVPN/wibutunnel/issues) · 💬 [@wibuvpn](https://t.me/wibuvpn) · 📧 wibuvpnstore@gmail.com
 
----
+MIT License — bebas pakai, tanpa jaminan.
 
 <div align="center">
 
 **Made with 💜 by WBVPN**
 
-*"Seseorang akan menjadi kuat jika melindungi seseorang yang dicintainya." - Haku*
-
-⭐ Star this repo if you find it useful!
-
 </div>
-
-
-## 🔐 Patch keamanan (2026-11-15)
-Rilis ini menutup temuan audit: rantai pasok (`curl|bash`) dipin+verifikasi hash, update fail-closed
-(`SHA256SUMS`), API Xray 10085 diblokir untuk non-root, token bot keluar dari `argv`, restore backup
-wajib password + validasi entri, izin berkas diperketat, dan tulis DB ber-`flock`.
-Rincian + cara verifikasi: **`docs/SECURITY_FIXES.md`** · uji: `bash tests/test_hardening.sh`.
