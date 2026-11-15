@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.6
+# 🦋 WIBUTUNNEL v4.1.7
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.6-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.7-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: c55fdaac3750f3a0575acdb71c1729d52d1bf4b5f21a4e8ef39ea88061d8ce86
+sha256sum setup.sh     # harap: 368b958f83bc2c016f46a7291593d06474e65b36dd18f1ec0f8558a155d8a59e
 bash setup.sh
 ```
 
@@ -202,7 +202,14 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 
 ## 📝 Changelog
 
-### v4.1.6 (2026-11-15)
+### v4.1.7 (2026-11-15)
+- **KRITIS: v4.1.5 & v4.1.6 DITARIK.** Tambalan validasi HAProxy di kedua rilis itu **nyasar masuk ke dalam heredoc**
+  konfigurasi sehingga berkas `haproxy.cfg` berisi baris kode shell (`unknown keyword 'rm' out of section`)
+  dan HAProxy tidak bisa start. Rilis ini mengembalikan `setup.sh` ke versi **v4.1.4 yang sudah teruji di VPS**,
+  lalu menerapkan kelima tambalan portabilitas dengan penyisipan berbasis baris + verifikasi integritas heredoc.
+- Cek harness baru: blok heredoc konfigurasi HAProxy harus bebas dari kode shell (mengunci kelas bug ini).
+
+### v4.1.6 (2026-11-15) - DITARIK
 - **KRITIS:** `apt-get` sekarang memakai `-o Dpkg::Options::=--force-confold`. Sebabnya: installer menulis
   `/etc/default/dropbear` LEBIH DULU (agar dropbear tidak merebut port 22) sehingga dpkg bertanya soal conffile -
   dan karena stdin tidak interaktif, jawabannya EOF -> `end of file on stdin at conffile prompt` -> seluruh apt gagal.
