@@ -53,7 +53,7 @@ t "limits.conf dicadangkan + blok berpenanda"  "grep -q 'wibutunnel' \"\$REPO/se
 t "restore zip: wajib password + validasi entri" "grep -q 'unzip -P' \"\$REPO/menu/m-backup.sh\" && grep -qE '\\.\\.|entri|entry' \"\$REPO/menu/m-backup.sh\""
 t "m-backup pakai mktemp"                      "grep -q 'mktemp' \"\$REPO/menu/m-backup.sh\""
 t "password backup acak (openssl rand / mktemp), bukan CHAT_ID" "grep -qE 'openssl rand|\$RANDOM|mktemp' \"\$REPO/menu/m-backup.sh\" && ! grep -qE 'password.*\"\$CHAT_ID\"' \"\$REPO/menu/m-backup.sh\""
-t "penanda versi = tag rilis di setup.sh (tidak bisa melenceng)" "V=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+. > /etc/wibutunnel/version' $REPO/setup.sh | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); [[ -n \"$V\" ]] && grep -q \"WIBU_REF:-v$V\" $REPO/setup.sh"
+t "penanda versi = tag rilis di setup.sh (tidak bisa melenceng)" "V=\$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+. > /etc/wibutunnel/version' \$REPO/setup.sh | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); [[ -n \"\$V\" ]] && grep -q \"WIBU_REF:-v\$V\" \$REPO/setup.sh"
 t "restart-all memuat telegram-bot + network-tune" "grep -q 'telegram-bot' \"\$REPO/menu/m-setting.sh\" && grep -q 'network-tune' \"\$REPO/menu/m-setting.sh\""
 t "hitungan trafik pakai kolom 2 saja"          "! grep -qE 'down=\\(\\\$2==\"null\"' \"\$REPO/menu/bot-daemon.sh\""
 
