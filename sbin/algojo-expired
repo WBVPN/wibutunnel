@@ -36,7 +36,7 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
             echo "[$(date)] Handling expired: $user ($proto, exp: $exp_str)"
 
             # Kill active connections via xray API
-            xray api stats --server=127.0.0.1:10085 2>/dev/null | grep -i "email.*$user" | awk '{print $1}' | while read stat_name; do
+            xray api stats --server=127.0.0.1:10085 2>/dev/null | grep -i "email.*$user" | awk '{print $1}' | while read -r stat_name; do
                 xray api rmoutbound --server=127.0.0.1:10085 "$stat_name" 2>/dev/null
             done
 
@@ -55,30 +55,13 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
                 fi
 
                 case "$proto" in
-                    VLESS)
-                        safe_jq_edit_args --arg u "$user" '
-                            .inbounds[1].settings.clients |= map(select(.email != $u)) |
-                            .inbounds[2].settings.clients |= map(select(.email != $u)) |
-                            .inbounds[3].settings.clients |= map(select(.email != $u)) |
-                            (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                        ' >/dev/null 2>&1
-                        xray_sync_user del "$proto" "$user"
-                        ;;
-                    VMESS)
-                        safe_jq_edit_args --arg u "$user" '
-                            .inbounds[4].settings.clients |= map(select(.email != $u)) |
-                            .inbounds[5].settings.clients |= map(select(.email != $u)) |
-                            .inbounds[6].settings.clients |= map(select(.email != $u)) |
-                            (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                        ' >/dev/null 2>&1
-                        xray_sync_user del "$proto" "$user"
-                        ;;
-                    TROJAN)
-                        safe_jq_edit_args --arg u "$user" '
-                            .inbounds[7].settings.clients |= map(select(.email != $u)) |
-                            .inbounds[8].settings.clients |= map(select(.email != $u)) |
-                            (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                        ' >/dev/null 2>&1
+                    VLESS|VMESS|TROJAN)
+                        # A6: resolve indeks inbound via tag
+                        if f_del=$(xray_del_filter "$proto"); then
+                            safe_jq_edit_args --arg u "$user" "$f_del" >/dev/null 2>&1
+                        else
+                            echo "[ERROR] algojo-expired: resolve inbound gagal untuk $proto/$user" >&2
+                        fi
                         xray_sync_user del "$proto" "$user"
                         ;;
                     SSH)
@@ -100,14 +83,18 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
                 # TIDAK boleh di-lock: tanpa sidecar kredensial hilang permanen.
                 SC="/etc/wibutunnel/recovery/${user}.json"
                 SC_TMP="${SC}.tmp.$$"
+                # A6: indeks inbound utama via tag (bukan hardcode [1]/[4]/[7])
+                i_v=$(xray_primary_index VLESS 2>/dev/null)
+                i_m=$(xray_primary_index VMESS 2>/dev/null)
+                i_t=$(xray_primary_index TROJAN 2>/dev/null)
                 for _try in 1 2 3; do
                     rm -f "$SC_TMP"
                     if [[ "$proto" == "VLESS" ]]; then
-                        jq -c --arg u "$user" --arg p "VLESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
+                        jq -c --arg u "$user" --arg p "VLESS" --arg exp "$exp_str" "{user:\$u, proto:\$p, exp:\$exp, client:(.inbounds[${i_v}].settings.clients[]? | select(.email == \$u))}" "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
                     elif [[ "$proto" == "VMESS" ]]; then
-                        jq -c --arg u "$user" --arg p "VMESS" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
+                        jq -c --arg u "$user" --arg p "VMESS" --arg exp "$exp_str" "{user:\$u, proto:\$p, exp:\$exp, client:(.inbounds[${i_m}].settings.clients[]? | select(.email == \$u))}" "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
                     elif [[ "$proto" == "TROJAN" ]]; then
-                        jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$exp_str" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
+                        jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$exp_str" "{user:\$u, proto:\$p, exp:\$exp, client:(.inbounds[${i_t}].settings.clients[]? | select(.email == \$u))}" "$XRAY_CONFIG" > "$SC_TMP" 2>/dev/null
                     elif [[ "$proto" == "SSH" ]]; then
                         ssh_pass=$(ssh_get_pass "$user" 2>/dev/null)
                         printf '{"user":"%s","proto":"SSH","pass":"%s","exp":"%s"}\n' "$user" "$ssh_pass" "$exp_str" > "$SC_TMP" 2>/dev/null
@@ -123,28 +110,13 @@ for proto_file in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/tr
                     continue
                 fi
 
-                if [[ "$proto" == "VLESS" ]]; then
-                    safe_jq_edit_args --arg u "$user" '
-                        .inbounds[1].settings.clients |= map(select(.email != $u)) |
-                        .inbounds[2].settings.clients |= map(select(.email != $u)) |
-                        .inbounds[3].settings.clients |= map(select(.email != $u)) |
-                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                    ' >/dev/null 2>&1
-                    xray_sync_user del "$proto" "$user"
-                elif [[ "$proto" == "VMESS" ]]; then
-                    safe_jq_edit_args --arg u "$user" '
-                        .inbounds[4].settings.clients |= map(select(.email != $u)) |
-                        .inbounds[5].settings.clients |= map(select(.email != $u)) |
-                        .inbounds[6].settings.clients |= map(select(.email != $u)) |
-                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                    ' >/dev/null 2>&1
-                    xray_sync_user del "$proto" "$user"
-                elif [[ "$proto" == "TROJAN" ]]; then
-                    safe_jq_edit_args --arg u "$user" '
-                        .inbounds[7].settings.clients |= map(select(.email != $u)) |
-                        .inbounds[8].settings.clients |= map(select(.email != $u)) |
-                        (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                    ' >/dev/null 2>&1
+                if [[ "$proto" == "VLESS" || "$proto" == "VMESS" || "$proto" == "TROJAN" ]]; then
+                    # A6: resolve indeks inbound via tag
+                    if f_del=$(xray_del_filter "$proto"); then
+                        safe_jq_edit_args --arg u "$user" "$f_del" >/dev/null 2>&1
+                    else
+                        echo "[ERROR] algojo-expired: resolve inbound gagal untuk $proto/$user" >&2
+                    fi
                     xray_sync_user del "$proto" "$user"
                 elif [[ "$proto" == "SSH" ]]; then
                     passwd -l "$user" >/dev/null 2>&1

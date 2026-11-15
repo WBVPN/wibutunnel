@@ -19,11 +19,16 @@ chmod 700 /etc/wibutunnel/tmp
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 XRAY_LOCK="/etc/wibutunnel/tmp/xray_config.lock"
 
-# Deteksi IP publik (optional, caller harus validasi jika required)
-export MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null)
-if [[ -z "$MYIP" ]]; then
-    MYIP=$(curl -sS --max-time 5 ifconfig.me 2>/dev/null)
-fi
+# Deteksi IP publik — LAZY: jangan panggil jaringan saat source-time.
+# Sourcing common.sh tidak boleh menunggu / bergantung jaringan.
+MYIP="${MYIP:-}"
+detect_myip() {
+    [[ -n "$MYIP" ]] && { printf '%s' "$MYIP"; return 0; }
+    MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null)
+    [[ -z "$MYIP" ]] && MYIP=$(curl -sS --max-time 5 ifconfig.me 2>/dev/null)
+    export MYIP
+    printf '%s' "$MYIP"
+}
 
 # safe_jq_edit: edit xray config.json dengan flock agar tidak race condition
 # Usage: safe_jq_edit 'jq_filter_string'
@@ -82,7 +87,7 @@ safe_sed_delete() {
         local tmp="${file}.tmp.$$"
         if awk -v u="$user" 'index($0, u ":") != 1' "$file" > "$tmp"; then
             mv "$tmp" "$file"
-            chmod 644 "$file" 2>/dev/null || true
+            chmod 600 "$file" 2>/dev/null || true
         else
             rm -f "$tmp"
             return 1
@@ -110,7 +115,7 @@ db_set() {
             END { if (!found) print v }
         ' "$file" > "$tmp"; then
             mv "$tmp" "$file"
-            chmod 644 "$file" 2>/dev/null || true
+            chmod 600 "$file" 2>/dev/null || true
         else
             rm -f "$tmp"
             return 1
@@ -118,8 +123,14 @@ db_set() {
     ) 200>"$lockfile"
 }
 
-# db_append <file> <line>: append line ke file dengan perlindungan flock
+# db_append <file> <line>            -> append baris (flock)
+# db_append <user> <value> <file>    -> tulis "user:value" unik+atomik (gaya db_set: flock + dedupe + chmod 600)
 db_append() {
+    if [[ $# -ge 3 ]]; then
+        # bentuk 3-arg A1: db_append <user> <value> <file>
+        db_set "$3" "$1" "$2"
+        return
+    fi
     local file="$1"
     local line="$2"
     [[ -n "$file" && -n "$line" ]] || return 1
@@ -165,6 +176,64 @@ db_delete() {
     else
         safe_sed_delete "$1" "$2"
     fi
+}
+
+# ==========================================
+# XRAY INBOUND RESOLUTION (resolve via tag, JANGAN hardcode indeks 1..8)
+# ==========================================
+# xray_inbound_index <tag>: cetak indeks array inbound dengan tag tsb.
+# Non-nol + TANPA output bila tag tidak ditemukan (jangan menebak).
+xray_inbound_index() {
+    local tag="$1" out="" rc=0
+    [[ -n "$tag" && -f "$XRAY_CONFIG" ]] || return 1
+    out=$(jq -r --arg t "$tag" '.inbounds | to_entries[] | select(.value.tag == $t) | .key' "$XRAY_CONFIG" 2>/dev/null) || rc=$?
+    [[ $rc -ne 0 ]] && return 1
+    out="${out%%$'\n'*}"
+    [[ -n "$out" ]] || return 1
+    printf '%s' "$out"
+}
+
+# xray_proto_tags <PROTO>: cetak tag inbound protokol (satu per baris).
+xray_proto_tags() {
+    case "${1^^}" in
+        VLESS)  printf '%s\n' vless-ws-tls vless-ws-ntls vless-grpc ;;
+        VMESS)  printf '%s\n' vmess-ws-tls vmess-ws-ntls vmess-grpc ;;
+        TROJAN) printf '%s\n' trojan-ws-tls trojan-grpc ;;
+        ALL)    printf '%s\n' vless-ws-tls vless-ws-ntls vless-grpc vmess-ws-tls vmess-ws-ntls vmess-grpc trojan-ws-tls trojan-grpc ;;
+        *)      return 1 ;;
+    esac
+}
+
+# xray_primary_index <PROTO>: indeks inbound utama (tag pertama) protokol.
+xray_primary_index() {
+    local tags
+    tags=$(xray_proto_tags "$1") || return 1
+    xray_inbound_index "${tags%%$'\n'*}"
+}
+
+# xray_del_filter <PROTO>: cetak jq filter hapus client $u (email) dari semua
+# inbound protokol + routing block. Non-nol bila ada tag tak ketemu.
+xray_del_filter() {
+    local proto="$1" t i f="" tags
+    tags=$(xray_proto_tags "$proto") || return 1
+    for t in $tags; do
+        i=$(xray_inbound_index "$t") || return 1
+        f+=".inbounds[$i].settings.clients |= map(select(.email != \$u)) | "
+    done
+    f+='(.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))'
+    printf '%s' "$f"
+}
+
+# xray_add_filter <PROTO>: cetak jq filter tambah client $c ke semua inbound protokol.
+xray_add_filter() {
+    local proto="$1" t i f="" sep="" tags
+    tags=$(xray_proto_tags "$proto") || return 1
+    for t in $tags; do
+        i=$(xray_inbound_index "$t") || return 1
+        f+="${sep}.inbounds[$i].settings.clients += [\$c]"
+        sep=" | "
+    done
+    printf '%s' "$f"
 }
 
 # xray_sync_user: sinkronisasi penambahan/penghapusan user via Xray API (port 10085)
@@ -281,7 +350,7 @@ check_license() {
     local CACHE_TTL=3600
     local CURRENT_TIME=$(date -u +%s)
 
-    [[ -z "$MYIP" ]] && MYIP=$(curl -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null || curl -sS --max-time 3 ifconfig.me 2>/dev/null)
+    detect_myip >/dev/null
 
     # Cek Cache & Ekstrak Data (Format: STATUS|NAMA|EXPIRED)
     if [[ -f "$CACHE_FILE" ]]; then
@@ -393,6 +462,9 @@ live_ip_pairs() {
 # SSH TUNNEL (Dropbear) — backend account
 # ==========================================
 SSH_GROUP="${SSH_GROUP:-ssh_tunnel}"
+# C5: opsi nologin dipilih admin saat install (ditulis setup.sh dengan WIBU_SSH_NOLOGIN=1).
+# Tanpa berkas ini, perilaku lama (/bin/bash) TIDAK berubah.
+[[ -f /etc/wibutunnel/ssh_shell.conf && -z "${SSH_SHELL:-}" ]] && . /etc/wibutunnel/ssh_shell.conf
 SSH_SHELL="${SSH_SHELL:-/bin/bash}"
 SSH_EXP_FILE="${SSH_EXP_FILE:-/etc/xray/ssh_exp.conf}"
 SSH_DB_PASS="${SSH_DB_PASS:-/etc/wibutunnel/ssh_pass.db}"

@@ -34,23 +34,11 @@ else
         rec_exp=$(jq -r '.exp // empty' "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null)
 
         if [[ -n "$client_data" && "$client_data" != "null" ]]; then
-            if [[ "$rec_proto" == "VLESS" ]]; then
-                safe_jq_edit_args --argjson c "$client_data" '
-                    .inbounds[1].settings.clients += [$c] |
-                    .inbounds[2].settings.clients += [$c] |
-                    .inbounds[3].settings.clients += [$c]
-                '
-            elif [[ "$rec_proto" == "VMESS" ]]; then
-                safe_jq_edit_args --argjson c "$client_data" '
-                    .inbounds[4].settings.clients += [$c] |
-                    .inbounds[5].settings.clients += [$c] |
-                    .inbounds[6].settings.clients += [$c]
-                '
-            elif [[ "$rec_proto" == "TROJAN" ]]; then
-                safe_jq_edit_args --argjson c "$client_data" '
-                    .inbounds[7].settings.clients += [$c] |
-                    .inbounds[8].settings.clients += [$c]
-                '
+            # A6: resolve indeks inbound via tag (jangan hardcode [1..8])
+            if f_add=$(xray_add_filter "$rec_proto"); then
+                safe_jq_edit_args --argjson c "$client_data" "$f_add"
+            else
+                echo "[ERROR] unlock-user: resolve inbound gagal untuk $rec_proto, config tidak diubah" >&2
             fi
 
             is_past=0
@@ -73,11 +61,15 @@ else
 
     proto=""
     cred=""
-    if cred=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    # A6: resolve indeks inbound utama via tag (bukan hardcode [1]/[4]/[7])
+    i_v=$(xray_primary_index VLESS 2>/dev/null)
+    i_m=$(xray_primary_index VMESS 2>/dev/null)
+    i_t=$(xray_primary_index TROJAN 2>/dev/null)
+    if [[ -n "$i_v" ]] && cred=$(jq -r --arg u "$user" ".inbounds[$i_v].settings.clients[]? | select(.email == \$u) | .id" "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
         proto="VLESS"
-    elif cred=$(jq -r --arg u "$user" '.inbounds[4].settings.clients[]? | select(.email == $u) | .id' "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    elif [[ -n "$i_m" ]] && cred=$(jq -r --arg u "$user" ".inbounds[$i_m].settings.clients[]? | select(.email == \$u) | .id" "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
         proto="VMESS"
-    elif cred=$(jq -r --arg u "$user" '.inbounds[7].settings.clients[]? | select(.email == $u) | .password' "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
+    elif [[ -n "$i_t" ]] && cred=$(jq -r --arg u "$user" ".inbounds[$i_t].settings.clients[]? | select(.email == \$u) | .password" "$XRAY_CONFIG" 2>/dev/null | head -n1) && [[ -n "$cred" && "$cred" != "null" ]]; then
         proto="TROJAN"
     fi
 

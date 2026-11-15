@@ -67,19 +67,22 @@ while read -r line; do
             elif grep -q "^${user_esc}:" /etc/xray/vmess_exp.conf 2>/dev/null; then proto="VMESS"
             elif grep -q "^${user_esc}:" /etc/xray/trojan_exp.conf 2>/dev/null; then proto="TROJAN"; fi
 
+            # A5: protokol tak dikenal -> JANGAN tulis berkas palsu (unknown_exp.conf).
+            # Log ke stderr lalu skip user ini.
+            if [[ "$proto" != "VLESS" && "$proto" != "VMESS" && "$proto" != "TROJAN" ]]; then
+                echo "[WARN] algojo-kuota: protokol tak dikenal untuk '$user' (proto=$proto), lewati (tidak menulis berkas)" >&2
+                [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]] && curl -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=[WARN] protokol tak dikenal untuk <code>${user}</code> (proto=${proto}), dilewati" >/dev/null 2>&1
+                continue
+            fi
+
             # Trial account = delete, regular = lock
             if [[ "$user" =~ ^trial- ]]; then
-                safe_jq_edit_args --arg u "$user" '
-                    .inbounds[1].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[2].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[3].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[4].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[5].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[6].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[7].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[8].settings.clients |= map(select(.email != $u)) |
-                    (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                '
+                # A6: resolve indeks inbound via tag (jangan hardcode 1..8)
+                if f_del=$(xray_del_filter ALL); then
+                    safe_jq_edit_args --arg u "$user" "$f_del"
+                else
+                    echo "[ERROR] algojo-kuota: resolve inbound gagal, config tidak diubah untuk $user" >&2
+                fi
                 safe_sed_delete "$user" /etc/xray/vless_exp.conf
                 safe_sed_delete "$user" /etc/xray/vmess_exp.conf
                 safe_sed_delete "$user" /etc/xray/trojan_exp.conf
@@ -104,30 +107,28 @@ while read -r line; do
                 mkdir -p /etc/wibutunnel/recovery && chmod 700 /etc/wibutunnel/recovery
                 
                 orig_exp=""
+                # A6: indeks inbound utama via tag (bukan hardcode [1]/[4]/[7])
+                i_v=$(xray_primary_index VLESS 2>/dev/null)
+                i_m=$(xray_primary_index VMESS 2>/dev/null)
+                i_t=$(xray_primary_index TROJAN 2>/dev/null)
                 if grep -q "^${user_esc}:" /etc/xray/vless_exp.conf 2>/dev/null; then
                     orig_exp=$(grep "^${user_esc}:" /etc/xray/vless_exp.conf | cut -d: -f2-)
-                    jq -c --arg u "$user" --arg p "VLESS" --arg exp "$orig_exp" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[1].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    jq -c --arg u "$user" --arg p "VLESS" --arg exp "$orig_exp" "{user:\$u, proto:\$p, exp:\$exp, client:(.inbounds[${i_v}].settings.clients[]? | select(.email == \$u))}" "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 elif grep -q "^${user_esc}:" /etc/xray/vmess_exp.conf 2>/dev/null; then
                     orig_exp=$(grep "^${user_esc}:" /etc/xray/vmess_exp.conf | cut -d: -f2-)
-                    jq -c --arg u "$user" --arg p "VMESS" --arg exp "$orig_exp" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[4].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    jq -c --arg u "$user" --arg p "VMESS" --arg exp "$orig_exp" "{user:\$u, proto:\$p, exp:\$exp, client:(.inbounds[${i_m}].settings.clients[]? | select(.email == \$u))}" "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 elif grep -q "^${user_esc}:" /etc/xray/trojan_exp.conf 2>/dev/null; then
                     orig_exp=$(grep "^${user_esc}:" /etc/xray/trojan_exp.conf | cut -d: -f2-)
-                    jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$orig_exp" '{user:$u, proto:$p, exp:$exp, client:(.inbounds[7].settings.clients[]? | select(.email == $u))}' "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
+                    jq -c --arg u "$user" --arg p "TROJAN" --arg exp "$orig_exp" "{user:\$u, proto:\$p, exp:\$exp, client:(.inbounds[${i_t}].settings.clients[]? | select(.email == \$u))}" "$XRAY_CONFIG" > "/etc/wibutunnel/recovery/${user}.json" 2>/dev/null
                 fi
                 [[ ! -s "/etc/wibutunnel/recovery/${user}.json" ]] && rm -f "/etc/wibutunnel/recovery/${user}.json"
 
-                # 2. Delete dari config
-                safe_jq_edit_args --arg u "$user" '
-                    .inbounds[1].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[2].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[3].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[4].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[5].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[6].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[7].settings.clients |= map(select(.email != $u)) |
-                    .inbounds[8].settings.clients |= map(select(.email != $u)) |
-                    (.routing.rules[] | select(.user != null and .outboundTag == "blocked") | .user) |= map(select(. != $u))
-                '
+                # 2. Delete dari config (A6: resolve indeks via tag)
+                if f_del=$(xray_del_filter "$proto"); then
+                    safe_jq_edit_args --arg u "$user" "$f_del"
+                else
+                    echo "[ERROR] algojo-kuota: resolve inbound gagal, config tidak diubah untuk $user" >&2
+                fi
 
                 # 3. Delete dari exp files & DBs
                 safe_sed_delete "$user" /etc/xray/vless_exp.conf

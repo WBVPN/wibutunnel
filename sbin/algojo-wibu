@@ -27,10 +27,15 @@ while read -r email ip_list; do
     if [[ -z "$email" || -z "$ip_list" ]]; then continue; fi
     email_esc=$(escape_grep "$email")
     max_ip=$(grep "^${email_esc}:" "$DB_IP" 2>/dev/null | cut -d: -f2)
+    # A4: validasi numerik sebelum banding. Non-numerik (DB korup) -> anggap limit 0.
+    if [[ -n "$max_ip" && ! "$max_ip" =~ ^[0-9]+$ ]]; then
+        echo "[WARN] algojo-wibu: limit_ip.db nilai non-numerik '$max_ip' untuk '$email', anggap 0" >&2
+        max_ip=0
+    fi
     [[ "$max_ip" == "0" || -z "$max_ip" ]] && continue
 
     ip_count=$(echo "$ip_list" | wc -w)
-    if [[ $ip_count -gt $max_ip ]]; then
+    if (( ip_count > 10#$max_ip )); then
         if [[ -z "${_LOCKED_USERS[$email]:-}" ]]; then
             _LOCKED_USERS["$email"]=1
             proto="UNKNOWN"
@@ -39,8 +44,14 @@ while read -r email ip_list; do
             grep -q "^${email_esc}:" /etc/xray/trojan_exp.conf 2>/dev/null && proto="TROJAN"
             
             now=$(date -u +%s)
-            unlock_time=$((now + (LOCK_DURATION * 60)))
-            echo "${email}:${now}:${unlock_time}:IP_LIMIT" >> "$DB_LOCK"
+            # A2: guard oktal 10# (LOCK_DURATION=08 dll) + fallback bila non-numerik
+            if [[ ! "$LOCK_DURATION" =~ ^[0-9]+$ ]]; then
+                echo "[WARN] algojo-wibu: LOCK_DURATION non-numerik ('$LOCK_DURATION'), fallback 15 menit" >&2
+                LOCK_DURATION=15
+            fi
+            unlock_time=$((now + (10#${LOCK_DURATION} * 60)))
+            # A1: tulis DB via helper ber-flock (bukan append langsung)
+            db_append "$email" "${now}:${unlock_time}:IP_LIMIT" "$DB_LOCK"
             
             USERS_TO_LOCK+=("$email")
             
