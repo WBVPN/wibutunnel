@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.10
+# MASTER INSTALLER WIBU TUNNELING - v4.1.11
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -134,7 +134,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.10}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.11}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -282,7 +282,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.10" > /etc/wibutunnel/version
+echo "4.1.11" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -297,12 +297,17 @@ if [[ "${WIBU_SSH_NOLOGIN:-0}" == "1" ]]; then
     echo -e "\e[1;33m[!] WIBU_SSH_NOLOGIN=1: shell pelanggan SSH = /usr/sbin/nologin (tunneling tetap jalan).\e[0m"
 fi
 
-# Dummy users
-echo "dummy-tls:Lifetime" > /etc/xray/vless_exp.conf
-echo "dummy-ntls:Lifetime" >> /etc/xray/vless_exp.conf
-echo "dummy-grpc:Lifetime" >> /etc/xray/vless_exp.conf
-echo "dummy-vmess-tls:Lifetime" > /etc/xray/vmess_exp.conf
-echo "dummy-vmess-ntls:Lifetime" >> /etc/xray/vmess_exp.conf
+# Dummy users - HANYA bila berkas belum ada.
+# [FIX] Sebelumnya reinstall MENIMPA berkas ini -> SELURUH daftar masa aktif akun pelanggan hilang.
+if [ ! -f /etc/xray/vless_exp.conf ]; then
+    echo "dummy-tls:Lifetime"  > /etc/xray/vless_exp.conf
+    echo "dummy-ntls:Lifetime" >> /etc/xray/vless_exp.conf
+    echo "dummy-grpc:Lifetime" >> /etc/xray/vless_exp.conf
+fi
+if [ ! -f /etc/xray/vmess_exp.conf ]; then
+    echo "dummy-vmess-tls:Lifetime"  > /etc/xray/vmess_exp.conf
+    echo "dummy-vmess-ntls:Lifetime" >> /etc/xray/vmess_exp.conf
+fi
 echo "dummy-vmess-grpc:Lifetime" >> /etc/xray/vmess_exp.conf
 echo "dummy-trojan-tls:Lifetime" > /etc/xray/trojan_exp.conf
 echo "dummy-trojan-grpc:Lifetime" >> /etc/xray/trojan_exp.conf
@@ -684,8 +689,15 @@ chown -R xray:adm /var/log/xray
 chmod 750 /var/log/xray
 echo 'd /var/log/xray 0750 xray adm -' > /etc/tmpfiles.d/xray.conf
 
-# Backup config lama
-[ -f /usr/local/etc/xray/config.json ] && cp /usr/local/etc/xray/config.json "/usr/local/etc/xray/config.json.bak.$(date +%F_%H%M%S)"
+# Backup config lama + catat daftar klien lama.
+# [FIX] Config baru ditulis dengan clients Kosong -> reinstall MENGHAPUS semua akun pelanggan.
+# Daftar klien disimpan di sini dan dipasang kembali setelah config baru ditulis.
+KLIEN_LAMA="[]"
+if [ -f /usr/local/etc/xray/config.json ]; then
+    cp /usr/local/etc/xray/config.json "/usr/local/etc/xray/config.json.bak.$(date +%F_%H%M%S)"
+    KLIEN_LAMA="$(jq -c '[.inbounds[]|select(.settings.clients)|{port:(.port),clients:(.settings.clients // [])}]' /usr/local/etc/xray/config.json 2>/dev/null || echo '[]')"
+    [ -n "$KLIEN_LAMA" ] || KLIEN_LAMA="[]"
+fi
 
 # XRAY CONFIG (dengan StatsService + HandlerService)
 DUMMY_UUID=$(uuidgen)
@@ -716,6 +728,18 @@ XEOF
 chown -R root:xray /usr/local/etc/xray
 chmod 640 /usr/local/etc/xray/config.json
 ln -sf /usr/local/etc/xray/config.json /etc/xray/config.json
+
+# [FIX] Pasang kembali akun pelanggan (tanpa duplikat id) supaya update/reinstall tidak menghapusnya.
+if [ "$KLIEN_LAMA" != "[]" ] && [ -n "$KLIEN_LAMA" ]; then
+    _t="$(mktemp)"
+    if jq --argjson k "$KLIEN_LAMA" '(.inbounds |= map(. as $in | (($k[]? | select(.port == $in.port) | .clients) // []) as $kl | if (($kl|length) > 0) and ($in.settings.clients != null) then .settings.clients = (($in.settings.clients + $kl) | unique_by(.id)) else . end))' /usr/local/etc/xray/config.json > "$_t" 2>/dev/null && jq -e '.inbounds|length > 0' "$_t" >/dev/null 2>&1; then
+        install -o root -g xray -m 640 "$_t" /usr/local/etc/xray/config.json
+        echo -e "\e[1;32m[+] Akun lama dipasang kembali: $(jq '[.inbounds[]|.settings.clients? // []]|flatten|length' /usr/local/etc/xray/config.json) klien aktif.\e[0m"
+    else
+        echo -e "\e[1;33m[!] Gagal memasang kembali akun lama (config baru dipertahankan).\e[0m"
+    fi
+    rm -f "$_t"
+fi
 chown -R root:xray /etc/xray 2>/dev/null || true
 chmod 750 /etc/xray 2>/dev/null || true
 
@@ -904,7 +928,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.10}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.11}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 WIBU_MANIFEST_CACHE="/etc/wibutunnel/tmp/wibu-manifest"
 wibu_manifest_fetch() {
@@ -935,25 +959,43 @@ wibu_verify_file() {   # $1=berkas lokal  $2=nama di manifest (jalur repo)
 
 # [FIX] Download Menu - $RANDOM tanpa backslash agar benar-benar cache-bust
 download_menu() {
-    local url="${GITHUB_RAW}/$1?v=$RANDOM"
-    local dest="/usr/local/bin/$2"
+    local url dest="/usr/local/bin/$2"
     local tmp_file="/etc/wibutunnel/tmp/$2"
-    local http_code
-    
-    # Download with HTTP status code
-    # [FIX-IPv6] paksa IPv4 + timeout: di VPS dengan IPv6 blackhole, tanpa -4 setiap unduhan
-    # menunggu ~24 dtk lalu gagal (wget malah menggantung). Mirror dicoba untuk SEMUA kegagalan.
-    http_code=$(curl -4 -sS -L --connect-timeout 10 --max-time 60 -w '%{http_code}' -o "$tmp_file" "$url" 2>/dev/null)
+    local http_code ok=0 src try
 
-    if [[ "$http_code" != "200" ]]; then
-        echo -e "\e[33m[!] Unduhan $2 gagal (HTTP ${http_code:-timeout}). Mencoba mirror jsdelivr...\e[0m"
-        url="https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/$1"
-        http_code=$(curl -4 -sS -L --connect-timeout 10 --max-time 60 -w '%{http_code}' -o "$tmp_file" "$url" 2>/dev/null)
+    # [FIX-CDN] Rantai sumber + verifikasi hash PER sumber.
+    # CDN mentah (raw.githubusercontent) bisa menyajikan konten LAMA dengan HTTP 200 untuk tag
+    # yang baru dibuat -> hash tidak cocok, berkas ditolak (fail-closed), instalasi tidak lengkap.
+    # API GitHub = sumber otoritatif tanpa CDN; dipakai sebagai cadangan (jatah API hanya terpakai
+    # kalau hash memang tidak cocok). [FIX-IPv6] semua unduhan dipaksa IPv4.
+    for src in raw api jsdelivr raw2; do
+        case "$src" in
+            raw)      url="${GITHUB_RAW}/$1?v=$RANDOM" ;;
+            api)      url="https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}/contents/$1?ref=${WIBU_REF}" ;;
+            jsdelivr) url="https://cdn.jsdelivr.net/gh/${GITHUB_USER}/${REPO_NAME}@${WIBU_REF}/$1" ;;
+            raw2)     sleep 20; url="${GITHUB_RAW}/$1?v=$RANDOM" ;;
+        esac
+        http_code=""
+        for try in 1 2 3; do
+            if [[ "$src" == "api" ]]; then
+                http_code=$(curl -4 -sS -L --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw' -w '%{http_code}' -o "$tmp_file" "$url" 2>/dev/null)
+            else
+                http_code=$(curl -4 -sS -L --connect-timeout 10 --max-time 60 -w '%{http_code}' -o "$tmp_file" "$url" 2>/dev/null)
+            fi
+            [[ "$http_code" == "200" ]] && break
+            [[ "$try" == "3" ]] || sleep 5
+        done
+        [[ "$http_code" == "200" && -s "$tmp_file" ]] || continue
+        if wibu_verify_file "$tmp_file" "$1"; then ok=1; break; fi
+        echo -e "\e[33m[!] $2 dari sumber ${src}: hash tidak cocok (CDN kemungkinan masih basi) - coba sumber lain...\e[0m"
+    done
+    if [[ "$ok" != "1" && "${WIBUTUNNEL_ALLOW_UNVERIFIED:-0}" == "1" && -s "$tmp_file" ]]; then
+        ok=1
+        echo -e "\e[1;31m[PERINGATAN BESAR] $2 TIDAK TERVERIFIKASI - lanjut karena WIBUTUNNEL_ALLOW_UNVERIFIED=1\e[0m"
+        echo "$(date -Is) bypass unverified: $1" >> /var/log/wibutunnel-installer.log 2>/dev/null
     fi
-    
-    # Validate HTTP status
-    if [[ "$http_code" != "200" ]]; then
-        echo -e "\e[31m[!] Gagal mengunduh $2 (HTTP $http_code)\e[0m"
+    if [[ "$ok" != "1" ]]; then
+        echo -e "\e[31m[!] $2 gagal diunduh/verifikasi dari semua sumber (raw, api, jsdelivr).\e[0m"
         rm -f "$tmp_file"
         return 1
     fi
@@ -1375,7 +1417,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.10" > /etc/wibutunnel/version
+echo "4.1.11" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
