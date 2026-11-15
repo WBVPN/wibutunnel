@@ -27,18 +27,18 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 <details>
 <summary>🔧 Cara manual (unduh → verifikasi → pasang)</summary>
 
-**Tanpa perantara sama sekali** (unduh → verifikasi → pasang):
+**Tanpa perantara sama sekali** (unduh -> verifikasi -> pasang; dari branch `main`, hash selalu sinkron dengan repo):
 
 ```bash
-curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/setup.sh
-sha256sum setup.sh     # harap: 30be59b81cb22665f99fcbde521b7c20c463dfa46ee3e27006e4b265f556e60d
+curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
+sha256sum setup.sh     # harap: c84dc357100e5347ee2b2a1324d590bd3021c91b6bdff2cdbc7055e82558a09a
 bash setup.sh
 ```
 
 **Hapus** (cadangan otomatis ke `/root/wibutunnel-backup-*/`):
 
 ```bash
-curl -4 -fsSL -o uninstall.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/uninstall.sh
+curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
 sha256sum uninstall.sh   # harap: a9962e71a9ac5b83757101d76c5163a8825e785433f7a1639fa44dfa022ba46d
 bash uninstall.sh
 ```
