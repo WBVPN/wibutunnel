@@ -57,12 +57,30 @@ safe_update() {
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] UNVERIFIED UPDATE (bypass): ${repo_path}" >> /etc/wibutunnel/tmp/bot_error.log
     else
         local expected actual
-        if ! curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 40 -o "$manifest_file" "${raw_base}/SHA256SUMS" 2>/dev/null || [[ ! -s "$manifest_file" ]]; then
+        # [FIX] Cache-buster + fallback API: setelah tag dipindah, raw CDN masih menyajikan
+        # SHA256SUMS lama -> berkas baru ditolak fail-closed. Query unik memaksa isi terbaru.
+        local cb="cb=$(date +%s)$$"
+        if ! curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 40 -o "$manifest_file" "${raw_base}/SHA256SUMS?${cb}" 2>/dev/null || [[ ! -s "$manifest_file" ]]; then
+            curl -4 -fSL --retry 2 --connect-timeout 10 --max-time 40 -H 'Accept: application/vnd.github.raw' \
+                -H 'User-Agent: wibutunnel-update' -o "$manifest_file" \
+                "https://api.github.com/repos/WBVPN/wibutunnel/contents/SHA256SUMS?ref=${WIBU_REF}" 2>/dev/null || true
+        fi
+        if [[ ! -s "$manifest_file" ]]; then
             echo -e "${RED}× Manifest SHA256SUMS tidak dapat diunduh. Update DITOLAK (fail-closed).${NC}"
             rm -f "$tmp_file" "$manifest_file"
             return 1
         fi
         expected=$(awk -v f="$repo_path" '$2 == f {print $1}' "$manifest_file" 2>/dev/null | head -n1)
+        if [[ -z "$expected" ]]; then
+            # Manifest mungkin masih basi: ambil ulang lewat API lalu cek sekali lagi.
+            curl -4 -fSL --retry 2 --connect-timeout 10 --max-time 40 -H 'Accept: application/vnd.github.raw' \
+                -H 'User-Agent: wibutunnel-update' -o "${manifest_file}.api" \
+                "https://api.github.com/repos/WBVPN/wibutunnel/contents/SHA256SUMS?ref=${WIBU_REF}" 2>/dev/null || true
+            if [[ -s "${manifest_file}.api" ]]; then
+                expected=$(awk -v f="$repo_path" '$2 == f {print $1}' "${manifest_file}.api" 2>/dev/null | head -n1)
+                mv -f "${manifest_file}.api" "$manifest_file"
+            fi
+        fi
         if [[ -z "$expected" ]]; then
             echo -e "${RED}× Manifest SHA256SUMS tidak memuat ${repo_path}. Update DITOLAK (fail-closed).${NC}"
             rm -f "$tmp_file" "$manifest_file"
