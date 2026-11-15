@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.10
+# 🦋 WIBUTUNNEL v4.1.11
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.10-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.11-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 8afcd38ceed42037daa51c67bcce805795970c131b83b3f48993d93ea096b864
+sha256sum setup.sh     # harap: 730a935eb329bab0fe48f14ecd8cc2cc66d3782f89237efe0342b39f955a5fb4
 bash setup.sh
 ```
 
@@ -202,6 +202,20 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.11 (2026-11-15)
+Dua bug ditemukan saat memasang di VPS pelanggan nyata (Ubuntu 20.04):
+
+- **Instalasi/update tidak lengkap karena CDN basi.** `raw.githubusercontent.com` bisa menyajikan isi **lama**
+  dengan HTTP 200 untuk tag yang baru dibuat; hash tidak cocok lalu berkas **ditolak** (fail-closed bekerja),
+  tetapi tidak ada sumber cadangan - akhirnya menu/skrip tetap versi lama dan muncul
+  `[!] Ada file yang gagal diunduh` di akhir. Sekarang setiap berkas dicoba berurutan:
+  **raw -> API GitHub (otoritatif, tanpa CDN) -> jsDelivr -> raw lagi**, dan **hash diperiksa di setiap sumber**
+  sebelum dipakai. Jatah API hanya terpakai kalau hash memang tidak cocok.
+- **Reinstall/update menghapus SEMUA akun pelanggan.** Config baru ditulis dengan `clients: []` dan
+  `/etc/xray/vless_exp.conf` + `vmess_exp.conf` **ditimpa** daftar dummy. Sekarang: daftar masa aktif hanya
+  dibuat bila berkas belum ada, dan daftar klien lama disimpan sebelum config baru ditulis lalu
+  **dipasang kembali** (digabung, dedupe per id) - akun pelanggan selamat dari update.
 
 ### v4.1.10 (2026-11-15)
 - **Nama ISP pendek.** Sebelumnya menu & pesan akun menampilkan mentah dari `ip-api.com`, contoh:
