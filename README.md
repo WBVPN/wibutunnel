@@ -30,7 +30,7 @@ Auto-install VPN panel berbasis Xray dengan Telegram bot monitoring. Satu comman
 ### One-Liner
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/v4.0.6-fixed/setup.sh
-sha256sum setup.sh     # harap: d4a4503417a01e64fade565ce3e2cab85c284c25e8289ddc1c907c34b5b8ee9d
+sha256sum setup.sh     # harap: 08a33a87dac41fee39950fd0dca30e96db56fac3612f9efbf0671f9fa82bd1fe
 bash setup.sh
 ```
 
@@ -295,7 +295,8 @@ cat /etc/xray/vless_exp.conf  # Format: username:YYYY-MM-DD HH:MM:SS
 - Auto-restore unlock dari sidecar JSON
 
 **🔒 SSH Module:**
-- Dropbear (109, 143, 2222), ws-stunnel (10015), HAProxy multiplexer (80/443)
+- Dropbear publik (109, 143) + dropbear lokal `127.0.0.1:2222` (backend HAProxy), ws-stunnel (10015),
+  HAProxy multiplexer (80/443). Port 22 tetap sshd admin, dengan rate-limit anti-bruteforce
 - Enhanced split-payload (`HTTP/ 69`)
 - SSH session enforcement (akurat untuk relay loopback)
 - Strict license validation
