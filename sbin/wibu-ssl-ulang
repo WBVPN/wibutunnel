@@ -1,0 +1,76 @@
+#!/bin/bash
+# ==========================================================================
+#  wibu-ssl-ulang - terbitkan ulang sertifikat SSL RESMI setelah instalasi
+#  memakai sertifikat sementara (mis. karena batas laju Let's Encrypt:
+#  5 sertifikat / 7 hari untuk domain yang sama).
+#
+#  Dijalankan oleh wibutunnel-ssl-ulang.timer (tiap jam, juga setelah boot).
+#  Berhenti sendiri begitu sertifikat resmi berhasil dipasang.
+# ==========================================================================
+
+LOG=/var/log/wibutunnel-ssl.log
+DIR=/etc/wibutunnel/cert-temp
+MARK="$DIR/JADWAL_ULANG"
+
+log() { echo "[$(date '+%F %T')] $*" >> "$LOG"; }
+
+# 1. Tidak ada sertifikat sementara -> tidak ada yang perlu dikerjakan
+[ -f "$MARK" ] && [ -f "$DIR/fullchain.pem" ] || exit 0
+
+DOMAIN="$(cat /etc/xray/domain 2>/dev/null | tr -d '[:space:]')"
+[ -n "$DOMAIN" ] || { log "domain tidak diketahui - berhenti"; exit 0; }
+LIVE="/etc/letsencrypt/live/$DOMAIN"
+
+# 2. Bila sudah resmi (bukan self-signed), cukup rapikan lalu berhenti
+if [ -f "$LIVE/fullchain.pem" ]; then
+    issuer="$(openssl x509 -in "$LIVE/fullchain.pem" -noout -issuer 2>/dev/null)"
+    if [[ "$issuer" != *"CN = $DOMAIN"* && "$issuer" != *"CN=$DOMAIN"* ]]; then
+        log "sertifikat resmi sudah ada ($issuer) - finalisasi"
+        cat "$LIVE/fullchain.pem" "$LIVE/privkey.pem" > "/etc/haproxy/certs/${DOMAIN}.pem" 2>/dev/null
+        chmod 600 "/etc/haproxy/certs/${DOMAIN}.pem" 2>/dev/null
+        systemctl restart haproxy >/dev/null 2>&1
+        rm -f "$MARK"
+        systemctl disable --now wibutunnel-ssl-ulang.timer >/dev/null 2>&1
+        log "SELESAI - sertifikat resmi aktif"
+        exit 0
+    fi
+fi
+
+# 3. Hormati waktu tunggu yang disarankan (batas laju Let's Encrypt)
+COBA="$(cat "$DIR/COBA_LAGI" 2>/dev/null || echo 0)"
+[[ "$COBA" =~ ^[0-9]+$ ]] || COBA=0
+if [ "$COBA" -gt "$(date +%s)" ]; then
+    log "tunggu sampai $(date -d "@$COBA" '+%F %T %Z') sebelum mencoba lagi"
+    exit 0
+fi
+
+# 4. certbot --standalone butuh port 80 bebas -> hentikan haproxy dulu
+was_active=0
+systemctl is-active --quiet haproxy && was_active=1
+systemctl stop haproxy >/dev/null 2>&1
+sleep 2
+
+log "mencoba menerbitkan sertifikat resmi untuk $DOMAIN"
+if certbot --version 2>/dev/null | grep -qE "certbot 2\."; then
+    certbot certonly --standalone --non-interactive --agree-tos -m "admin@${DOMAIN}" -d "$DOMAIN" >>"$LOG" 2>&1
+else
+    certbot certonly --standalone --register-unsafely-without-email --no-eff-email --agree-tos -d "$DOMAIN" >>"$LOG" 2>&1
+fi
+rc=$?
+
+# 5. Hasil
+issuer="$(openssl x509 -in "$LIVE/fullchain.pem" -noout -issuer 2>/dev/null)"
+if [ $rc -eq 0 ] && [ -f "$LIVE/fullchain.pem" ] && [[ "$issuer" != *"CN = $DOMAIN"* && "$issuer" != *"CN=$DOMAIN"* ]]; then
+    cat "$LIVE/fullchain.pem" "$LIVE/privkey.pem" > "/etc/haproxy/certs/${DOMAIN}.pem"
+    chmod 600 "/etc/haproxy/certs/${DOMAIN}.pem"
+    [ "$was_active" = 1 ] && systemctl start haproxy >/dev/null 2>&1 || systemctl restart haproxy >/dev/null 2>&1
+    rm -f "$MARK"
+    systemctl disable --now wibutunnel-ssl-ulang.timer >/dev/null 2>&1
+    log "SUKSES - sertifikat resmi terpasang, sertifikat sementara diganti"
+else
+    # gagal (mis. masih kena batas laju): kembalikan layanan, geser waktu coba berikutnya
+    [ "$was_active" = 1 ] && systemctl start haproxy >/dev/null 2>&1
+    date -d '+6 hours' +%s > "$DIR/COBA_LAGI"
+    log "gagal (kode $rc) - coba lagi setelah $(date -d '+6 hours' '+%F %T %Z')"
+fi
+exit 0

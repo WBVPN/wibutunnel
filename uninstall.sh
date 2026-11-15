@@ -86,12 +86,14 @@ systemctl disable netfilter-persistent >/dev/null 2>&1
 # [FIX] Daftar hapus lengkap: sebelumnya algojo-ssh, lock-user, unlock-user, ws-stunnel & wibu-daemon
 # tertinggal di /usr/local/sbin|bin setelah uninstall.
 for _f in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemon lock-user unlock-user \
-          unlocker-wibu ws-stunnel wibu-daemon wibu-repair wibu-audit-akun wibutunnel-firewall \
+          unlocker-wibu ws-stunnel wibu-daemon wibu-repair wibu-audit-akun wibu-ssl-ulang wibutunnel-firewall \
           wibutunnel-firewall.sh network-tune network-tune.sh; do
     rm -f "/usr/local/sbin/$_f" "/usr/local/bin/$_f" 2>/dev/null
 done
 rm -f /usr/local/bin/algojo-expired-daemon
 rm -f /usr/local/sbin/network-tune /usr/local/sbin/network-tune.sh /usr/local/bin/network-tune /usr/local/bin/network-tune.sh /usr/local/sbin/wibu-repair /usr/local/sbin/wibu-audit-akun /usr/local/bin/wibu-audit-akun
+systemctl disable --now wibutunnel-ssl-ulang.timer >/dev/null 2>&1
+rm -f /etc/systemd/system/wibutunnel-ssl-ulang.service /etc/systemd/system/wibutunnel-ssl-ulang.timer
 rm -f /usr/local/bin/menu /usr/local/bin/m-vless /usr/local/bin/m-vmess /usr/local/bin/m-trojan /usr/local/bin/m-ssh
 rm -f /usr/local/bin/m-setting /usr/local/bin/m-backup /usr/local/bin/menu-lock /usr/local/bin/menu-unlock
 rm -f /usr/local/bin/menu-recovery /usr/local/bin/cek-trafik /usr/local/bin/xp
