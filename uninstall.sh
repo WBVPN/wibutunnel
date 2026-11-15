@@ -55,9 +55,9 @@ rm -rf /usr/local/etc/xray /etc/haproxy /etc/wibutunnel /etc/xray /var/log/xray
 if command -v xray >/dev/null 2>&1; then
     # [C1] Uninstaller resmi HANYA dijalankan setelah hash cocok (tanpa verifikasi = risiko RCE).
     XRAY_TMP="$(mktemp /tmp/xray-uninstall.XXXXXX.sh)" || XRAY_TMP=""
-    if [ -n "$XRAY_TMP" ] && curl -fSL --retry 3 --max-time 60 -o "$XRAY_TMP" "$XRAY_INSTALL_URL" \
+    if [ -n "$XRAY_TMP" ] && curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 90 -o "$XRAY_TMP" "$XRAY_INSTALL_URL" \
         && xray_verify_sha256 "$XRAY_TMP" "$XRAY_INSTALL_SHA256"; then
-        bash "$XRAY_TMP" -s -- remove >/dev/null 2>&1
+        bash "$XRAY_TMP" remove >/dev/null 2>&1   # [FIX] bentuk berkas, bukan "-s --"
     else
         echo -e "\e[33m[ABORT] Unduh/verifikasi instaleler Xray gagal - uninstaller resmi DILEWATI, lanjut pembersihan manual.\e[0m"
     fi
