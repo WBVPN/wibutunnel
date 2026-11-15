@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.2
+# 🦋 WIBUTUNNEL v4.1.3
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.2-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.3-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -19,7 +19,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 | Syarat | |
 |---|---|
-| OS | Ubuntu 20.04+ / Debian 11+ |
+| OS | Ubuntu 20.04 / 22.04 / 24.04 · Debian 11 / 12 |
 | Domain | A record mengarah ke IP VPS *(tanpa AAAA)* |
 | Akses | root |
 | Lisensi | IP VPS terdaftar di `izin.txt` ([@wibuvpn](https://t.me/wibuvpn)) |
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/setup.sh
-sha256sum setup.sh     # harap: ddebcfcc79534bb2363d7f7338b530ffe358eb98db5ba9d023e753f35c251ee6
+sha256sum setup.sh     # harap: e10bc949d51f2e883a1e25be36202f4b94d6c130e61d066e5277c412c320d0d4
 bash setup.sh
 ```
 
@@ -201,6 +201,10 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.3 (2026-11-15)
+- **Persiapan Debian 12 (bookworm):** `rsyslog` ikut dipasang (agar `/dev/log` ada dan log HAProxy tidak hilang - instalasi minimal bookworm tidak punya syslog), NTP pakai `systemd-timesyncd` lebih dulu (`paket ntp` tidak ada di bookworm minimal), penjaga OS kini menyebut versi yang didukung + menampilkan OS/versi yang terdeteksi.
+- Ke-21 paket yang dipakai dipastikan tersedia di bookworm (dicek satu per satu di indeks paket Debian).
 
 ### v4.1.2 (2026-11-15)
 - Tautan unduh di README memakai `releases/latest/download/...` supaya tidak bisa menunjuk versi lama.
