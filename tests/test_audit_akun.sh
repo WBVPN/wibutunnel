@@ -22,15 +22,19 @@ cp -a "$EXP" "$BAK" 2>/dev/null || : > "$BAK"
 cleanup() {
     cp -a "$BAK" "$EXP" 2>/dev/null || true
     rm -f "$BAK"
-    safe_jq_edit_args --arg u "$U" '.inbounds[] | if .settings.clients then .settings.clients |= map(select(.email != $u)) else . end' >/dev/null 2>&1 || true
+    # PENTING: filter penulisan harus mengembalikan SELURUH dokumen.
+    # `.inbounds[] | if ...` mengembalikan ALIRAN objek -> config rusak (pernah terjadi).
+    # Gunakan bentuk `|= map(...)` supaya dokumen tetap utuh.
+    safe_jq_edit_args --arg u "$U" '.inbounds |= map(if .settings.clients then .settings.clients |= map(select(.email != $u)) else . end)' >/dev/null 2>&1 || true
     rm -f "/etc/wibutunnel/recovery/${U}.json"
 }
 trap cleanup EXIT
 
 # 1. Klien di config TANPA catatan exp
 i=$(xray_primary_index VLESS 2>/dev/null); jid=$(cat /proc/sys/kernel/random/uuid)
+# Tahan terhadap inbound yang `settings`-nya null (pernah terjadi di config nyata).
 safe_jq_edit_args --arg u "$U" --arg id "$jid" --argjson i "$i" \
-    '.inbounds[$i].settings.clients += [{"id":$id,"email":$u,"level":0,"flow":""}]' >/dev/null 2>&1
+    '.inbounds[$i].settings |= ((. // {}) | .clients = ((.clients // []) + [{"id":$id,"email":$u,"level":0,"flow":""}]))' >/dev/null 2>&1
 
 out=$("$AUDIT" 2>&1); rc=$?
 ck "1. akun tanpa exp dilaporkan" "$(printf '%s' "$out" | grep -c "$U")" "1"
