@@ -117,6 +117,7 @@ t "ada timer firewall idempoten (atasi urutan boot)" "grep -q 'wibutunnel-firewa
 t "unit firewall After netfilter-persistent" "grep -q 'After=network.target netfilter-persistent.service' \"\$REPO/setup.sh\""
 t "skrip firewall menyimpan rules.v4 hasil dedupe" "grep -q 'iptables-save > /etc/iptables/rules.v4' \"\$REPO/sbin/wibutunnel-firewall.sh\""
 t "uninstall membersihkan timer" "grep -q 'wibutunnel-firewall.timer' \"\$REPO/uninstall.sh\""
+t "menu keluar rapi saat EOF (bukan loop)"    "grep -q 'read -r sub_menu || exit 0' \"\$REPO/menu/m-vless.sh\" && grep -q 'read -r sub_br || exit 0' \"\$REPO/menu/m-backup.sh\" && grep -q 'read -r sub_setting || exit 0' \"\$REPO/menu/m-setting.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""

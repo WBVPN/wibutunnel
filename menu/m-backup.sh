@@ -307,7 +307,7 @@ do_autobackup() {
     echo -e "${LINE}"
     echo -e "${CYAN}Format 24 jam (contoh: ketik 3 untuk jam 03:00 WIB)${NC}"
     echo -ne " ${WHITE}Masukkan Jam (0-23) : ${NC}"
-    read -r input_jam
+    read -r input_jam || return 0
 
     if [[ ! "$input_jam" =~ ^[0-9]+$ ]] || [ "$input_jam" -gt 23 ]; then
         echo -e "${RED}[!] Input harus angka 0-23.${NC}"
@@ -336,7 +336,7 @@ echo -e " ${YELLOW}[3] Setup Auto Backup Berjadwal${NC}"
 echo -e " ${RED}[0] Kembali ke Menu Utama${NC}"
 echo -e "${LINE}"
 echo -ne "${WHITE}Pilih menu: ${NC}"
-read -r sub_br
+read -r sub_br || exit 0
 
 case $sub_br in
     1) do_backup ; exec m-backup ;;

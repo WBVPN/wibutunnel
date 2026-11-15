@@ -72,7 +72,7 @@ echo -e "${LINE}"
 
 while true; do
     echo -ne "${WHITE}Pilih menu: ${NC}"
-    read -r sub_menu
+    read -r sub_menu || exit 0
     case $sub_menu in
         1) exec m-vless ;;
         2) exec m-vmess ;;
