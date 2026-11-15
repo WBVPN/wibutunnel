@@ -126,6 +126,7 @@ t "gagal polling dicatat (401/409 tidak diam)" "grep -q 'getUpdates GAGAL' \"\$R
 t "restore mematikan bot agar tak tabrakan token" "grep -q 'layanan bot DIMATIKAN' \"\$REPO/menu/m-backup.sh\""
 t "audit menampilkan jumlah catatan dummy (tidak senyap)" "grep -q 'Catatan dummy installer' \"\$REPO/sbin/wibu-audit-akun\""
 t "update menu ikut rilis terbaru (main), bukan tag beku" "grep -q 'WIBU_REF:-main' \"\$REPO/menu/m-setting.sh\""
+t "update memperbarui penanda versi" "grep -q 'wibutunnel/version' \"\$REPO/menu/m-setting.sh\" && grep -q 'wibutunnel/version' \"\$REPO/setup.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""
