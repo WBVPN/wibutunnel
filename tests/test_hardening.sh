@@ -149,6 +149,8 @@ t "timesyncd dipasang bila belum ada (non-fatal)" "grep -q 'apt-get install -y -
 t "sertifikat sementara dipasang bila certbot gagal (tidak hentikan instalasi)" "grep -q 'cert-temp/fullchain.pem' \"\$REPO/setup.sh\" && ! grep -q 'SSL GAGAL! Pastikan domain \$domain mengarah ke IP ini.\${NC}\"$\n    exit 1' \"\$REPO/setup.sh\""
 t "penjadwal penerbitan ulang otomatis ikut dipasang" "grep -q 'wibutunnel-ssl-ulang.timer' \"\$REPO/setup.sh\" && test -x \"\$REPO/sbin/wibu-ssl-ulang\""
 t "uninstall menghapus penjadwal ssl ulang" "grep -q 'wibutunnel-ssl-ulang' \"\$REPO/uninstall.sh\" && grep -q 'wibu-ssl-ulang' \"\$REPO/uninstall.sh\""
+t "nama ISP pendek dipakai di semua menu (wibu-isp)" "grep -q 'ISP=\$(wibu-isp)' \"\$REPO/menu/menu.sh\" && grep -q 'ISP=\$(wibu-isp)' \"\$REPO/menu/m-vless.sh\" && grep -q 'ISP=\$(wibu-isp)' \"\$REPO/menu/m-trojan.sh\""
+t "nama ISP bisa ditimpa manual lewat /etc/wibutunnel/isp.txt" "grep -q '/etc/wibutunnel/isp.txt' \"\$REPO/sbin/wibu-isp\" && test -x \"\$REPO/sbin/wibu-isp\""
 t "ada alat verifikasi rantai rilis" "test -x \"\$REPO/tools/verify-release.sh\""
 t "network-tune punya probe CLASSIFY (anti-spam journal)" "grep -q \"CLASSIFY tidak didukung\" \"\$REPO/sbin/network-tune.sh\""
 t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TMP\" -s --' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""

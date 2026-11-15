@@ -1,0 +1,50 @@
+#!/bin/bash
+# ==========================================================================
+#  wibu-isp - tampilkan nama ISP PENDEK untuk ditampilkan di menu / pesan akun.
+#
+#  Dipakai di semua tempat yang sebelumnya memanggil ip-api.com langsung,
+#  supaya nama panjang seperti
+#     "Shenzhen Tencent Computer Systems Company Limited"
+#  tampil rapi sebagai "Tencent Cloud".
+#
+#  Pakai :
+#     wibu-isp              -> deteksi sendiri (ip-api.com) lalu singkatkan
+#     wibu-isp "nama asli"  -> singkatkan nama yang diberikan
+#
+#  Timpa manual (menang atas semuanya): tulis nama pendek ke /etc/wibutunnel/isp.txt
+#     echo "WIBU Cloud" > /etc/wibutunnel/isp.txt
+# ==========================================================================
+
+raw="$1"
+if [ -z "$raw" ]; then
+    raw="$(curl -4 -s --max-time 6 'http://ip-api.com/line/?fields=isp' 2>/dev/null)"
+    [ -z "$raw" ] && raw="$(curl -s --max-time 6 'http://ip-api.com/line/?fields=isp' 2>/dev/null)"
+fi
+[ -z "$raw" ] && raw="Unknown"
+
+# 1. Timpaan manual
+if [ -s /etc/wibutunnel/isp.txt ]; then
+    head -1 /etc/wibutunnel/isp.txt | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+    exit 0
+fi
+
+# 2. Singkatan penyedia populer
+case "$raw" in
+    *Tencent*)                  echo "Tencent Cloud" ;;
+    *Alibaba*|*Aliyun*)         echo "Alibaba Cloud" ;;
+    *Amazon*|*AWS*)             echo "AWS" ;;
+    *Microsoft*|*Azure*)        echo "Azure" ;;
+    *Google*)                   echo "Google Cloud" ;;
+    *DigitalOcean*)             echo "DigitalOcean" ;;
+    *Contabo*)                  echo "Contabo" ;;
+    *Hetzner*)                  echo "Hetzner" ;;
+    *OVH*)                      echo "OVHcloud" ;;
+    *Vultr*)                    echo "Vultr" ;;
+    *Linode*|*Akamai*)          echo "Linode" ;;
+    *Oracle*)                   echo "Oracle Cloud" ;;
+    *Cloudflare*)               echo "Cloudflare" ;;
+    *Biznet*)                   echo "Biznet" ;;
+    *Telkom*|*IndiHome*|*TELKOMNET*) echo "Telkom" ;;
+    *)                          echo "$raw" ;;
+esac
+exit 0

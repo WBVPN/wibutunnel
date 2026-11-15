@@ -113,7 +113,7 @@ add_user() {
     vless_ntls="vless://${uuid}@${domain}:80?path=/vless-ntls&security=none&encryption=none&host=${domain}&type=ws#${user}"
     vless_grpc="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless&sni=${domain}#${user}"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VPN ACCOUNT - VLESS
@@ -207,7 +207,7 @@ trial_user() {
     vless_ntls="vless://${uuid}@${domain}:80?path=/vless-ntls&security=none&encryption=none&host=${domain}&type=ws#${user}"
     vless_grpc="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless&sni=${domain}#${user}"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VPN ACCOUNT - VLESS
@@ -313,7 +313,7 @@ cek_user() {
     vless_ntls="vless://${uuid}@${domain}:80?path=/vless-ntls&security=none&encryption=none&host=${domain}&type=ws#${user}"
     vless_grpc="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless&sni=${domain}#${user}"
 
-    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(curl -s ip-api.com/line?fields=isp 2>/dev/null)
+    CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null); ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     PESAN_AKUN="VLESS - CEK AKUN

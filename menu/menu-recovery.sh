@@ -179,7 +179,7 @@ source /etc/wibutunnel/bot.conf 2>/dev/null
 if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
     domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
     CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null || echo "Unknown")
-    ISP=$(curl -4 -s --max-time 6 ip-api.com/line?fields=isp 2>/dev/null || echo "Unknown")
+    ISP=$(wibu-isp)
     
     if [[ "$proto" == "VLESS" ]]; then
         uuid=$(jq -r --arg u "$user" '.inbounds[1].settings.clients[]? | select(.email == $u) | .id' /etc/xray/config.json 2>/dev/null | head -n1)

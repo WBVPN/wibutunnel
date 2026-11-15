@@ -155,7 +155,7 @@ ssh_bot_config_message() {
     local domain; domain=$(cat /etc/xray/domain 2>/dev/null)
     [[ -z "$domain" ]] && domain="${MYIP:-$(curl -4 -sS --max-time 3 ipv4.icanhazip.com 2>/dev/null)}"
 
-    local ISP=$(curl -4 -s --max-time 6 ip-api.com/line?fields=isp 2>/dev/null)
+    local ISP=$(wibu-isp)
     local CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null)
     [[ -z "$ISP" ]] && ISP="Unknown"; [[ -z "$CITY" ]] && CITY="Unknown"
 
@@ -312,7 +312,7 @@ create_account() {
     [[ "$limit_bw" -eq 0 ]] && limit_bw="Unlimited" || limit_bw="${limit_bw} GB"
 
     local CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null)
-    local ISP=$(curl -4 -s --max-time 6 ip-api.com/line?fields=isp 2>/dev/null)
+    local ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
     local THICKLINE="━━━━━━━━━━━━━━━━━━━━"
     local pesan="<b>VPN ACCOUNT - ${proto}</b>\n"
@@ -802,7 +802,7 @@ detail_account() {
     fi
 
     local CITY=$(curl -4 -s --max-time 6 ip-api.com/line?fields=city 2>/dev/null)
-    local ISP=$(curl -4 -s --max-time 6 ip-api.com/line?fields=isp 2>/dev/null)
+    local ISP=$(wibu-isp)
     [[ -z "$CITY" ]] && CITY="Unknown"; [[ -z "$ISP" ]] && ISP="Unknown"
 
     local THICKLINE="━━━━━━━━━━━━━━━━━━━━"
