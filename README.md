@@ -194,7 +194,7 @@ Backup otomatis ke `/root/wibutunnel-backup-YYYYMMDD-HHMMSS/` sebelum hapus.
   - ⚠️ Jujur soal batasnya: pemegang **root** di VPS-nya selalu bisa menambal kode lokal. Jadi gate ini
     **penghalang + penegak masa aktif**, bukan pengaman kriptografis. Uji: `bash tests/test_license_enforcement.sh`
     (12 kasus, memanggil fungsi asli `check_license`).
-  Rincian temuan & perbaikan lain: [`docs/SECURITY_FIXES.md`](docs/SECURITY_FIXES.md).
+  Rincian temuan & perbaikan lain: [`docs/SECURITY_FIXES.md`](docs/SECURITY_FIXES.md) · hasil uji nyata di VPS (15 bug + matriks uji): [`docs/HASIL_UJI_VPS.md`](docs/HASIL_UJI_VPS.md).
 
 ---
 
