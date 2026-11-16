@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.17
+# 🦋 WIBUTUNNEL v4.1.18
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.17-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.18-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 9598eaa431c5dbd84f15ae2471e5aec84a564cdf7c3e8f997473b79443081c6b
+sha256sum setup.sh     # harap: ad5d61a9762d3e228328ba78ed3c53388186ce3e9a851f75964bc3c97ed7c18c
 bash setup.sh
 ```
 
@@ -202,6 +202,19 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.18 (2026-11-16)
+
+- **Deteksi user SSH diperbaiki (akurat).** Pemilik socket sesi adalah dropbear yang jalan
+  sebagai `root`; user sebenarnya ada di keturunan proses. Akibat bug lama: sesi tak pernah
+  dihitung sehingga limit IP SSH tak pernah terpicu, dan daftar IP aktif menampilkan IP klien lain.
+- **IP klien asli untuk sesi lewat WS (443/80).** `ws-stunnel` membaca header
+  `CF-Connecting-IP`/`X-Forwarded-For` **dan** header PROXY protocol v2 dari haproxy.
+- **Deteksi user XRAY diperbaiki.** Rantai haproxy hanya mengirim PROXY protocol di hop terakhir,
+  jadi xray melihat `127.0.0.1` dan baris itu dibuang panel -> **daftar user xray online selalu
+  kosong** dan limit IP xray tak pernah terpicu. Kini `send-proxy-v2` diteruskan sejak frontend.
+- **Nama user ber-titik/`@`** (mis. `roodyz.prem`) tak lagi salah dipangkas saat dibaca dari log.
+- **User sistem `sshd`** (privsep) tak lagi terhitung sebagai sesi pelanggan.
 
 ### v4.1.17 (2026-11-16)
 Perbaikan daftar lisensi + tampilan masa aktif:
