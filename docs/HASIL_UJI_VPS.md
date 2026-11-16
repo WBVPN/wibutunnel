@@ -50,6 +50,9 @@ menjalankan installer & suite tes di VPS sungguhan, bukan di mock.
 
 ## 4. Hasil akhir seluruh suite (di VPS)
 
+> Angka di blok ini berasal dari rilis **v4.0.6-fixed** (keadaan saat itu). Suite kini lebih besar:
+> `test_hardening.sh` **120 cek**, `test_license_enforcement.sh` **15 cek**, semuanya lulus.
+
 ```
 test_algojo_ssh.sh            OK      test_expiry_and_xp.sh        OK
 test_auto_repair.sh           OK      test_hardening.sh            OK (61 cek)
@@ -140,7 +143,7 @@ Diperbaiki di `do_restore`: `chown root:xray` + `chmod 640` + `chown -R xray:xra
 
 ---
 
-## 7. Uji lapangan: Debian 12 (bookworm) - 2026-11-15
+## 7b. Uji lapangan: Debian 12 (bookworm) - 2026-11-15
 
 VPS: `103.150.60.84` di-rebuild ke Debian 12 (kernel 6.1, 973 MB RAM, 18 GB disk), instalasi dari
 aset Release GitHub (tag v4.1.3) tanpa penyesuaian manual apa pun.

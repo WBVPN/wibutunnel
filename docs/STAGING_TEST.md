@@ -11,7 +11,8 @@ VPS uji ideal: **VPS kosong** (Ubuntu 20.04/22.04), bukan VPS yang sudah melayan
 ## 1. Uji statis (tidak mengubah sistem, boleh di mana saja)
 ```bash
 git clone <repo> wibutunnel && cd wibutunnel
-bash tests/test_hardening.sh          # target: 32 PASS / 0 FAIL
+bash tests/test_hardening.sh          # target: 120 PASS / 0 FAIL
+bash tests/test_license_enforcement.sh # target: 15 PASS / 0 FAIL
 bash -n setup.sh && for f in sbin/* menu/*.sh; do bash -n "$f" || echo "GAGAL $f"; done
 sha256sum -c SHA256SUMS 2>&1 | grep -v ': OK' | head        # harus kosong
 ```
