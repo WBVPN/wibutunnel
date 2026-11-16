@@ -348,20 +348,49 @@ show_license_denied() {
 # ---------------------------------------------------------------------------
 # LISENSI — sumber daftar (dapat dioverride untuk pengujian/pemulihan)
 LICENSE_URL="${LICENSE_URL:-https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt}"
+LICENSE_URL_DEFAULT="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
 LICENSE_MIRROR="${LICENSE_MIRROR:-https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@main/izin.txt}"
+# API GitHub = sumber OTORITATIF: raw.githubusercontent & jsDelivr bisa menyajikan
+# izin.txt VERSI LAMA sampai cache-nya kedaluwarsa (terbukti: setelah entri lisensi
+# baru di-push, raw masih mengembalikan daftar lama berjam-jam, cache-buster tak
+# menolong) -> IP yang sah tertolak. Urutan: API dulu, raw & jsDelivr cadangan.
+# API dipakai HANYA bila LICENSE_URL masih bawaan; uji/pemulihan yang meng-override
+# LICENSE_URL (mis. file:// fixture) tetap memakai sumbernya sendiri.
+LICENSE_API="${LICENSE_API:-https://api.github.com/repos/WBVPN/wibutunnel/contents/izin.txt?ref=main}"
 LICENSE_CACHE="${LICENSE_CACHE:-/etc/wibutunnel/tmp/wibu_license.cache}"
 # Tanpa jaringan: pakai salinan lokal/cache, tapi maksimal 7 hari (setelah itu tolak).
 LICENSE_OFFLINE_GRACE="${LICENSE_OFFLINE_GRACE:-604800}"
 
-# Ambil daftar lisensi (IPv4, timeout, mirror). Gagal -> return 1.
+# Daftar dianggap SAH hanya bila memuat minimal satu entri utuh
+# `### NAMA EXP IP`. Tanpa ini, balasan terpotong/halaman galat
+# (yang isinya bukan daftar) diperlakukan sebagai daftar lisensi
+# dan membuat IP sah tertolak.
+license_valid_list() {
+    local l="$1"
+    [[ -n "$l" ]] || return 1
+    printf '%s\n' "$l" | grep -qE '^### +[^ ]+ +(lifetime|[0-9]{4}-[0-9]{2}-[0-9]{2}) +[0-9]{1,3}(\.[0-9]{1,3}){3}'
+}
+
+# Ambil daftar lisensi (API dulu, lalu raw, lalu mirror). Gagal -> return 1.
 license_fetch() {
-    local out
-    out=$(curl -4 -sS --max-time 8 --connect-timeout 5 "$LICENSE_URL" 2>/dev/null) || out=""
-    if [[ -z "$out" && -n "$LICENSE_MIRROR" ]]; then
-        out=$(curl -4 -sS --max-time 8 --connect-timeout 5 "$LICENSE_MIRROR" 2>/dev/null) || out=""
+    local out=""
+    if [[ -n "${LICENSE_API:-}" && "$LICENSE_URL" == "$LICENSE_URL_DEFAULT" ]]; then
+        out=$(curl -4 -sS --max-time 8 --connect-timeout 5 \
+                   -H 'Accept: application/vnd.github.raw' \
+                   ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
+                   "$LICENSE_API" 2>/dev/null) || out=""
+        if license_valid_list "$out"; then printf '%s' "$out"; return 0; fi
+        [[ -n "$out" ]] && echo -e "${YELLOW}[!] Daftar lisensi dari API tidak utuh, mencoba sumber cadangan…${NC}" >&2
     fi
-    [[ -n "$out" ]] || return 1
-    printf '%s' "$out"
+
+    out=$(curl -4 -sS --max-time 8 --connect-timeout 5 "$LICENSE_URL" 2>/dev/null) || out=""
+    if license_valid_list "$out"; then printf '%s' "$out"; return 0; fi
+
+    if [[ -n "$LICENSE_MIRROR" ]]; then
+        out=$(curl -4 -sS --max-time 8 --connect-timeout 5 "$LICENSE_MIRROR" 2>/dev/null) || out=""
+        if license_valid_list "$out"; then printf '%s' "$out"; return 0; fi
+    fi
+    return 1
 }
 
 # Cari entri untuk IP tertentu. Pencocokan HARUS persis pada kolom IP

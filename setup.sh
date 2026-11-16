@@ -55,16 +55,30 @@ clear
 echo -e "\e[1;36m[+] Memeriksa Lisensi Script...\e[0m"
 
 LINK_IZIN="https://raw.githubusercontent.com/WBVPN/wibutunnel/main/izin.txt"
+LINK_IZIN_DEFAULT="$LINK_IZIN"
 LINK_IZIN_MIRROR="https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@main/izin.txt"
+# API GitHub = sumber OTORITATIF (raw & jsDelivr bisa menyajikan izin.txt lama
+# setelah entri lisensi baru di-push -> IP sah tertolak). Urutan: API, raw, mirror.
+LINK_IZIN_API="${LINK_IZIN_API:-https://api.github.com/repos/WBVPN/wibutunnel/contents/izin.txt?ref=main}"
 # [FIX] Daftar lisensi HANYA dari sumber resmi. Sebelumnya berkas ./izin.txt di
 # direktori kerja ikut dipercaya -> cukup `printf 'x lifetime <IP>' > izin.txt`
 # untuk melewati gerbang. Kini berkas lokal DIABAIKAN saat instalasi.
+izin_valid_list() {
+    local l="$1"
+    [[ -n "$l" ]] || return 1
+    printf '%s\n' "$l" | grep -qE '^### +[^ ]+ +(lifetime|[0-9]{4}-[0-9]{2}-[0-9]{2}) +[0-9]{1,3}(\.[0-9]{1,3}){3}'
+}
 IZIN_LIST=""
 for _coba in 1 2 3; do
+    if [[ "$LINK_IZIN" == "$LINK_IZIN_DEFAULT" ]]; then
+        IZIN_LIST=$(curl -4 -sS --max-time 15 --connect-timeout 8 -H 'Accept: application/vnd.github.raw' "$LINK_IZIN_API" 2>/dev/null) || IZIN_LIST=""
+        izin_valid_list "$IZIN_LIST" && break
+    fi
     IZIN_LIST=$(curl -4 -sS --max-time 15 --connect-timeout 8 "$LINK_IZIN" 2>/dev/null) || IZIN_LIST=""
-    [[ -n "$IZIN_LIST" ]] && break
+    izin_valid_list "$IZIN_LIST" && break
     IZIN_LIST=$(curl -4 -sS --max-time 15 --connect-timeout 8 "$LINK_IZIN_MIRROR" 2>/dev/null) || IZIN_LIST=""
-    [[ -n "$IZIN_LIST" ]] && break
+    izin_valid_list "$IZIN_LIST" && break
+    IZIN_LIST=""
     sleep 2
 done
 if [[ -z "$IZIN_LIST" ]]; then

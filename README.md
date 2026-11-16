@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: ff51b9de2452bfedb4cd17f40a602407ce7e68713b03b87e1481f38b184e2af5
+sha256sum setup.sh     # harap: ba662be48da903383a25ecf69beb99219bcbecbae5dfb637ed8c49f2179ff711
 bash setup.sh
 ```
 
