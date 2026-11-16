@@ -397,7 +397,7 @@ case $sub_setting in
     # terpasang, lalu selaraskan unit systemd (unit tidak ikut terunduh oleh safe_update).
     [[ -x /usr/local/sbin/wibu-units ]] && /usr/local/sbin/wibu-units sync >/dev/null 2>&1
     if [[ -x /usr/local/sbin/m-setting ]]; then
-        mapfile -t _FILES2 < <(grep -oP 'safe_update "\K[^"]+' /usr/local/sbin/m-setting | sed '/^$/d')
+        mapfile -t _FILES2 < <(grep -oP '^\s*safe_update "\K[^"]+' /usr/local/sbin/m-setting | sed '/^$/d')
     elif [[ -x /usr/local/bin/m-setting ]]; then
         mapfile -t _FILES2 < <(grep -oP 'safe_update "\K[^"]+' /usr/local/bin/m-setting | sed '/^$/d')
     else

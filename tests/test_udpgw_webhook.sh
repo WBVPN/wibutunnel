@@ -253,4 +253,19 @@ n=$(wc -l < "$CURL_COUNT")
 [[ "$n" -le 2 ]] || { echo "FAIL: curl dipanggil $n kali (harus berhenti di sumber pertama yang berhasil)"; exit 1; }
 echo "PASS: berhenti di sumber pertama yang berhasil (curl dipanggil $n kali, bukan per berkas)"
 
+echo "=== TEST 11: pass kedua hanya membaca entri asli (bukan teks grep di dalam dirinya) ==="
+grep -qF "grep -oP '^\\s*safe_update \"\\K[^\"]+'" "$REPO_DIR/menu/m-setting.sh" \
+    || { echo "FAIL: pola pass kedua tidak di-anchor"; exit 1; }
+echo "PASS: pola pass kedua di-anchor (^\\s*safe_update)"
+FAKE="$TMPD/m-setting.fake"
+cat > "$FAKE" <<'MS'
+        safe_update "menu/menu.sh"
+        safe_update "sbin/wibu-units"
+        mapfile -t _FILES2 < <(grep -oP 'safe_update "\K[^"]+' /usr/local/bin/m-setting | sed '/^$/d')
+        for _f in "${_FILES2[@]:-}"; do safe_update "$_f" >/dev/null 2>&1 || true; done
+MS
+parsed=$(grep -oP '^\s*safe_update "\K[^"]+' "$FAKE" | sed '/^$/d' | tr '\n' ' ')
+[[ "$parsed" == "menu/menu.sh sbin/wibu-units " ]] || { echo "FAIL: hasil parse -> '$parsed'"; exit 1; }
+echo "PASS: hanya entri asli yang terbaca (tanpa nama palsu seperti \K[^\n)"
+
 echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="
