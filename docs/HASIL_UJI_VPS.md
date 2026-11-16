@@ -446,6 +446,15 @@ lalu **dicabut seluruhnya** supaya panel hanya punya satu cara kerja bot yang se
 **polling**. Pemilik sebelumnya pernah tertahan masalah "ganti token bot lalu bot mati" yang
 berakar pada ketidakcocokan state webhook; polling menghapus kelas masalah itu.
 
+**Catatan kejujuran bukti (penting):** uji webhook yang sah hanyalah uji **lokal** di
+`127.0.0.1:8443` (200 di `/health`, 503 tanpa secret, 403 secret salah, 400 body bukan JSON,
+200 + masuk antrean) — itu respons server kita sendiri. Uji lewat domain **tidak** bisa
+membedakan `503` milik server webhook dari `503` milik hub haproxy "tanpa backend untuk path
+ini" (keduanya 503), jadi angka dari internet itu tidak dipakai sebagai bukti fail-closed.
+Setelah rute `/telehook` dicabut, `POST https://<domain>/telehook` tetap menjawab 503 — kali
+ini pasti dari hub haproxy karena tidak ada lagi ACL/backend untuk path tersebut dan tidak ada
+yang mendengarkan `127.0.0.1:8443` (`ss` = 0).
+
 Yang **tetap** ada setelah pencabutan (semua demi keamanan ganti token, bukan fitur webhook):
 - ganti token di menu Setting **[1]** melepas webhook token lama **dan** token baru
   (`deleteWebhook` untuk keduanya);
