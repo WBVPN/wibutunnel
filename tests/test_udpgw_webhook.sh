@@ -193,7 +193,10 @@ done < <(grep -oP '_need "\K(sbin/[^"]+)' "$REPO_DIR/setup.sh" | sort -u)
 echo "PASS: semua modul sbin di setup.sh punya entri safe_update di Update Script"
 while read -r mod; do
     [[ -z "$mod" ]] && continue
-    grep -q "_need \"${mod}\"" "$REPO_DIR/setup.sh" || { echo "FAIL: ${mod} ada di Update Script tapi tidak diunduh setup.sh"; exit 1; }
+    # modul boleh diunduh lewat _need ATAU wibu_get_script (dua jalur yang ada di setup.sh)
+    if ! grep -qE "(_need|wibu_get_script) \"${mod}\"" "$REPO_DIR/setup.sh"; then
+        echo "FAIL: ${mod} ada di Update Script tapi tidak diunduh setup.sh"; exit 1
+    fi
 done < <(grep -oP 'safe_update "\K(sbin/[^"]+)' "$REPO_DIR/menu/m-setting.sh" | sort -u)
 echo "PASS: semua entri safe_update sbin ada padanannya di setup.sh"
 
