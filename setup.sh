@@ -1257,9 +1257,10 @@ _need "sbin/wibu-daemon" "wibu-daemon-dl"
 _need "sbin/wibu-kuota" "wibu-kuota-dl"
 _need "sbin/wibu-udpgw" "wibu-udpgw-dl"
 _need "sbin/bot-webhook-server" "bot-webhook-server"
+_need "sbin/wibu-units" "wibu-units"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota wibu-udpgw bot-webhook-server; do
+for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota wibu-udpgw bot-webhook-server wibu-units; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
     fi
@@ -1380,22 +1381,6 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-cat << 'EOF' > /etc/systemd/system/bot-webhook.service
-[Unit]
-Description=Telegram Bot Webhook Receiver (WIBUTUNNEL)
-After=network.target haproxy.service
-Wants=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 /usr/local/bin/bot-webhook-server
-Restart=always
-RestartSec=3
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-EOF
 
 mkdir -p /etc/dropbear /etc/wibutunnel
 echo "NO_START=0" > /etc/default/dropbear
@@ -1461,8 +1446,12 @@ systemctl enable dropbear.service ws-stunnel.service >/dev/null 2>&1
 # 'failed' walau layanannya sudah berjalan normal setelah installer menulis konfigurnya).
 systemctl reset-failed dropbear.service haproxy.service ws-stunnel.service >/dev/null 2>&1 || true
 systemctl restart dropbear.service ws-stunnel.service >/dev/null 2>&1
-systemctl enable bot-webhook.service >/dev/null 2>&1
-systemctl restart bot-webhook.service >/dev/null 2>&1
+# Unit systemd yang ditambahkan setelah instalasi awal (mis. bot-webhook) ditulis
+# oleh sbin/wibu-units — satu sumber kebenaran, sekaligus jalur untuk menu [5] Update.
+if [[ -x /usr/local/sbin/wibu-units ]]; then
+    /usr/local/sbin/wibu-units sync 2>&1 | sed 's/^/    /'
+    /usr/local/sbin/wibu-units start 2>&1 | sed 's/^/    /'
+fi
 
 # UDP gateway (badvpn-udpgw): dipakai klien untuk UDP (game/DNS/QUIC). Baris "UDPGW"
 # di pesan akun SSH baru hanya bermakna kalau layanan ini benar-benar ada. Gagal build

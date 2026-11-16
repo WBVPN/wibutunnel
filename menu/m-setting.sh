@@ -365,6 +365,23 @@ case $sub_setting in
         # lalu terapkan aturan firewall versi terbaru (dedupe) tanpa perlu instalasi ulang.
         # [FIX] Penanda versi ikut diperbarui: sebelumnya /etc/wibutunnel/version tetap versi lama
     # setelah update, sehingga dashboard menampilkan versi yang salah.
+    # Berkas baru (mis. sbin/wibu-udpgw) tidak ada di daftar m-setting LAMA yang sedang
+    # dipakai menjalankan update ini — ulangi sekali lagi memakai daftar yang baru saja
+    # terpasang, lalu selaraskan unit systemd (unit tidak ikut terunduh oleh safe_update).
+    [[ -x /usr/local/sbin/wibu-units ]] && /usr/local/sbin/wibu-units sync >/dev/null 2>&1
+    if [[ -x /usr/local/sbin/m-setting ]]; then
+        mapfile -t _FILES2 < <(grep -oP 'safe_update "\K[^"]+' /usr/local/sbin/m-setting | sed '/^$/d')
+    elif [[ -x /usr/local/bin/m-setting ]]; then
+        mapfile -t _FILES2 < <(grep -oP 'safe_update "\K[^"]+' /usr/local/bin/m-setting | sed '/^$/d')
+    else
+        _FILES2=()
+    fi
+    for _f in "${_FILES2[@]:-}"; do
+        [[ -n "$_f" ]] || continue
+        [[ -f "/usr/local/sbin/${_f##*/}" || -f "/usr/local/bin/${_f##*/}" ]] && continue
+        safe_update "$_f" >/dev/null 2>&1 || true
+    done
+
     _ver=""
     for _src in "https://api.github.com/repos/WBVPN/wibutunnel/contents/setup.sh?ref=${WIBU_REF}" \
                 "https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@${WIBU_REF}/setup.sh" \

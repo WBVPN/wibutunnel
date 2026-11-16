@@ -9,6 +9,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPD=$(mktemp -d)
 SRV_PID=""
 cleanup() { [[ -n "$SRV_PID" ]] && kill "$SRV_PID" 2>/dev/null || true; rm -rf "$TMPD"; }
+export WIBU_UNITS_DRY_RUN=0
 trap cleanup EXIT
 
 echo "=== TEST 1: wibu-udpgw — sintaks, unit, daftar port ==="
@@ -132,10 +133,52 @@ echo "PASS: WIBU_IP_TTL dapat disetel (60s -> IP 5 menit lalu keluar)"
 echo "=== TEST 6: penjaga regresi pemasangan ==="
 grep -q '_need "sbin/wibu-udpgw"' "$REPO_DIR/setup.sh" || { echo "FAIL: setup.sh tidak mengunduh wibu-udpgw"; exit 1; }
 grep -q 'wibu-udpgw install' "$REPO_DIR/setup.sh" || { echo "FAIL: setup.sh tidak menjalankan pemasang udpgw"; exit 1; }
-grep -q 'bot-webhook.service' "$REPO_DIR/setup.sh" || { echo "FAIL: unit bot-webhook tidak ditulis setup.sh"; exit 1; }
+grep -q 'wibu-units' "$REPO_DIR/setup.sh" || { echo "FAIL: setup.sh tidak memakai wibu-units untuk unit baru"; exit 1; }
 grep -q 'safe_update "sbin/wibu-udpgw"' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: m-setting tidak memperbarui wibu-udpgw"; exit 1; }
 grep -q '\[14\] Pasang / Perbaiki UDP Gateway' "$REPO_DIR/menu/m-ssh.sh" || { echo "FAIL: menu SSH belum punya entri UDPGW"; exit 1; }
 grep -q 'Mode Bot (Polling / Webhook)' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: menu mode bot hilang"; exit 1; }
 echo "PASS: semua rantai pemasangan/menu terdaftar"
+
+echo "=== TEST 7: wibu-units — unit baru bisa dikirim lewat Update Script ==="
+export WIBU_SYSTEMD_DIR="$TMPD/systemd2"
+UD="$TMPD/bin-units"; mkdir -p "$UD"
+cat > "$UD/systemctl" <<'STUB'
+#!/bin/bash
+echo "$*" >> "${STUB_LOG:-/dev/null}"
+case "$1" in
+    is-enabled) echo "enabled"; exit 0 ;;
+    *) exit 0 ;;
+esac
+STUB
+chmod +x "$UD/systemctl"
+export STUB_LOG="$TMPD/systemctl.log"; : > "$STUB_LOG"
+
+PATH="$UD:$PATH" bash "$REPO_DIR/sbin/wibu-units" sync > "$TMPD/units1.log" 2>&1
+U="$WIBU_SYSTEMD_DIR/bot-webhook.service"
+[[ -s "$U" ]] || { echo "FAIL: unit bot-webhook tidak ditulis/kosong"; exit 1; }
+grep -qF 'ExecStart=/usr/bin/python3 /usr/local/bin/bot-webhook-server' "$U" || { echo "FAIL: ExecStart salah"; exit 1; }
+grep -qF 'Restart=always' "$U" || { echo "FAIL: unit harus auto-restart"; exit 1; }
+echo "PASS: unit bot-webhook ditulis lengkap (tidak kosong -> tidak lagi 'masked')"
+h1=$(sha256sum "$U" | cut -d' ' -f1)
+PATH="$UD:$PATH" bash "$REPO_DIR/sbin/wibu-units" sync > "$TMPD/units2.log" 2>&1
+h2=$(sha256sum "$U" | cut -d' ' -f1)
+[[ "$h1" == "$h2" ]] || { echo "FAIL: unit berubah saat sync diulang"; exit 1; }
+grep -q "sudah sesuai" "$TMPD/units2.log" || { echo "FAIL: sync tidak idempoten"; exit 1; }
+echo "PASS: sync idempoten"
+grep -q "daemon-reload" "$STUB_LOG" || { echo "FAIL: sync tidak memanggil daemon-reload"; exit 1; }
+echo "PASS: sync memanggil systemctl daemon-reload"
+: > "$U"     # regresi: unit 0 byte (kejadian nyata -> systemd menganggap masked)
+PATH="$UD:$PATH" bash "$REPO_DIR/sbin/wibu-units" status 2>&1 | grep -q "KOSONG" \
+    || { echo "FAIL: unit kosong tidak terdeteksi"; exit 1; }
+echo "PASS: unit 0 byte terdeteksi sebagai masalah (bukan dianggap sehat)"
+
+echo "=== TEST 8: penjaga rantai unit + pass kedua Update Script ==="
+grep -q '_need "sbin/wibu-units"' "$REPO_DIR/setup.sh" || { echo "FAIL: setup.sh tidak mengunduh wibu-units"; exit 1; }
+grep -q '/usr/local/sbin/wibu-units sync' "$REPO_DIR/setup.sh" || { echo "FAIL: setup.sh tidak menyelaraskan unit"; exit 1; }
+grep -q 'bot-webhook.service' "$REPO_DIR/setup.sh" && { echo "FAIL: unit inline masih ada (harus lewat wibu-units)"; exit 1; }
+echo "PASS: setup.sh memakai wibu-units (tanpa unit inline)"
+grep -q 'wibu-units sync' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: Update Script tidak menyelaraskan unit"; exit 1; }
+grep -q '_FILES2' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: Update Script tidak punya pass kedua untuk berkas baru"; exit 1; }
+echo "PASS: Update Script menyelaraskan unit + pass kedua berkas baru"
 
 echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="
