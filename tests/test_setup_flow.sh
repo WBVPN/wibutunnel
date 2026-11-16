@@ -78,7 +78,8 @@ validate_script() {
     if [[ "$shebang" =~ ^#!.*(bash|sh) ]]; then
         bash -n "$tmp_file" 2>/dev/null || return 1
     elif [[ "$shebang" =~ ^#!.*python ]]; then
-        python3 -m py_compile "$tmp_file" 2>/dev/null || return 1
+        # compile ke berkas SEMENTARA: jangan tinggalkan __pycache__ di pohon repo
+        python3 -c "import py_compile,sys,tempfile,os; py_compile.compile(sys.argv[1], cfile=os.path.join(tempfile.mkdtemp(),'cek.pyc'), doraise=True)" "$tmp_file" 2>/dev/null || return 1
         rm -rf /etc/wibutunnel/tmp/__pycache__
     else
         return 1
