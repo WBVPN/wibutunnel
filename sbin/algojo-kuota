@@ -12,7 +12,9 @@ DB_LOCK="/etc/wibutunnel/locked_users.db"
 [[ ! -f "$DB_BW" ]] && exit 0
 touch "$DB_USAGE"
 
-xray api statsquery --server=127.0.0.1:10085 2>/dev/null | jq -r '.stat[]? | "\(.name) \(.value)"' | grep 'downlink' | grep -v 'dummy' | grep -v 'api' | awk -F'>>>' '{print $2, $NF}' | awk '{print $1, $NF}' > /etc/wibutunnel/tmp/xray_quota_raw.txt
+# Statistik per-USER saja (bukan per-inbound) dan hitung unggah+unduh: kuota VPN
+# lazim dua arah; kalau hanya unduh, unggahan besar tak pernah kena kuota.
+xray api statsquery --server=127.0.0.1:10085 2>/dev/null | xray_quota_parse > /etc/wibutunnel/tmp/xray_quota_raw.txt
 
 awk '
 FNR==NR { curr[$1] = $2; next }
@@ -31,6 +33,10 @@ END {
         if (!seen[u]) print u ":" curr[u] ":" curr[u]
     }
 }' /etc/wibutunnel/tmp/xray_quota_raw.txt FS=":" OFS=":" "$DB_USAGE" > /etc/wibutunnel/tmp/db_usage.tmp && mv /etc/wibutunnel/tmp/db_usage.tmp "$DB_USAGE"
+
+# Pemakaian akun SSH: dari counter kernel PER-SOKET sesi (lihat usage_apply_ssh);
+# digabung ke DB_USAGE yang sama -> kuota SSH & xray diperlakukan sama.
+usage_apply_ssh
 
 USERS_TO_LOCK=()
 declare -A _LOCKED_USERS=()
@@ -56,6 +62,21 @@ while read -r line; do
     # P1-3: integer math - hindari fork bc dan aman dari locale desimal (koma)
     # Gunakan 10# untuk mencegah bash salah tafsir angka berawalan 0 sebagai oktal (REG-1)
     if (( 10#$total_bytes >= 10#$limit_gb * 1073741824 )); then
+        # Akun SSH (dropbear) tidak pernah ada di konfigurasi xray, jadi harus
+        # ditangani SEBELUM guard di bawah (guard itu melewati user yang tak ada
+        # di config -> tanpa cabang ini, kuota SSH tak akan pernah berefek).
+        if ssh_user_exists "$user"; then
+            lock_ssh_user "$user" "QUOTA_EXCEEDED"
+            (
+                DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+                WAKTU=$(date '+%d %b %Y %H:%M WIB')
+                TERPAKAI=$(usage_gb_label "$(usage_of "$user")")
+                PESAN=$(printf "🔒 <b>AKUN SSH DI-LOCK (KUOTA HABIS)</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Limit    :</b> %s GB\n<b>Terpakai :</b> %s\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>" "$user" "$limit_gb" "$TERPAKAI" "$WAKTU" "$DOMAIN")
+                curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
+            ) &
+            continue
+        fi
+
         # Sudah ditangani sebelumnya (user sudah tidak ada di config) -> jangan notif ulang
         if ! jq -e --arg u "$user" '[.inbounds[].settings.clients[]? | (.email // .password)] | index($u) != null' "$XRAY_CONFIG" >/dev/null 2>&1; then
             continue

@@ -1,0 +1,32 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - wibu-kuota (laporan pemakaian kuota)
+# ==========================================
+# Angka diambil dari SUMBER YANG SAMA dengan penegakan (user_usage.db):
+#   xray  -> `xray api statsquery` (unggah+unduh per user, lihat xray_quota_parse)
+#   SSH   -> counter kernel per-uid (lihat acct_* di common.sh)
+# Pemakaian: wibu-kuota [SSH|VLESS|VMESS|TROJAN]
+source /usr/local/bin/common.sh 2>/dev/null || { echo "[ERROR] common.sh not found" >&2; exit 1; }
+FILTER="${1:-}"
+printf '%-20s %-8s %-12s %-11s %s\n' USER PROTO TERPAKAI LIMIT SISA
+printf '%s\n' "────────────────────────────────────────────────────────────"
+while IFS=: read -r u lim; do
+    [[ -z "$u" ]] && continue
+    if ssh_user_exists "$u"; then proto=SSH
+    elif grep -q "^${u}:" /etc/xray/vless_exp.conf  2>/dev/null; then proto=VLESS
+    elif grep -q "^${u}:" /etc/xray/vmess_exp.conf  2>/dev/null; then proto=VMESS
+    elif grep -q "^${u}:" /etc/xray/trojan_exp.conf 2>/dev/null; then proto=TROJAN
+    else proto=UNKNOWN; fi
+    [[ -n "$FILTER" && "$proto" != "$FILTER" ]] && continue
+    used=$(usage_of "$u")
+    if [[ "$lim" =~ ^[0-9]+$ ]] && (( lim > 0 )); then
+        limit_b=$(( lim * 1073741824 ))
+        sisa=$(( limit_b - used )); (( sisa < 0 )) && sisa=0
+        printf '%-20s %-8s %-12s %-11s %s\n' "$u" "$proto" "$(usage_gb_label "$used")" "${lim} GB" "$(usage_gb_label "$sisa")"
+    else
+        printf '%-20s %-8s %-12s %-11s %s\n' "$u" "$proto" "$(usage_gb_label "$used")" "unlimited" "-"
+    fi
+done < /etc/wibutunnel/limit_bw.db
+echo
+echo "Catatan: angka diperbarui tiap algojo-kuota berjalan (daemon ~1 menit)."
+echo "SSH dihitung dari byte kernel akun itu; xray dari statistik resmi xray."

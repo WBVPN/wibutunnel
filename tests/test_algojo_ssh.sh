@@ -200,4 +200,23 @@ print("PASS: ws-stunnel membaca PROXY protocol v2 (IP asli tak lagi 127.0.0.1)" 
 sys.exit(0 if ok else 1)
 PY
 
+echo "=== TEST 7: atribusi sesi TANPA shell (ssh -N -D) dari log dropbear ==="
+FIX="$REPO_DIR/tests/fixtures/auth-dropbear.txt"
+mkdir -p "$REPO_DIR/tests/fixtures"
+cat > "$FIX" <<'LOG'
+Nov 16 17:05:27 VPSTEST dropbear[401668]: [401668] Nov 16 17:05:27 Password auth succeeded for 'uji-bw' from 43.156.147.95:34738
+Nov 16 17:06:02 VPSTEST dropbear[402001]: [402001] Nov 16 17:06:02 Pubkey auth succeeded for 'roodyz.prem' from 198.51.100.7:2201
+Nov 16 17:06:30 VPSTEST dropbear[402222]: [402222] Nov 16 17:06:30 Exit before auth from <127.0.0.1:58210>: Timeout before auth
+LOG
+OUT=$(SSH_AUTH_LOG_SRC="$FIX" bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; ssh_auth_map_refresh; echo \"\$SSH_AUTH_MAP\"")
+grep -q "^401668 uji-bw$" <<< "$OUT" || { echo "FAIL: pid->user dari log -> '$OUT'"; exit 1; }
+echo "PASS: sesi tanpa shell dipetakan ke user (401668 -> uji-bw)"
+grep -q "^402001 roodyz.prem$" <<< "$OUT" || { echo "FAIL: nama ber-titik di log -> '$OUT'"; exit 1; }
+echo "PASS: nama user ber-titik terbaca dari log"
+grep -q "^402222 " <<< "$OUT" && { echo "FAIL: sesi yang gagal auth ikut dipetakan"; exit 1; }
+echo "PASS: sesi yang gagal autentikasi tidak dianggap pelanggan"
+U=$(SSH_AUTH_LOG_SRC="$FIX" bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; SSH_AUTH_MAP=\"$(ssh_auth_parse < "$FIX")\"; ssh_auth_user_of_pid 401668")
+[[ "$U" == "uji-bw" ]] || { echo "FAIL: ssh_auth_user_of_pid -> '$U'"; exit 1; }
+echo "PASS: ssh_auth_user_of_pid mengembalikan user yang benar"
+
 echo "=== ALL ALGOJO-SSH TESTS PASSED ==="

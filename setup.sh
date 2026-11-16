@@ -1254,9 +1254,10 @@ _need "sbin/wibu-audit-akun" "wibu-audit-akun-dl"
 _need "sbin/wibu-ssl-ulang" "wibu-ssl-ulang-dl"
 _need "sbin/wibu-isp" "wibu-isp-dl"
 _need "sbin/wibu-daemon" "wibu-daemon-dl"
+_need "sbin/wibu-kuota" "wibu-kuota-dl"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp; do
+for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
     fi

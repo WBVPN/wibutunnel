@@ -341,6 +341,7 @@ case $sub_setting in
         safe_update "menu/bot-daemon.sh"
 
         safe_update "sbin/algojo-kuota"
+        safe_update "sbin/wibu-kuota"
         safe_update "sbin/algojo-wibu"
         safe_update "sbin/algojo-ssh"
         safe_update "sbin/algojo-expired"

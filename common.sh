@@ -636,6 +636,35 @@ ssh_ss_lines() {
     done < <(ss -tnp state established 2>/dev/null | grep -E 'dropbear|sshd')
 }
 
+# Peta pid->user dari log autentikasi dropbear. Dropbear dijalankan dengan -E
+# (log ke stderr -> journald), jadi auth.log TIDAK berisi jejak login. Peta ini
+# wajib untuk sesi TANPA shell (`ssh -N -D` / `-L`): uid pelanggan tidak muncul
+# di keturunan proses sama sekali, satu-satunya jejak identitas ada di log ini.
+ssh_auth_parse() { # stdin: baris log dropbear -> "pid user"
+    sed -nE "s/.*dropbear\[([0-9]+)\].*auth succeeded for '([^']+)'.*/\1 \2/p" \
+    | awk '{a[$1] = $2} END { for (p in a) print p, a[p] }'
+}
+
+ssh_auth_map_refresh() { # SSH_AUTH_LOG_SRC = berkas contoh (untuk uji offline)
+    local out
+    if [[ -n "${SSH_AUTH_LOG_SRC:-}" ]]; then
+        out=$(ssh_auth_parse < "$SSH_AUTH_LOG_SRC")
+    else
+        out=$({ journalctl -u dropbear --since "-6 hours" --no-pager 2>/dev/null
+                grep -h "auth succeeded" /var/log/auth.log /var/log/auth.log.1 2>/dev/null
+              } | ssh_auth_parse)
+    fi
+    SSH_AUTH_MAP="$out"
+}
+
+ssh_auth_user_of_pid() { # $1=pid -> cetak user (return 1 bila tak ada di log)
+    [[ -n "${SSH_AUTH_MAP:-}" ]] || ssh_auth_map_refresh
+    local p="$1" u
+    u=$(awk -v p="$p" '$1 == p { print $2 }' <<<"$SSH_AUTH_MAP" 2>/dev/null)
+    [[ -n "$u" ]] && { printf '%s' "$u"; return 0; }
+    return 1
+}
+
 # User sesi dari pid pemilik socket: turun ke keturunan pertama yang merupakan
 # AKUN NYATA (uid >= 1000). Wajib begitu karena sshd 24.04 punya user sistem
 # `sshd` (uid 105) untuk privsep -> koneksi brute-force port 22 akan terbaca
@@ -652,7 +681,8 @@ ssh_pid_session_user() { # $1=pid -> cetak user (return 1 bila tak ada)
         [[ -z "$p" ]] && break
         pid="$p"; i=$((i+1))
     done
-    return 1
+    # Sesi tanpa shell (ssh -N -D / -L): identitas hanya ada di log dropbear.
+    ssh_auth_user_of_pid "$1"
 }
 
 # Snapshot sesi: satu baris per sesi -> "<user>\t<ip-klien|via-WS>"
@@ -771,6 +801,9 @@ renew_ssh_user() {
 
     chage -E "$(date -d "$new" +%Y-%m-%d)" -M $(( ( $(date -d "$new" +%s) - $(date +%s) ) / 86400 + 1 )) -I 0 "$user" >/dev/null 2>&1
     passwd -u "$user" >/dev/null 2>&1
+    # Renew = periode baru: pemakaian kuota dimulai dari nol (kalau tidak, akun yang
+    # sudah menyentuh limit akan langsung terkunci lagi sesaat setelah diperpanjang).
+    usage_reset "$user"
     mkdir -p "$(dirname "$SSH_EXP_FILE")" 2>/dev/null
     db_set "$SSH_EXP_FILE" "$user" "$new"
     db_delete "$user" /etc/wibutunnel/locked_users.db
@@ -835,3 +868,119 @@ ssh_check_login() {
     echo "$ips"
     return 0
 }
+
+
+# ==========================================
+# AKUNTANSI PEMAKAIAN SSH (byte per sesi, dari kernel)
+# ==========================================
+# Kenapa BUKAN iptables per-uid: trafik pelanggan SSH tidak dimiliki proses
+# miliknya (shell-nya ringan), tapi diproksikan proses dropbear milik root.
+# Aturan `-m owner --uid-owner <user>` karenanya mencatat ~0 byte, dan di
+# hook INPUT ditolak sama sekali oleh backend nft. Jadi angka diambil dari
+# counter KERNEL PER-SOKET (tcp_info via `ss -tie`): byte_sent + byte_received
+# pada soket sesi. Semua forward SSH (SHELL/SOCKS/-L/-R) lewat soket itu juga,
+# jadi totalnya = trafik pelanggan pada sesi tersebut.
+ACCT_DB="${ACCT_DB:-/etc/wibutunnel/user_acct.db}"
+USAGE_DB="${USAGE_DB:-/etc/wibutunnel/user_usage.db}"
+
+acct_init() {
+    touch "$ACCT_DB" "$USAGE_DB" 2>/dev/null
+    chmod 600 "$ACCT_DB" "$USAGE_DB" 2>/dev/null
+    return 0
+}
+
+# ssh_sessions_bytes [berkas] — kosong = baca langsung dari kernel.
+# Cetak: "<port_lokal> <pid> <total_byte>"
+ssh_sessions_bytes() {
+    local src="${1:-}"
+    if [[ -n "$src" ]]; then cat "$src"; else ss -tie -tnp 2>/dev/null; fi | awk '
+        /^[^ \t]/ {
+            port = ""; pid = ""; sent = ""; recv = ""; active = 0
+            n = split($4, a, ":")
+            port = a[n]
+            if (index($0, "pid=") > 0) { s = $0; sub(/.*pid=/, "", s); sub(/[^0-9].*/, "", s); pid = s }
+            if ($0 ~ /users:\(\("dropbear"|users:\(\("sshd"/) active = 1
+            next
+        }
+        active == 1 {
+            if (index($0, "bytes_sent:") > 0) { t = $0; sub(/.*bytes_sent:/, "", t); sub(/[^0-9].*/, "", t); sent = t }
+            if (index($0, "bytes_received:") > 0) { t = $0; sub(/.*bytes_received:/, "", t); sub(/[^0-9].*/, "", t); recv = t }
+            if (sent != "" && recv != "") { print port, pid, sent + recv; active = 0 }
+        }
+    '
+}
+
+# acct_apply_one <key> <user> <total_byte>: tambahkan DELTA ke USAGE_DB.
+# key = identitas soket (pid.port) supaya pembacaan berulang tidak dobel hitung;
+# total turun (soket/PID baru) diperlakukan sebagai mulai dari nol, bukan negatif.
+acct_apply_one() {
+    local key="$1" u="$2" total="$3" prev delta
+    [[ -z "$key" || -z "$u" || ! "$total" =~ ^[0-9]+$ ]] && return 0
+    prev=$(db_get "$key" "$ACCT_DB" | cut -d: -f1)
+    [[ "$prev" =~ ^[0-9]+$ ]] || prev=0
+    if (( total >= prev )); then delta=$(( total - prev )); else delta=$total; fi
+    db_set "$ACCT_DB" "$key" "$total"
+    (( delta > 0 )) && usage_add "$u" "$delta"
+    return 0
+}
+
+usage_apply_ssh() { # [berkas-keluaran-ss] — pemetaan sesi->user + akumulasi
+    local port pid total key u counters
+    local -A seen=()
+    acct_init
+    counters=$(ssh_sessions_bytes "${1:-}")
+    [[ -z "$counters" ]] && return 0
+    while read -r port pid total; do
+        [[ -z "$port" || -z "$pid" || -z "$total" ]] && continue
+        u=$(ssh_pid_session_user "$pid") || continue
+        key="${pid}.${port}"
+        seen["$key"]=1
+        acct_apply_one "$key" "$u" "$total"
+    done <<<"$counters"
+    # bersihkan ledger soket yang sudah tutup (total tetap tersimpan di USAGE_DB)
+    local k
+    while IFS=: read -r k _; do
+        [[ -n "$k" ]] || continue
+        [[ -n "${seen[$k]:-}" ]] && continue
+        db_delete "$k" "$ACCT_DB"
+    done < "$ACCT_DB"
+    return 0
+}
+
+usage_add() { # $1=user $2=byte -> tambah ke total (format user:total:last)
+    local u="$1" add="$2" cur total last
+    cur=$(db_get "$u" "$USAGE_DB")
+    total="${cur%%:*}"; last="${cur##*:}"
+    [[ "$total" =~ ^[0-9]+$ ]] || total=0
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0
+    db_set "$USAGE_DB" "$u" "$(( total + add )):$last"
+}
+
+xray_quota_awk() { # input: "<nama_stat> <nilai>" per baris -> "user <total byte>"
+    awk '{
+        split($1, p, ">>>")
+        if (p[1] != "user") next
+        if (p[2] == "") next
+        if (p[4] != "uplink" && p[4] != "downlink") next
+        sum[p[2]] += ($NF + 0)
+      }
+      END { for (u in sum) print u, sum[u] }'
+}
+
+xray_quota_parse() { # stdin: JSON `xray api statsquery` -> "user <total byte>"
+    jq -r '.stat[]? | select(.name | startswith("user>>>")) | "\(.name) \(.value // 0)"' 2>/dev/null \
+    | xray_quota_awk
+}
+
+usage_of() { # $1=user -> total byte
+    local v; v=$(db_get "$1" "$USAGE_DB"); v="${v%%:*}"
+    [[ "$v" =~ ^[0-9]+$ ]] || v=0
+    printf '%s' "$v"
+}
+
+usage_reset() { # $1=user -> pemakaian mulai dari nol (renew / restore)
+    db_delete "$1" "$USAGE_DB"
+    return 0
+}
+
+usage_gb_label() { awk -v b="${1:-0}" 'BEGIN{printf "%.2f GB", b/1073741824}'; }

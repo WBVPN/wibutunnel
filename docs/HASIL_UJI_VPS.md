@@ -351,3 +351,57 @@ nama user xray boleh memuat `._@-` (mis. `roodyz.prem`) -> user ber-titik juga t
 lebih lama dari `LIVE_IP_WINDOW` lepas dari hitungan walau socket-nya masih terbuka; bila klien
 lewat CDN pihak ketiga yang tidak mengirim `CF-Connecting-IP`/`X-Forwarded-For`, IP yang tercatat
 adalah IP edge CDN (bukan pengguna akhir).
+
+---
+
+## 13. Akurasi KUOTA / PEMAKAIAN (SSH + xray) — 2026-11-16
+
+Diminta pemilik: script akan dijual, jadi "pengecekan login IP sama bandwidth-nya harus akurat".
+Hasil audit: kuota punya empat cacat, semuanya sudah diperbaiki dan diukur dengan trafik nyata.
+
+**Cacat 1 — kuota SSH tak pernah diukur.** `algojo-kuota` hanya membaca statistik xray;
+`limit_bw.db` untuk akun SSH tersimpan tapi pemakaiannya selalu 0 -> akun dengan kuota 10 GB
+bisa dipakai ratusan GB tanpa terkunci.
+
+**Cacat 2 — kuota SSH tak akan pernah terkunci walau diukur.** Cabang lock menjalankan
+`jq -e ... index($u) != null` pada konfigurasi xray lebih dulu; akun SSH tidak pernah ada di sana,
+jadi user dilewati sebelum kode lock dijalankan.
+
+**Cacat 3 — arah trafik & statistik salah.** Parser lama hanya menghitung `downlink`
+(unggahan besar "gratis") dan ikut memasukkan statistik per-inbound (mis. `vless-ws-tls`) sebagai
+kalau itu user. Nama user ber-titik juga dipangkas sehingga tidak pernah cocok.
+
+**Cacat 4 — sesi TANPA shell tidak terlihat.** `ssh -N -D` / `-L` (pola paling umum untuk VPN)
+tidak meninggalkan proses shell, jadi atribusi uid gagal: user dianggap offline, dan
+pemakaiannya nol. Kuncinya ada di log dropbear (dijalankan `-E` -> journald, **auth.log kosong**):
+`dropbear[PID]: Password auth succeeded for 'user' from IP:port`.
+
+**Perbaikan:**
+
+1. **Akuntansi SSH dari counter kernel per-soket** (`ss -tie`: `bytes_sent + bytes_received`
+   pada soket sesi) — bukan `iptables -m owner` (trafik pelanggan diproksikan proses root,
+   dan hook INPUT memang ditolak backend nft). Semua forward SSH lewat soket sesi itu.
+   Ledger per-soket (`pid.port`) membuat pembacaan berulang idempoten.
+2. **xray: unggah+unduh dijumlah**, hanya baris `user>>>`, nama user utuh (`.`/`@` dijaga).
+3. **Atribusi fallback dari log dropbear** -> sesi tanpa shell terdeteksi (login IP + kuota).
+4. **Kuota SSH benar-benar mengunci**: cabang SSH dipindah SEBELUM guard konfigurasi xray
+   (`lock_ssh_user user QUOTA_EXCEEDED`).
+5. **Renew mereset pemakaian** (`usage_reset` di `renew_ssh_user`) — akun yang diperpanjang
+   tidak langsung terkunci lagi; ledger soket tetap dipertahankan agar soket hidup tak dihitung ulang.
+6. **`wibu-kuota`** (menu SSH [4] / `wibu-kuota SSH|VLESS|VMESS|TROJAN`): laporan
+   user · protokol · terpakai · limit · sisa — angka dari sumber yang sama dengan penegakan.
+
+**Bukti ukur (VPS uji, trafik sungguhan lewat tunnel):**
+
+| Uji | Hasil |
+|---|---|
+| SSH: 2 × unduh 20.000.000 byte lewat SOCKS (`ssh -N -D`) | tercatat 40.196.968 byte (+0,49% overhead protokol) |
+| SSH: `algojo-kuota` dijalankan ulang tanpa trafik baru | +0 byte (idempoten) |
+| SSH: pemakaian 1.074.769.419 > limit 1 GiB | akun jadi `L` (locked) + `uji-bw:...:QUOTA_EXCEEDED` |
+| SSH: sesi `ssh -N -D` (tanpa shell) | terdeteksi: `count=1`, IP `43.156.147.95` |
+| xray: unduh 20.000.000 byte lewat vless/ws/TLS | pemakaian naik 20.034.479 byte (+0,17%) |
+| Laporan `wibu-kuota SSH` | `uji-bw  SSH  0.04 GB  1 GB  0.96 GB` |
+
+**Batas yang disadari:** angka SSH diambil dari byte pada soket sesi, jadi sesi yang hidup
+lebih singkat daripada jeda `algojo-kuota` (~1 menit) bisa terlewat sebagian; sesi mati pun
+tetap terhitung karena totalnya sudah tersimpan di `user_usage.db`.

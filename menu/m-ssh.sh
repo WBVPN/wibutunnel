@@ -422,7 +422,7 @@ case $sub_menu in
     1) add_ssh_menu; exec m-ssh ;;
     2) trial_ssh_menu; exec m-ssh ;;
     3) delete_ssh_menu; exec m-ssh ;;
-    4) cek_ssh_menu; exec m-ssh ;;
+    4) cek_ssh_menu; command -v wibu-kuota >/dev/null 2>&1 && wibu-kuota SSH; exec m-ssh ;;
     5) renew_ssh_menu; exec m-ssh ;;
     6) detail_ssh_menu; exec m-ssh ;;
     7) change_ip_ssh_menu; exec m-ssh ;;
