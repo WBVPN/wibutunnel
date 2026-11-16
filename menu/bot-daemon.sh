@@ -997,6 +997,23 @@ fi
 OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling bot started (offset: $OFFSET)"
 
+# [SELF-HEAL] Mode polling tapi Telegram masih menyimpan webhook untuk token ini?
+# getUpdates akan dijawab 409 dan bot tampak mati. Kejadian nyata saat GANTI TOKEN:
+# webhook milik token lama tetap terpasang. Bersihkan sekali di awal.
+bot_selfheal_polling() {
+    local info url
+    [[ "$(cat "${BOT_MODE_FILE:-/etc/wibutunnel/tmp/bot_mode}" 2>/dev/null || echo polling)" == "webhook" ]] && return 0
+    info=$(tg_api getWebhookInfo -S --max-time 10 2>/dev/null)
+    url=$(echo "$info" | jq -r '.result.url // empty' 2>/dev/null)
+    if [[ -n "$url" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] webhook masih terpasang ($url) padahal mode polling -> deleteWebhook"
+        tg_api deleteWebhook -X POST >/dev/null 2>&1
+        logger -t wibutunnel-bot "deleteWebhook otomatis (mode polling, webhook $url)" 2>/dev/null || true
+    fi
+    return 0
+}
+bot_selfheal_polling
+
 WEBHOOK_QUEUE="${WEBHOOK_QUEUE:-/etc/wibutunnel/tmp/bot_webhook_queue.jsonl}"
 BOT_MODE_FILE="${BOT_MODE_FILE:-/etc/wibutunnel/tmp/bot_mode}"
 
@@ -1029,7 +1046,8 @@ while true; do
         fi
         case "${_code:-}" in
             401) echo "[!] TOKEN BOT DITOLAK (401). Perbarui /etc/wibutunnel/bot.conf lalu: systemctl restart telegram-bot" >&2 ;;
-            409) echo "[!] TABRAKAN POLLER (409): token yang sama dipakai di VPS lain. Matikan salah satunya." >&2 ;;
+            409) echo "[!] TABRAKAN POLLER (409): token yang sama dipakai di VPS lain, ATAU webhook masih aktif." >&2
+                 bot_selfheal_polling ;;
         esac
         sleep $(( _fails > 5 ? 5 : 1 ))
         continue

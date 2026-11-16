@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.19
+# 🦋 WIBUTUNNEL v4.1.20
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.19-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.20-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 32cbcc4d009ef1994a47ecc5e966a5534d30e1d980888469b837456ed833b493
+sha256sum setup.sh     # harap: b1b8d0de982336917da4bab303ebb403098f5ea5ba2ce095b26b245ec7436300
 bash setup.sh
 ```
 
@@ -202,6 +202,15 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.20 (2026-11-16)
+
+- **Ganti token bot tidak lagi "membuat bot mati".** Saat token diganti, webhook milik
+  **token lama** dilepas dan mode menyesuaikan: webhook -> `setWebhook` ulang untuk token
+  baru; polling -> `deleteWebhook` + penanda mode dipastikan `polling`. (Gejala lama:
+  `getUpdates` dijawab **409 Conflict** karena webhook masih terpasang, bot tampak mati.)
+- **Rekonsiliasi otomatis di daemon**: saat mode polling tapi Telegram masih menyimpan
+  webhook untuk token itu, `bot-daemon` membersihkannya sendiri di awal (dan saat error 409).
 
 ### v4.1.19 (2026-11-16)
 

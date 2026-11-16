@@ -289,4 +289,37 @@ echo "PASS: setiap baris _FILES2 menyaring entri ber-variabel"
 grep "_FILES2 < <" "$REPO_DIR/menu/m-setting.sh" | grep -q '\^' || { echo "FAIL: pola tidak di-anchor"; exit 1; }
 echo "PASS: pola pass kedua di-anchor (^\\s*safe_update)"
 
+echo "=== TEST 14: ganti token & mode bot aman (kasus webhook lama) ==="
+grep -q 'bot_selfheal_polling' "$REPO_DIR/menu/bot-daemon.sh" || { echo "FAIL: daemon tanpa self-heal mode"; exit 1; }
+grep -q 'bot_selfheal_polling ;;' "$REPO_DIR/menu/bot-daemon.sh" || { echo "FAIL: self-heal tidak dipanggil pada 409"; exit 1; }
+grep -q 'OLD_TOKEN=' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: ganti token tidak mencatat token lama"; exit 1; }
+grep -qF 'bot${OLD_TOKEN}/deleteWebhook' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: webhook token lama tidak dilepas"; exit 1; }
+grep -q 'MODE_SEKARANG' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: ganti token tidak menyesuaikan mode"; exit 1; }
+echo "PASS: ganti token melepas webhook token lama + menyesuaikan mode (polling/webhook)"
+
+# perilaku: self-heal harus memanggil deleteWebhook HANYA saat mode polling & webhook terpasang
+HEAL="$TMPD/heal.sh"
+awk '/^bot_selfheal_polling\(\)/,/^}/' "$REPO_DIR/menu/bot-daemon.sh" > "$HEAL"
+[[ -s "$HEAL" ]] || { echo "FAIL: fungsi self-heal tidak ditemukan"; exit 1; }
+run_heal() {   # $1 = isi berkas mode
+    local dir; dir=$(mktemp -d)
+    printf '%s' "$1" > "$dir/mode"; : > "$dir/calls"
+    BOT_MODE_FILE="$dir/mode" CALLS="$dir/calls" bash -c '
+        BOT_MODE_FILE="$BOT_MODE_FILE"
+        tg_api() { echo "CALL:$1" >> "$CALLS"; case "$1" in getWebhookInfo) echo "{\"result\":{\"url\":\"https://x/telehook\"}}";; esac; }
+        jq() { echo "https://x/telehook"; }
+        logger() { :; }
+        source "'"$HEAL"'"
+        bot_selfheal_polling
+    ' >/dev/null 2>&1
+    grep -c deleteWebhook "$dir/calls" 2>/dev/null
+    rm -rf "$dir"
+}
+n_polling=$(run_heal polling)
+[[ "$n_polling" == "1" ]] || { echo "FAIL: mode polling + webhook terpasang -> harus deleteWebhook (dapat $n_polling)"; exit 1; }
+echo "PASS: mode polling + webhook masih terpasang -> deleteWebhook otomatis (bebas 409)"
+n_webhook=$(run_heal webhook)
+[[ "$n_webhook" == "0" ]] || { echo "FAIL: mode webhook tidak boleh deleteWebhook (dapat $n_webhook)"; exit 1; }
+echo "PASS: mode webhook tidak menyentuh webhook sendiri"
+
 echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="
