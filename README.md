@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.16
+# 🦋 WIBUTUNNEL v4.1.17
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.16-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.17-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: ba662be48da903383a25ecf69beb99219bcbecbae5dfb637ed8c49f2179ff711
+sha256sum setup.sh     # harap: 9598eaa431c5dbd84f15ae2471e5aec84a564cdf7c3e8f997473b79443081c6b
 bash setup.sh
 ```
 
@@ -202,6 +202,18 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.17 (2026-11-16)
+Perbaikan daftar lisensi + tampilan masa aktif:
+
+- **Daftar lisensi diambil dari API GitHub lebih dulu** (`Accept: application/vnd.github.raw`); `raw.githubusercontent`
+  dan jsDelivr hanya cadangan. Sebabnya terukur: setelah entri lisensi baru di-push ke `main`, raw **masih
+  menyajikan `izin.txt` versi lama** (cache-buster tak menolong) sehingga **IP yang sah tertolak**.
+- **Validasi isi daftar:** balasan yang bukan daftar lisensi (halaman galat/terpotong) tidak lagi diperlakukan
+  sebagai daftar, jadi tidak membuat IP sah ikut tertolak.
+- **Dashboard:** masa aktif `lifetime` dicetak apa adanya; entri bertanggal ditampilkan sebagai **`30 Hari`**
+  (sisa hari, dibulatkan ke bawah). Tanggal tetap jadi sumber kebenaran di `izin.txt`/cache, hanya tak dipajang.
+- **Uji:** `test_setup_flow` & `test_deep_audit_fixes` tidak lagi mengunci jalur absolut `/root/wibutunnel-repo`.
 
 ### v4.1.16 (2026-11-15)
 Dua masalah Ubuntu 24.04, keduanya bisa menggagalkan instalasi total:

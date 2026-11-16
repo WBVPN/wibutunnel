@@ -87,8 +87,8 @@ ck "13. label lifetime apa adanya, tanpa tambahan" "$LB" "lifetime"
 
 ok=0
 D=$(. "$REPO_DIR/common.sh" >/dev/null 2>&1; license_days_left "$(date -u -d '+30 days' +%F)")
-[[ "$D" =~ ^[0-9]+$ ]] && [[ $D -ge 29 && $D -le 31 ]] && ok=1
-ck "14. sisa hari untuk +30 hari (~30)" "$ok" "1"
+[[ "$D" == "30" ]] && ok=1
+ck "14. pembulatan ke bawah: +30 hari = 30 (dapat '$D')" "$ok" "1"
 
 LBP=$(. "$REPO_DIR/common.sh" >/dev/null 2>&1; license_expiry_label "2020-01-01")
 ck "15. tanggal lampau -> '0 Hari', bukan negatif" "$LBP" "0 Hari"

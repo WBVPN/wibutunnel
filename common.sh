@@ -414,14 +414,16 @@ license_entry() { # $1=baris entri  -> 0 valid, 1 kedaluwarsa, 2 rusak
 }
 
 # Sisa hari menuju EXP (UTC). `lifetime` tidak punya hitungan -> return 1.
-# Pembulatan ke atas: "expired 12 jam lagi" = 1 hari, bukan 0.
+# Pembulatan ke BAWAH (permintaan pemilik): lisensi 30 hari tampil "30 Hari".
+# Konsekuensi yang disadari: pada hari terakhir masa aktif tampil "0 Hari"
+# walaupun lisensi masih berlaku sampai 23:59:59 UTC hari itu.
 license_days_left() { # $1=EXP -> cetak angka hari (minimal 0)
     local e="$1" s n
     [[ -z "$e" || "${e,,}" == "lifetime" ]] && return 1
     [[ "$e" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && e="$e 23:59:59"
     s=$(date -u -d "$e" +%s 2>/dev/null) || return 1
     [[ -z "$s" ]] && return 1
-    n=$(( (s - $(date -u +%s) + 86399) / 86400 ))
+    n=$(( (s - $(date -u +%s)) / 86400 ))
     [[ $n -lt 0 ]] && n=0
     printf '%s' "$n"
 }
