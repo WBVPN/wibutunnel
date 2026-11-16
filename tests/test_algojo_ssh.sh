@@ -147,6 +147,7 @@ rm -f "$LOGF"
 
 python3 - "$REPO_DIR" <<'PY' || exit 1
 import importlib.util, importlib.machinery, sys
+sys.dont_write_bytecode = True          # jangan tinggalkan sbin/__pycache__
 repo = sys.argv[1]
 loader = importlib.machinery.SourceFileLoader('ws', f'{repo}/sbin/ws-stunnel')
 spec = importlib.util.spec_from_loader('ws', loader)
