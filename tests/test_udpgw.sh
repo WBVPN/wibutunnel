@@ -96,6 +96,18 @@ grep -rqI "setWebhook" "$REPO_DIR/menu" "$REPO_DIR/sbin" && { echo "FAIL: masih 
 grep -rqI "bot_webhook_queue" "$REPO_DIR/menu" "$REPO_DIR/sbin" && { echo "FAIL: masih ada antrean webhook"; exit 1; }
 grep -q "telehook" "$REPO_DIR/setup.sh" && { echo "FAIL: rute /telehook masih ada di setup.sh"; exit 1; }
 grep -q "Mode Bot" "$REPO_DIR/menu/m-setting.sh" && { echo "FAIL: menu Mode Bot masih ada"; exit 1; }
+
+echo "=== TEST 6b: config/haproxy.cfg yang dikirim (dipakai Auto-Repair) harus sehat ==="
+HCFG="$REPO_DIR/config/haproxy.cfg"
+[[ -f "$HCFG" ]] || { echo "FAIL: config/haproxy.cfg tidak ada"; exit 1; }
+grep -q "telehook" "$HCFG" && { echo "FAIL: config/haproxy.cfg masih memuat rute webhook"; exit 1; }
+grep -q "8443" "$HCFG" && { echo "FAIL: config/haproxy.cfg masih menunjuk 8443"; exit 1; }
+grep -q "server hub443 127.0.0.1:8444 send-proxy-v2" "$HCFG" || { echo "FAIL: hub443 tanpa send-proxy-v2 (pengguna xray akan terlihat 127.0.0.1)"; exit 1; }
+grep -q "server hub80 127.0.0.1:8445 send-proxy-v2" "$HCFG" || { echo "FAIL: hub80 tanpa send-proxy-v2"; exit 1; }
+grep -q "bind 127.0.0.1:8444 accept-proxy" "$HCFG" || { echo "FAIL: hub443 tanpa accept-proxy"; exit 1; }
+grep -q "bind 127.0.0.1:8445 accept-proxy" "$HCFG" || { echo "FAIL: hub80 tanpa accept-proxy"; exit 1; }
+grep -q "server local_ws_stunnel 127.0.0.1:10015 send-proxy-v2 check" "$HCFG" || { echo "FAIL: ws-stunnel tanpa send-proxy-v2"; exit 1; }
+echo "PASS: config yang dikirim membawa rantai PROXY v2 dan bebas rute webhook"
 echo "PASS: tidak ada berkas/rute/menu webhook yang tersisa"
 
 echo "=== TEST 7: paritas daftar modul (setup.sh <-> Update Script) ==="
