@@ -59,6 +59,13 @@ safe_update() {
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] UNVERIFIED UPDATE (bypass): ${repo_path}" >> /etc/wibutunnel/tmp/bot_error.log
     else
         local expected actual
+        # Manifest diambil SEKALI untuk seluruh berkas (lihat wibu_ambil_manifest di alur
+        # update). Kuota API GitHub tanpa token hanya 60/jam sedangkan satu putaran update
+        # meminta 30+ berkas: tanpa ini, putaran ketiga sudah kehabisan kuota (403) dan
+        # verifikasi turun ke CDN yang bisa basi.
+        if [[ -n "${WIBU_MANIFEST_FILE:-}" && -s "${WIBU_MANIFEST_FILE:-}" ]]; then
+            manifest_file="$WIBU_MANIFEST_FILE"
+        else
         # [FIX] API GitHub = sumber OTORITATIF. Diuji: setelah tag dipindah, raw CDN menyajikan
         # SHA256SUMS LAMA (55 entri vs 57 di API) dan `?cb=` TIDAK menolong -> berkas baru ditolak.
         curl -4 -fSL --retry 2 --connect-timeout 10 --max-time 40 -H 'Accept: application/vnd.github.raw' \
@@ -70,8 +77,9 @@ safe_update() {
         fi
         if [[ ! -s "$manifest_file" ]]; then
             echo -e "${RED}× Manifest SHA256SUMS tidak dapat diunduh. Update DITOLAK (fail-closed).${NC}"
-            rm -f "$tmp_file" "$manifest_file"
+            rm -f "$tmp_file"
             return 1
+        fi
         fi
         expected=$(awk -v f="$repo_path" '$2 == f {print $1}' "$manifest_file" 2>/dev/null | head -n1)
         if [[ -z "$expected" ]]; then
@@ -105,7 +113,6 @@ safe_update() {
             return 1
         fi
         echo -e "${GREEN}✓ SHA256 ${repo_path} cocok.${NC}"
-        rm -f "$manifest_file"
     fi
 
     if [[ -s "$tmp_file" ]]; then
@@ -326,6 +333,23 @@ case $sub_setting in
         clear; echo -e "$LINE"; echo -e "         ${WHITE}UPDATE SCRIPT (SAFE MODE)${NC}"; echo -e "$LINE"
         echo -e "${YELLOW}Mengecek dan mengunduh pembaruan...${NC}"
         
+        # Manifest sekali untuk seluruh putaran (hemat kuota API GitHub).
+        WIBU_MANIFEST_FILE="/etc/wibutunnel/tmp/SHA256SUMS.run.$$"
+        export WIBU_MANIFEST_FILE
+        : > "$WIBU_MANIFEST_FILE"
+        for _msrc in "https://api.github.com/repos/WBVPN/wibutunnel/contents/SHA256SUMS?ref=${WIBU_REF}" \
+                      "https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@${WIBU_REF}/SHA256SUMS" \
+                      "https://raw.githubusercontent.com/WBVPN/wibutunnel/${WIBU_REF}/SHA256SUMS?cb=$(date +%s)"; do
+            curl -4 -fSL -s --retry 2 --connect-timeout 10 --max-time 40 -H 'Accept: application/vnd.github.raw' \
+                -H 'User-Agent: wibutunnel-update' -o "$WIBU_MANIFEST_FILE.try" "$_msrc" 2>/dev/null || true
+            if [[ -s "$WIBU_MANIFEST_FILE.try" ]] && [[ "$(grep -c '^[0-9a-f]\{64\}  ' "$WIBU_MANIFEST_FILE.try" 2>/dev/null)" -ge 10 ]]; then
+                mv "$WIBU_MANIFEST_FILE.try" "$WIBU_MANIFEST_FILE"
+                break
+            fi
+        done
+        rm -f "$WIBU_MANIFEST_FILE.try"
+        echo -e " ${CYAN}Manifest: $(grep -c '^[0-9a-f]\{64\}  ' "$WIBU_MANIFEST_FILE" 2>/dev/null || echo 0) berkas${NC}"
+
         safe_update "menu/menu.sh"
         safe_update "menu/m-vless.sh"
         safe_update "menu/m-vmess.sh"
@@ -385,6 +409,7 @@ case $sub_setting in
         safe_update "$_f" >/dev/null 2>&1 || true
     done
 
+    rm -f "${WIBU_MANIFEST_FILE:-/nonexistent}" 2>/dev/null; unset WIBU_MANIFEST_FILE
     _ver=""
     for _src in "https://api.github.com/repos/WBVPN/wibutunnel/contents/setup.sh?ref=${WIBU_REF}" \
                 "https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@${WIBU_REF}/setup.sh" \

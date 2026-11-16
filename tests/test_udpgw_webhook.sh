@@ -200,4 +200,57 @@ while read -r mod; do
 done < <(grep -oP 'safe_update "\K(sbin/[^"]+)' "$REPO_DIR/menu/m-setting.sh" | sort -u)
 echo "PASS: semua entri safe_update sbin ada padanannya di setup.sh"
 
+echo "=== TEST 10: manifest diambil sekali per putaran update (hemat kuota API) ==="
+grep -q 'WIBU_MANIFEST_FILE' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: m-setting tidak memakai manifest bersama"; exit 1; }
+grep -q 'cdn.jsdelivr.net/gh/WBVPN/wibutunnel' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: jsDelivr tidak dipakai sebagai cadangan manifest"; exit 1; }
+grep -q 'if \[\[ -n "${WIBU_MANIFEST_FILE:-}" && -s "${WIBU_MANIFEST_FILE:-}" \]\]' "$REPO_DIR/menu/m-setting.sh" \
+    || { echo "FAIL: safe_update tidak memakai manifest bersama"; exit 1; }
+echo "PASS: safe_update memakai manifest bersama + cadangan jsDelivr"
+
+# jalankan potongan pengambilan manifest dengan curl palsu: hitung berapa kali dipanggil
+CD="$TMPD/bin-curl"; mkdir -p "$CD"
+cat > "$CD/curl" <<'STUB'
+#!/bin/bash
+COUNT_FILE="${CURL_COUNT:-/dev/null}"
+echo x >> "$COUNT_FILE"
+MANIFEST_OUT=""
+prev=""
+for a in "$@"; do
+    [[ "$prev" == "-o" ]] && MANIFEST_OUT="$a"
+    prev="$a"
+done
+if [[ -n "$MANIFEST_OUT" ]]; then
+    : > "$MANIFEST_OUT"
+    i=0
+    while [[ $i -lt 12 ]]; do
+        printf '%064d  berkas-%02d\n' "$i" "$i" >> "$MANIFEST_OUT"
+        i=$((i+1))
+    done
+fi
+exit 0
+STUB
+chmod +x "$CD/curl"
+export CURL_COUNT="$TMPD/curl.count"; : > "$CURL_COUNT"
+SNIP="$TMPD/manifest.snip"
+python3 - "$REPO_DIR/menu/m-setting.sh" "$SNIP" <<'PY'
+import pathlib, sys, re
+src = pathlib.Path(sys.argv[1]).read_text()
+i = src.index('        # Manifest sekali untuk seluruh putaran')
+j = src.index('        safe_update "menu/menu.sh"', i)
+snippet = src[i:j]
+snippet = snippet.replace('WIBU_MANIFEST_FILE="/etc/wibutunnel/tmp/SHA256SUMS.run.$$"',
+                          'WIBU_MANIFEST_FILE="%s/SUMS.run"' % pathlib.Path(sys.argv[2]).parent)
+pathlib.Path(sys.argv[2]).write_text('#!/bin/bash\nWIBU_REF=main\n' + snippet + '\necho "MANIFEST=$WIBU_MANIFEST_FILE"\n')
+PY
+chmod +x "$SNIP"
+out=$(PATH="$CD:$PATH" bash "$SNIP" 2>&1 || true)
+MF=$(sed -n 's/^MANIFEST=//p' <<< "$out")
+[[ -s "$MF" ]] || { echo "FAIL: manifest tidak terbentuk -> $out"; exit 1; }
+MF_CNT=$(grep -cE '^[0-9a-f]{64}  ' "$MF" || true)
+[[ "$MF_CNT" -ge 10 ]] || { echo "FAIL: isi manifest kurang ($MF_CNT entri)"; exit 1; }
+echo "PASS: manifest terkumpul sekali ke berkas bersama ($MF_CNT entri)"
+n=$(wc -l < "$CURL_COUNT")
+[[ "$n" -le 2 ]] || { echo "FAIL: curl dipanggil $n kali (harus berhenti di sumber pertama yang berhasil)"; exit 1; }
+echo "PASS: berhenti di sumber pertama yang berhasil (curl dipanggil $n kali, bukan per berkas)"
+
 echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="
