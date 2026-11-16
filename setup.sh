@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.20
+# MASTER INSTALLER WIBU TUNNELING - v4.1.21
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -148,7 +148,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.20}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.21}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -388,7 +388,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.20" > /etc/wibutunnel/version
+echo "4.1.21" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -917,12 +917,10 @@ frontend ssl_sni
     acl is_h2 ssl_fc_alpn -i h2
     acl is_xray path_beg /vless /vmess /trojan
     acl is_xray path_beg %2Fvless %2Fvmess %2Ftrojan
-    acl is_telehook path_beg /telehook
 
     use_backend dropbear_raw if is_raw_ssh
     use_backend bk_hub443 if is_h2
     use_backend bk_hub443 if is_xray
-    use_backend bk_hub443 if is_telehook
     default_backend ws_tunnel
 
 frontend port_80_front
@@ -981,9 +979,6 @@ listen http_hub443
     acl is_vmess_ws path_beg %2Fvmess
     acl is_trojan_ws path_beg /trojan
     acl is_trojan_ws path_beg %2Ftrojan
-    acl is_telehook path_beg /telehook
-    acl is_telehook path_beg %2Ftelehook
-    use_backend webhook_server if is_telehook
     use_backend xray_vless_grpc if is_vless_grpc
     use_backend xray_vmess_grpc if is_vmess_grpc
     use_backend xray_trojan_grpc if is_trojan_grpc
@@ -1038,9 +1033,6 @@ backend ssh_ws_backend
     mode http
     server local_ws_stunnel 127.0.0.1:10015 check
 
-backend webhook_server
-    mode http
-    server local_webhook 127.0.0.1:8443
 HFEOF
 
 # [PORTABILITAS] Rentang HAProxy yang didukung lebar (2.0 Ubuntu 20.04 .. 2.8 Ubuntu 24.04). Validasi
@@ -1256,11 +1248,9 @@ _need "sbin/wibu-isp" "wibu-isp-dl"
 _need "sbin/wibu-daemon" "wibu-daemon-dl"
 _need "sbin/wibu-kuota" "wibu-kuota-dl"
 _need "sbin/wibu-udpgw" "wibu-udpgw-dl"
-_need "sbin/bot-webhook-server" "bot-webhook-server"
-_need "sbin/wibu-units" "wibu-units"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota wibu-udpgw bot-webhook-server wibu-units; do
+for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota wibu-udpgw; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
     fi
@@ -1446,12 +1436,7 @@ systemctl enable dropbear.service ws-stunnel.service >/dev/null 2>&1
 # 'failed' walau layanannya sudah berjalan normal setelah installer menulis konfigurnya).
 systemctl reset-failed dropbear.service haproxy.service ws-stunnel.service >/dev/null 2>&1 || true
 systemctl restart dropbear.service ws-stunnel.service >/dev/null 2>&1
-# Unit systemd yang ditambahkan setelah instalasi awal (mis. bot-webhook) ditulis
-# oleh sbin/wibu-units — satu sumber kebenaran, sekaligus jalur untuk menu [5] Update.
-if [[ -x /usr/local/sbin/wibu-units ]]; then
-    /usr/local/sbin/wibu-units sync 2>&1 | sed 's/^/    /'
-    /usr/local/sbin/wibu-units start 2>&1 | sed 's/^/    /'
-fi
+# (unit systemd tambahan tidak diperlukan: panel memakai polling, tanpa webhook)
 
 # UDP gateway (badvpn-udpgw): dipakai klien untuk UDP (game/DNS/QUIC). Baris "UDPGW"
 # di pesan akun SSH baru hanya bermakna kalau layanan ini benar-benar ada. Gagal build
@@ -1594,7 +1579,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.20" > /etc/wibutunnel/version
+echo "4.1.21" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

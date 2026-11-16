@@ -986,7 +986,7 @@ if [[ -z "$BOT_TOKEN" || -z "$CHAT_ID" ]]; then
     exit 1
 fi
 
-# Delete webhook if exists
+# Bersihkan webhook (bot ini polling: tak boleh ada webhook terpasang)
 tg_api deleteWebhook >/dev/null
 
 if ! check_license_silent; then
@@ -1002,7 +1002,6 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling bot started (offset: $OFFSET)"
 # webhook milik token lama tetap terpasang. Bersihkan sekali di awal.
 bot_selfheal_polling() {
     local info url
-    [[ "$(cat "${BOT_MODE_FILE:-/etc/wibutunnel/tmp/bot_mode}" 2>/dev/null || echo polling)" == "webhook" ]] && return 0
     info=$(tg_api getWebhookInfo -S --max-time 10 2>/dev/null)
     url=$(echo "$info" | jq -r '.result.url // empty' 2>/dev/null)
     if [[ -n "$url" ]]; then
@@ -1014,24 +1013,8 @@ bot_selfheal_polling() {
 }
 bot_selfheal_polling
 
-WEBHOOK_QUEUE="${WEBHOOK_QUEUE:-/etc/wibutunnel/tmp/bot_webhook_queue.jsonl}"
-BOT_MODE_FILE="${BOT_MODE_FILE:-/etc/wibutunnel/tmp/bot_mode}"
-
 while true; do
-    # [WEBHOOK] Telegram -> bot-webhook-server -> antrean -> di sini. Saat mode webhook,
-    # getUpdates DILARANG (Telegram membalas 409 "webhook is active"), jadi update dibaca
-    # dari antrean dan dibungkus menyerupai balasan getUpdates supaya seluruh pemrosesan
-    # update di bawah tidak perlu diubah sama sekali.
-    if [[ -s "$WEBHOOK_QUEUE" ]]; then
-        resp=$(jq -c -s '{ok:true, result:.}' "$WEBHOOK_QUEUE" 2>/dev/null)
-        : > "$WEBHOOK_QUEUE"
-        if [[ -z "$resp" ]]; then sleep 1; continue; fi
-    elif [[ "$(cat "$BOT_MODE_FILE" 2>/dev/null)" == "webhook" ]]; then
-        sleep 1
-        continue
-    else
-        resp=$(tg_api getUpdates -S --max-time 35 -G --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=30" 2>&1)
-    fi
+    resp=$(tg_api getUpdates -S --max-time 35 -G --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=30" 2>&1)
     
     if [[ $(echo "$resp" | jq -r '.ok' 2>/dev/null) != "true" ]]; then
         # [FIX] Jangan gagal diam-diam. Sebelumnya loop ini hanya `sleep 1; continue`,
@@ -1046,7 +1029,7 @@ while true; do
         fi
         case "${_code:-}" in
             401) echo "[!] TOKEN BOT DITOLAK (401). Perbarui /etc/wibutunnel/bot.conf lalu: systemctl restart telegram-bot" >&2 ;;
-            409) echo "[!] TABRAKAN POLLER (409): token yang sama dipakai di VPS lain, ATAU webhook masih aktif." >&2
+            409) echo "[!] TABRAKAN POLLER (409): token yang sama dipakai di VPS lain, ATAU webhook masih terpasang di token ini." >&2
                  bot_selfheal_polling ;;
         esac
         sleep $(( _fails > 5 ? 5 : 1 ))

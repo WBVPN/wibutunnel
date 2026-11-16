@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.20
+# 🦋 WIBUTUNNEL v4.1.21
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.20-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.21-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: b1b8d0de982336917da4bab303ebb403098f5ea5ba2ce095b26b245ec7436300
+sha256sum setup.sh     # harap: ece5459d4d1c767f7ac141578a7c20373dfbd41ed4c20847f6fc13c23291acca
 bash setup.sh
 ```
 
@@ -202,6 +202,14 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.21 (2026-11-16)
+
+- **Mode webhook bot Telegram DIBATALKAN** (keputusan pemilik: "biar ke depan tidak bingung").
+  Panel kembali ke satu cara kerja bot: **polling**. Penanganan aman saat ganti token tetap:
+  webhook token lama & baru dilepas, dan `bot-daemon` menghapus sendiri webhook yang masih
+  nyangkut saat start maupun saat error 409. Rute `/telehook` dan layanan penerima webhook
+  dihapus dari panel.
 
 ### v4.1.20 (2026-11-16)
 

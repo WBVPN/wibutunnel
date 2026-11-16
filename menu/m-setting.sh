@@ -375,8 +375,6 @@ case $sub_setting in
         safe_update "sbin/algojo-kuota"
         safe_update "sbin/wibu-kuota"
         safe_update "sbin/wibu-udpgw"
-        safe_update "sbin/bot-webhook-server"
-        safe_update "sbin/wibu-units"
         safe_update "sbin/wibu-isp"
         safe_update "sbin/wibu-ssl-ulang"
         safe_update "sbin/algojo-wibu"
@@ -403,7 +401,6 @@ case $sub_setting in
     # Berkas baru (mis. sbin/wibu-udpgw) tidak ada di daftar m-setting LAMA yang sedang
     # dipakai menjalankan update ini — ulangi sekali lagi memakai daftar yang baru saja
     # terpasang, lalu selaraskan unit systemd (unit tidak ikut terunduh oleh safe_update).
-    [[ -x /usr/local/sbin/wibu-units ]] && /usr/local/sbin/wibu-units sync >/dev/null 2>&1
     if [[ -x /usr/local/sbin/m-setting ]]; then
         mapfile -t _FILES2 < <(grep -oP '^\s*safe_update "\K[^"]+' /usr/local/sbin/m-setting | grep -v '\$' | sed '/^$/d')
     elif [[ -x /usr/local/bin/m-setting ]]; then
@@ -455,10 +452,9 @@ case $sub_setting in
         echo -e " [2] Hidupkan (Start) Bot"
         echo -e " [3] Matikan (Stop) Bot"
         echo -e " [4] Bersihkan Log Bot"
-        echo -e " [5] Mode Bot (Polling / Webhook)"
         echo -e " [0] Kembali"
         echo -e "$LINE"
-        read -p " Pilih opsi [0-5]: " sub_bot
+        read -p " Pilih opsi [0-4]: " sub_bot
         case $sub_bot in
             1)
                 echo -e " ${YELLOW}Ketik [0] untuk batal.${NC}"
@@ -489,34 +485,14 @@ EOFBOT
                     echo "0" > /etc/wibutunnel/tmp/bot_offset
                     rm -f /etc/wibutunnel/tmp/bot_state_* 2>/dev/null
 
-                    # GANTI TOKEN: webhook milik TOKEN LAMA wajib dilepas (kalau tidak, bot lama
-                    # tetap menunjuk ke VPS ini). Untuk token baru, mode mengikuti berkas mode:
-                    #   webhook -> setWebhook ulang (kalau tidak: Telegram tidak mengirim apa pun)
-                    #   polling -> deleteWebhook + pastikan berkas mode = polling (kalau tidak:
-                    #              getUpdates dijawab 409 dan bot tampak "tak bisa ganti token")
+                    # GANTI TOKEN: bot ini memakai POLLING, jadi webhook milik TOKEN LAMA maupun
+                    # token baru harus kosong. Kalau tidak, getUpdates dijawab 409 dan bot tampak
+                    # mati (gejala lama: "ganti token bot lalu bot tidak jalan").
                     if [[ -n "${OLD_TOKEN:-}" && "$OLD_TOKEN" != "$input_token" ]]; then
                         curl -4 -s -X POST "https://api.telegram.org/bot${OLD_TOKEN}/deleteWebhook" >/dev/null 2>&1
                         echo -e " ${CYAN}[i] Webhook token lama dilepas.${NC}"
                     fi
-                    MODE_SEKARANG=$(cat /etc/wibutunnel/tmp/bot_mode 2>/dev/null || echo polling)
-                    SEC_W=$(grep -oP '^WEBHOOK_SECRET="\K[^"]+' /etc/wibutunnel/bot.conf 2>/dev/null || true)
-                    DOM_W=$(cat /etc/xray/domain 2>/dev/null || true)
-                    if [[ "$MODE_SEKARANG" == "webhook" && -n "$SEC_W" && -n "$DOM_W" ]]; then
-                        res_w=$(curl -4 -sS --max-time 15 -X POST "https://api.telegram.org/bot${input_token}/setWebhook" \
-                                  -d "url=https://${DOM_W}/telehook" -d "secret_token=${SEC_W}" \
-                                  -d 'allowed_updates=["message","callback_query"]' 2>/dev/null)
-                        if echo "$res_w" | jq -e '.ok == true' >/dev/null 2>&1; then
-                            echo -e " ${GREEN}[OK] Token baru dipasang + webhook dipasang ulang (mode WEBHOOK).${NC}"
-                        else
-                            echo -e " ${RED}[!] setWebhook token baru gagal -> dikembalikan ke POLLING.${NC}"
-                            echo "polling" > /etc/wibutunnel/tmp/bot_mode
-                            curl -4 -s -X POST "https://api.telegram.org/bot${input_token}/deleteWebhook" >/dev/null 2>&1
-                        fi
-                    else
-                        echo "polling" > /etc/wibutunnel/tmp/bot_mode
-                        curl -4 -s -X POST "https://api.telegram.org/bot${input_token}/deleteWebhook" >/dev/null 2>&1
-                        echo -e " ${GREEN}[OK] Token baru dipasang (mode POLLING).${NC}"
-                    fi
+                    curl -4 -s -X POST "https://api.telegram.org/bot${input_token}/deleteWebhook" >/dev/null 2>&1
                     systemctl restart telegram-bot >/dev/null 2>&1
 
                     echo -e " ${CYAN}[+] Mengirim pesan konfirmasi koneksi...${NC}"
@@ -552,68 +528,7 @@ EOFBOT
                 > /etc/wibutunnel/tmp/bot_error.log
                 echo -e "${GREEN}Log Bot Telegram (/etc/wibutunnel/tmp/bot_error.log) berhasil dibersihkan!${NC}"
                 ;;
-            5)
-                source /etc/wibutunnel/bot.conf 2>/dev/null
-                if [[ -z "${BOT_TOKEN:-}" ]]; then
-                    echo -e "${RED}[!] BOT TOKEN belum dikonfigurasi. Pilih opsi [1] dahulu.${NC}"
-                else
-                    DOMAIN_W=$(cat /etc/xray/domain 2>/dev/null || echo "")
-                    wh_info=$(curl -4 -sS --max-time 8 "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo" 2>/dev/null)
-                    wh_url=$(echo "$wh_info" | jq -r '.result.url // empty' 2>/dev/null)
-                    if [[ -n "$wh_url" ]]; then MODE_KINI="${GREEN}WEBHOOK${NC} ($wh_url)"; else MODE_KINI="${YELLOW}POLLING${NC}"; fi
-                    echo -e "\n Mode sekarang    : $MODE_KINI"
-                    echo -e " Domain panel     : ${DOMAIN_W:-belum diset}"
-                    echo -e " Antrean webhook  : $(wc -l < /etc/wibutunnel/tmp/bot_webhook_queue.jsonl 2>/dev/null || echo 0) update menunggu"
-                    echo -e "\n ${CYAN}[1] Polling${NC}  — tarik update sendiri (paling aman, default)"
-                    echo -e " ${CYAN}[2] Webhook${NC}  — Telegram yang mendorong update (hemat & responsif)"
-                    read -p " Pilih [1/2, 0=batal]: " mode_bot
-                    case "$mode_bot" in
-                        2)
-                            if [[ -z "$DOMAIN_W" ]]; then
-                                echo -e "${RED}[!] Domain panel belum ada (/etc/xray/domain). Set domain dulu (menu Setting [8]).${NC}"
-                            elif ! systemctl cat bot-webhook >/dev/null 2>&1; then
-                                echo -e "${RED}[!] Unit bot-webhook belum terpasang. Jalankan menu [5] Update Script lebih dulu.${NC}"
-                            else
-                                SEC=$(grep -oP '^WEBHOOK_SECRET="\K[^"]+' /etc/wibutunnel/bot.conf 2>/dev/null)
-                                if [[ -z "$SEC" ]]; then
-                                    SEC=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
-                                    if grep -q '^WEBHOOK_SECRET=' /etc/wibutunnel/bot.conf 2>/dev/null; then
-                                        sed -i "s|^WEBHOOK_SECRET=.*|WEBHOOK_SECRET=\"${SEC}\"|" /etc/wibutunnel/bot.conf
-                                    else
-                                        printf 'WEBHOOK_SECRET="%s"\n' "$SEC" >> /etc/wibutunnel/bot.conf
-                                    fi
-                                    chmod 600 /etc/wibutunnel/bot.conf
-                                fi
-                                echo "webhook" > /etc/wibutunnel/tmp/bot_mode
-                                systemctl enable bot-webhook >/dev/null 2>&1
-                                systemctl restart bot-webhook >/dev/null 2>&1
-                                sleep 1
-                                res=$(curl -4 -sS --max-time 15 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
-                                        -d "url=https://${DOMAIN_W}/telehook" -d "secret_token=${SEC}" \
-                                        -d 'allowed_updates=["message","callback_query"]' 2>/dev/null)
-                                if echo "$res" | jq -e '.ok == true' >/dev/null 2>&1; then
-                                    systemctl restart telegram-bot >/dev/null 2>&1
-                                    echo -e "${GREEN}[✓] Webhook aktif: https://${DOMAIN_W}/telehook${NC}"
-                                    echo -e "${YELLOW}    Uji cepat dari luar: curl -4 -s -o /dev/null -w '%{http_code}' https://${DOMAIN_W}/telehook → 403/400 = rute hidup.${NC}"
-                                else
-                                    echo -e "${RED}[!] Telegram menolak setWebhook: $(echo "$res" | jq -r '.description // "tidak diketahui"' 2>/dev/null)${NC}"
-                                    echo "polling" > /etc/wibutunnel/tmp/bot_mode
-                                    echo -e "${YELLOW}    Otomatis dikembalikan ke mode polling.${NC}"
-                                fi
-                            fi
-                            ;;
-                        0) echo -e "${YELLOW}Dibatalkan.${NC}" ;;
-                        *)
-                            curl -4 -sS --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
-                            echo "polling" > /etc/wibutunnel/tmp/bot_mode
-                            systemctl disable --now bot-webhook >/dev/null 2>&1
-                            systemctl restart telegram-bot >/dev/null 2>&1
-                            echo -e "${GREEN}[✓] Kembali ke mode POLLING.${NC}"
-                            ;;
-                    esac
-                fi
-                read -n 1 -s -r -p "Tekan tombol apa saja..."
-                ;;
+
             0) exec m-setting ;;
             *) echo -e "${RED}Pilihan salah!${NC}" ;;
         esac

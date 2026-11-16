@@ -439,20 +439,20 @@ templated `badvpn-udpgw@<port>.service` untuk 6 port.
 
 Tes ini ikut dikirim sebagai `tests/test_udpgw_live.sh` (dijalankan di VPS panel).
 
-**2) Mode webhook bot Telegram.** `sbin/bot-webhook-server` mendengarkan `127.0.0.1:8443`
-di balik rute haproxy `/telehook`, memvalidasi `X-Telegram-Bot-Api-Secret-Token`
-**fail-closed**, lalu menaruh update ke `tmp/bot_webhook_queue.jsonl`. `bot-daemon`
-membaca antrean itu lebih dulu sebagai `{"ok":true,"result":[...]}` sehingga seluruh
-pemrosesan update tidak berubah, dan saat mode webhook ia **tidak** memanggil `getUpdates`
-(kalau tidak: Telegram membalas 409 karena webhook aktif). Ganti mode:
-Setting → Bot Telegram → **[5] Mode Bot**.
+**2) Mode webhook bot Telegram — DIBATALKAN di v4.1.21 (keputusan pemilik, 2026-11-16).**
+Fitur ini sempat dibuat lengkap (`sbin/bot-webhook-server` + antrean + menu [5] Mode Bot,
+rute haproxy `/telehook` → `127.0.0.1:8443`, secret fail-closed, dan uji HTTP 503/403/400/200),
+lalu **dicabut seluruhnya** supaya panel hanya punya satu cara kerja bot yang sederhana:
+**polling**. Pemilik sebelumnya pernah tertahan masalah "ganti token bot lalu bot mati" yang
+berakar pada ketidakcocokan state webhook; polling menghapus kelas masalah itu.
 
-| Uji | Hasil |
-|---|---|
-| `/health` lokal 8443 | `HTTP 200` + `{"ok":true,...,"secret_configured":false}` |
-| `POST https://<domain>/telehook` (tanpa secret) | **HTTP 503** dari internet (fail-closed, rute hidup) |
-| `GET https://<domain>/telehook` | HTTP 404 (hanya POST) |
-| Uji unit (lokal) | 503 tanpa secret · 403 secret salah · 400 body bukan JSON · 200 + masuk antrean |
+Yang **tetap** ada setelah pencabutan (semua demi keamanan ganti token, bukan fitur webhook):
+- ganti token di menu Setting **[1]** melepas webhook token lama **dan** token baru
+  (`deleteWebhook` untuk keduanya);
+- `bot-daemon` memanggil `bot_selfheal_polling()` saat start dan saat error **409**, yang
+  menghapus webhook yang masih terpasang pada token ini (kalau ada sisa dari percobaan lama);
+- berkas `sbin/bot-webhook-server`, `sbin/wibu-units`, rute `/telehook`, dan menu **[5] Mode Bot**
+  sudah tidak ada lagi — kalau ke depan ada yang mencarinya, memang sengaja dibuang.
 
 **3) Toleransi IP 600 detik** (`WIBU_IP_TTL`, sebelumnya 120): IP 5 menit lalu masih
 dianggap terhubung (uji), IP 2 jam lalu diabaikan, dan nilainya bisa disetel.

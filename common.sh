@@ -998,8 +998,3 @@ udpgw_active_ports() {
     return 0
 }
 
-# Mode bot telegram: polling (default) atau webhook.
-bot_mode() {
-    local m; m=$(cat /etc/wibutunnel/tmp/bot_mode 2>/dev/null || echo polling)
-    [[ "$m" == "webhook" ]] && printf 'webhook' || printf 'polling'
-}
