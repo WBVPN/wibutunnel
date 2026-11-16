@@ -281,4 +281,12 @@ grep -q 'PacketProto' "$REPO_DIR/docs/HASIL_UJI_VPS.md" || { echo "FAIL: docs be
 echo "PASS: uji live tersedia + dua detail protokol terdokumentasi"
 bash "$REPO_DIR/tests/test_udpgw_live.sh" 2>&1 | tail -2 | sed 's/^/  /'
 
+echo "=== TEST 13: penyaring entri ber-variabel pada pass kedua ==="
+grep -qF "grep -v '\$'" "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: entri ber-variabel tidak disaring"; exit 1; }
+FAKE2="$TMPD/ms.fake2"
+printf '%s\n' '        safe_update "menu/menu.sh"' '        safe_update "$_f"' '        safe_update "${_FILES2[0]}"' > "$FAKE2"
+p2=$(grep -oP '^\s*safe_update "\K[^"]+' "$FAKE2" | grep -v '\$' | sed '/^$/d' | tr '\n' ' ')
+[[ "$p2" == "menu/menu.sh " ]] || { echo "FAIL: penyaring variabel -> '$p2'"; exit 1; }
+echo "PASS: pemanggilan ber-variabel tersaring dari daftar pass kedua"
+
 echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="
