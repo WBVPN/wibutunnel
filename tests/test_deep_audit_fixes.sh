@@ -9,8 +9,9 @@
 # 5. ws-stunnel target socket cleanup
 # ==============================================================================
 set -euo pipefail
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-REPO_DIR="/root/wibutunnel-repo"
+
 TMP_DIR=$(mktemp -d /tmp/wibu_deep_test.XXXXXX)
 trap 'rm -rf "$TMP_DIR"' EXIT
 

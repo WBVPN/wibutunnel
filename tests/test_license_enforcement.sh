@@ -80,5 +80,18 @@ ck "11. setup.sh tidak memercayai ./izin.txt lokal" "$L" "0"
 C=$(grep -c 'VALID|%s|%s|%s' "$REPO_DIR/common.sh" || true)
 ck "12. cache lisensi menyimpan IP" "$C" "1"
 
+# 13-15. Label tampilan masa aktif (aturan pemilik): lifetime apa adanya,
+#        entri bertanggal -> "( N Hari )" saja, tanggal lampau -> 0 hari.
+LB=$(. "$REPO_DIR/common.sh" >/dev/null 2>&1; license_expiry_label lifetime)
+ck "13. label lifetime apa adanya, tanpa tambahan" "$LB" "lifetime"
+
+ok=0
+D=$(. "$REPO_DIR/common.sh" >/dev/null 2>&1; license_days_left "$(date -u -d '+30 days' +%F)")
+[[ "$D" =~ ^[0-9]+$ ]] && [[ $D -ge 29 && $D -le 31 ]] && ok=1
+ck "14. sisa hari untuk +30 hari (~30)" "$ok" "1"
+
+LBP=$(. "$REPO_DIR/common.sh" >/dev/null 2>&1; license_expiry_label "2020-01-01")
+ck "15. tanggal lampau -> '( 0 Hari )', bukan negatif" "$LBP" "( 0 Hari )"
+
 echo "=========== LISENSI: $PASS PASS / $FAIL FAIL ==========="
 [[ $FAIL -eq 0 ]]

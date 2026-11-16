@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-SETUP_FILE="/root/wibutunnel-repo/setup.sh"
-SETTING_FILE="/root/wibutunnel-repo/menu/m-setting.sh"
+SETUP_FILE="$REPO_DIR/setup.sh"
+SETTING_FILE="$REPO_DIR/menu/m-setting.sh"
 
 echo "1. Checking setup.sh for apt-get upgrade..."
 if grep -q 'apt-get upgrade' "$SETUP_FILE"; then
@@ -87,8 +88,8 @@ validate_script() {
 
 validate_script "$TEST_TMP_DIR/valid_bash.sh" "valid_bash" || { echo "ASSERT_FAILED: valid bash rejected"; exit 1; }
 validate_script "$TEST_TMP_DIR/valid_py.py" "valid_py" || { echo "ASSERT_FAILED: valid python rejected"; exit 1; }
-validate_script "/root/wibutunnel-repo/menu/menu.sh" "menu.sh" || { echo "ASSERT_FAILED: menu.sh rejected"; exit 1; }
-validate_script "/root/wibutunnel-repo/sbin/ws-stunnel" "ws-stunnel" || { echo "ASSERT_FAILED: ws-stunnel rejected"; exit 1; }
+validate_script "$REPO_DIR/menu/menu.sh" "menu.sh" || { echo "ASSERT_FAILED: menu.sh rejected"; exit 1; }
+validate_script "$REPO_DIR/sbin/ws-stunnel" "ws-stunnel" || { echo "ASSERT_FAILED: ws-stunnel rejected"; exit 1; }
 
 if validate_script "$TEST_TMP_DIR/bad_bash.sh" "bad_bash"; then
     echo "ASSERT_FAILED: invalid bash accepted"
@@ -105,7 +106,7 @@ fi
 echo "download_menu validation logic check: PASS"
 
 echo "6. Checking all files in _need calls in setup.sh exist in repo..."
-REPO_DIR="/root/wibutunnel-repo"
+
 grep -E '^\s*_need\s+"' "$SETUP_FILE" | while read -r line; do
     rel_path=$(echo "$line" | sed -E 's/.*_need\s+"([^"]+)".*/\1/')
     if [ ! -f "$REPO_DIR/$rel_path" ]; then
@@ -153,7 +154,7 @@ fi
 echo "setup.sh xray config permission check: PASS"
 
 echo "10. Checking common.sh safe_jq_edit permission and ownership..."
-COMMON_FILE="/root/wibutunnel-repo/common.sh"
+COMMON_FILE="$REPO_DIR/common.sh"
 if ! grep -q 'chown root:xray "$src" 2>/dev/null || true' "$COMMON_FILE"; then
     echo "ASSERT_FAILED: common.sh missing chown root:xray on edit"
     exit 1

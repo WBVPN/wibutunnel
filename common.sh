@@ -322,7 +322,7 @@ show_license_expired() {
     echo -e "${LINE}"
     echo -e " Klien       : ${YELLOW}${name}${NC}"
     echo -e " IP VPS      : ${WHITE}${MYIP}${NC}"
-    echo -e " Expired On  : ${RED}${exp}${NC}"
+    echo -e " Expired On  : ${RED}$(license_expiry_label "$exp")${NC}"
     echo -e "${LINE}"
     echo -e " Silakan hubungi Admin untuk perpanjangan lisensi."
     echo -e " WhatsApp : ${GREEN}087757315408${NC}"
@@ -411,6 +411,28 @@ license_entry() { # $1=baris entri  -> 0 valid, 1 kedaluwarsa, 2 rusak
     [[ -z "$s" ]] && return 2
     [[ $(date -u +%s) -gt $s ]] && return 1
     return 0
+}
+
+# Sisa hari menuju EXP (UTC). `lifetime` tidak punya hitungan -> return 1.
+# Pembulatan ke atas: "expired 12 jam lagi" = 1 hari, bukan 0.
+license_days_left() { # $1=EXP -> cetak angka hari (minimal 0)
+    local e="$1" s n
+    [[ -z "$e" || "${e,,}" == "lifetime" ]] && return 1
+    [[ "$e" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && e="$e 23:59:59"
+    s=$(date -u -d "$e" +%s 2>/dev/null) || return 1
+    [[ -z "$s" ]] && return 1
+    n=$(( (s - $(date -u +%s) + 86399) / 86400 ))
+    [[ $n -lt 0 ]] && n=0
+    printf '%s' "$n"
+}
+
+# Label siap tampil. Aturan (diminta pemilik): `lifetime` DICETAK APA ADANYA
+# tanpa tambahan; entri bertanggal ditampilkan sebagai "( N Hari )" saja
+# (tanggalnya tetap jadi sumber kebenaran di izin.txt & cache, cuma tak dipajang).
+license_expiry_label() { # $1=EXP -> "lifetime" | "( N Hari )"
+    local d
+    [[ "${1,,}" == "lifetime" ]] && { printf 'lifetime'; return 0; }
+    if d=$(license_days_left "$1"); then printf '( %s Hari )' "$d"; else printf '( ? Hari )'; fi
 }
 
 check_license() {

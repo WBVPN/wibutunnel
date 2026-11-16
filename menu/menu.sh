@@ -67,7 +67,7 @@ echo -e " ${RED}[0] Keluar / Exit Terminal${NC}"
 echo -e "${LINE}"
 echo -e " ${CYAN}Client Name : ${GREEN}${CLIENT_NAME:-Unknown}${NC}"
 echo -e " ${CYAN}Version     : ${WHITE}${SCRIPT_VER}${NC}"
-echo -e " ${CYAN}Expired On  : ${GREEN}${EXP_DATE}${NC}"
+echo -e " ${CYAN}Expired On  : ${GREEN}$(command -v license_expiry_label >/dev/null 2>&1 && license_expiry_label "${EXP_DATE:-lifetime}" || echo "${EXP_DATE:-lifetime}")${NC}"
 echo -e "${LINE}"
 
 while true; do
