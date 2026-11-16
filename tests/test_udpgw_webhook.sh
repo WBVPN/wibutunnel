@@ -282,11 +282,11 @@ echo "PASS: uji live tersedia + dua detail protokol terdokumentasi"
 bash "$REPO_DIR/tests/test_udpgw_live.sh" 2>&1 | tail -2 | sed 's/^/  /'
 
 echo "=== TEST 13: penyaring entri ber-variabel pada pass kedua ==="
-grep -qF "grep -v '\$'" "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: entri ber-variabel tidak disaring"; exit 1; }
-FAKE2="$TMPD/ms.fake2"
-printf '%s\n' '        safe_update "menu/menu.sh"' '        safe_update "$_f"' '        safe_update "${_FILES2[0]}"' > "$FAKE2"
-p2=$(grep -oP '^\s*safe_update "\K[^"]+' "$FAKE2" | grep -v '\$' | sed '/^$/d' | tr '\n' ' ')
-[[ "$p2" == "menu/menu.sh " ]] || { echo "FAIL: penyaring variabel -> '$p2'"; exit 1; }
-echo "PASS: pemanggilan ber-variabel tersaring dari daftar pass kedua"
+n_ok=$(grep "_FILES2 < <" "$REPO_DIR/menu/m-setting.sh" | grep -c "grep -v")
+n_all=$(grep -c "_FILES2 < <" "$REPO_DIR/menu/m-setting.sh")
+[[ "$n_all" -ge 1 && "$n_ok" -eq "$n_all" ]] || { echo "FAIL: baris _FILES2 tanpa penyaring variabel ($n_ok/$n_all)"; exit 1; }
+echo "PASS: setiap baris _FILES2 menyaring entri ber-variabel"
+grep "_FILES2 < <" "$REPO_DIR/menu/m-setting.sh" | grep -q '\^' || { echo "FAIL: pola tidak di-anchor"; exit 1; }
+echo "PASS: pola pass kedua di-anchor (^\\s*safe_update)"
 
 echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="

@@ -407,7 +407,7 @@ case $sub_setting in
     if [[ -x /usr/local/sbin/m-setting ]]; then
         mapfile -t _FILES2 < <(grep -oP '^\s*safe_update "\K[^"]+' /usr/local/sbin/m-setting | grep -v '\$' | sed '/^$/d')
     elif [[ -x /usr/local/bin/m-setting ]]; then
-        mapfile -t _FILES2 < <(grep -oP 'safe_update "\K[^"]+' /usr/local/bin/m-setting | sed '/^$/d')
+        mapfile -t _FILES2 < <(grep -oP '^\s*safe_update "\K[^"]+' /usr/local/bin/m-setting | grep -v '\$' | sed '/^$/d')
     else
         _FILES2=()
     fi
