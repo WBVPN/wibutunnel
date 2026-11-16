@@ -405,3 +405,71 @@ pemakaiannya nol. Kuncinya ada di log dropbear (dijalankan `-E` -> journald, **a
 **Batas yang disadari:** angka SSH diambil dari byte pada soket sesi, jadi sesi yang hidup
 lebih singkat daripada jeda `algojo-kuota` (~1 menit) bisa terlewat sebagian; sesi mati pun
 tetap terhitung karena totalnya sudah tersimpan di `user_usage.db`.
+
+---
+
+## 14. UDP gateway, mode webhook bot, toleransi IP (v4.1.19)
+
+Tiga hal yang diporting dari paket kerabat `v4.0-KURUMI`, dikerjakan ulang untuk struktur
+repo ini, plus empat bug OTA yang ketemu justru saat memasangnya di VPS uji.
+
+**1) UDP gateway (badvpn-udpgw).** Pesan akun SSH sudah lama mengiklankan `UDPGW 7100-7600`,
+tetapi layanannya tidak pernah ada — pelanggan yang mengaktifkan UDP (game/DNS/QUIC) gagal
+tanpa pesan. Kini `sbin/wibu-udpgw` membangun badvpn-udpgw dari sumber resmi
+(`-DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1`, tanpa OpenSSL) dan menghidupkan unit
+templated `badvpn-udpgw@<port>.service` untuk 6 port.
+
+**Pelurusan protokol (dua hal yang membuat uji pertama gagal — catat baik-baik):**
+
+1. Badan TCP dibingkai **PacketProto**: `[u16 panjang little-endian][paket udpgw]`.
+   Tanpa bingkai ini, 2 byte pertama (flags+conid) dibaca sebagai panjang → paket dibuang.
+2. Di dalam paket udpgw: `[u8 flags][u16 conid LE][alamat][u16 port]` — **port pada blok
+   alamat memakai urutan NETWORK (big-endian)**, bukan little-endian seperti `conid`.
+   Memakai little-endian di sini mengirim datagram ke **port acak** tanpa error apa pun.
+
+**Bukti (klien uji nyata, tiga penyedia DNS, lewat sesi SSH pelanggan):**
+
+| Uji | Hasil |
+|---|---|
+| `udpgw 7300 -> 1.1.1.1:53` (query DNS) | balasan 61 byte, `rcode=0`, 2 jawaban |
+| `udpgw 7300 -> 8.8.8.8:53` | balasan 47 byte, `rcode=0`, 1 jawaban |
+| `udpgw 7300 -> 1.0.0.1:53` | balasan 44 byte, `rcode=0`, 1 jawaban |
+| Port listen | `127.0.0.1:7100 7200 7300 7400 7500 7600` (6/6 unit aktif) |
+| Log server saat paket diterima | `connection 0: initialized` + `connection 0: from client N bytes` |
+
+Tes ini ikut dikirim sebagai `tests/test_udpgw_live.sh` (dijalankan di VPS panel).
+
+**2) Mode webhook bot Telegram.** `sbin/bot-webhook-server` mendengarkan `127.0.0.1:8443`
+di balik rute haproxy `/telehook`, memvalidasi `X-Telegram-Bot-Api-Secret-Token`
+**fail-closed**, lalu menaruh update ke `tmp/bot_webhook_queue.jsonl`. `bot-daemon`
+membaca antrean itu lebih dulu sebagai `{"ok":true,"result":[...]}` sehingga seluruh
+pemrosesan update tidak berubah, dan saat mode webhook ia **tidak** memanggil `getUpdates`
+(kalau tidak: Telegram membalas 409 karena webhook aktif). Ganti mode:
+Setting → Bot Telegram → **[5] Mode Bot**.
+
+| Uji | Hasil |
+|---|---|
+| `/health` lokal 8443 | `HTTP 200` + `{"ok":true,...,"secret_configured":false}` |
+| `POST https://<domain>/telehook` (tanpa secret) | **HTTP 503** dari internet (fail-closed, rute hidup) |
+| `GET https://<domain>/telehook` | HTTP 404 (hanya POST) |
+| Uji unit (lokal) | 503 tanpa secret · 403 secret salah · 400 body bukan JSON · 200 + masuk antrean |
+
+**3) Toleransi IP 600 detik** (`WIBU_IP_TTL`, sebelumnya 120): IP 5 menit lalu masih
+dianggap terhubung (uji), IP 2 jam lalu diabaikan, dan nilainya bisa disetel.
+
+**Empat bug OTA yang ketemu saat pemasangan (semua sudah diperbaiki + ada tesnya):**
+
+1. **Unit systemd baru tidak ikut Update Script.** Menu [5] hanya menyelaraskan berkas,
+   jadi `bot-webhook.service` (unit baru) terpasang 0 byte dan systemd menganggapnya
+   *masked*. Ditambah `sbin/wibu-units` (tulis unit idempoten + unmask + daemon-reload)
+   yang dipanggil setup.sh **dan** Update Script.
+2. **Daftar update dibaca dari berkas yang sedang diganti.** Berkas baru
+   (`sbin/wibu-udpgw`, `sbin/bot-webhook-server`, `sbin/wibu-units`) tidak ikut terpasang
+   pada putaran itu → ditambah pass kedua yang membaca daftar dari m-setting yang baru.
+3. **Modul tak pernah bisa lewat OTA.** `sbin/wibu-isp` dan `sbin/wibu-ssl-ulang` ada di
+   setup.sh tetapi tidak ada di daftar Update Script. Kini ada penjaga paritas yang
+   membandingkan kedua daftar (TEST 9) supaya kasus ini tidak terulang.
+4. **Kuota API GitHub habis.** Tanpa token kuotanya 60/jam sedangkan satu putaran update
+   meminta 30+ berkas → putaran ketiga gagal (terukur: `remaining=0`) dan verifikasi turun
+   ke CDN sehingga satu berkas ditolak walau isinya benar. Manifest kini diambil **sekali**
+   per putaran (API → jsDelivr → raw).

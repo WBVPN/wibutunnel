@@ -268,4 +268,14 @@ parsed=$(grep -oP '^\s*safe_update "\K[^"]+' "$FAKE" | sed '/^$/d' | tr '\n' ' '
 [[ "$parsed" == "menu/menu.sh sbin/wibu-units " ]] || { echo "FAIL: hasil parse -> '$parsed'"; exit 1; }
 echo "PASS: hanya entri asli yang terbaca (tanpa nama palsu seperti \K[^\n)"
 
+echo "=== TEST 12: uji live dikirim + protokolnya benar (bingkai + port network order) ==="
+[[ -f "$REPO_DIR/tests/test_udpgw_live.sh" ]] || { echo "FAIL: tests/test_udpgw_live.sh tidak ada"; exit 1; }
+grep -q 'struct.pack("<H", len(body)) + body' "$REPO_DIR/tests/test_udpgw_live.sh" \
+    || { echo "FAIL: bingkai PacketProto hilang dari uji live"; exit 1; }
+grep -q 'struct.pack("!H", dst_port)' "$REPO_DIR/tests/test_udpgw_live.sh" \
+    || { echo "FAIL: port alamat harus big-endian (network order)"; exit 1; }
+grep -q 'PacketProto' "$REPO_DIR/docs/HASIL_UJI_VPS.md" || { echo "FAIL: docs belum menjelaskan bingkai PacketProto"; exit 1; }
+echo "PASS: uji live tersedia + dua detail protokol terdokumentasi"
+bash "$REPO_DIR/tests/test_udpgw_live.sh" 2>&1 | tail -2 | sed 's/^/  /'
+
 echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="
