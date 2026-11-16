@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.18
+# MASTER INSTALLER WIBU TUNNELING - v4.1.19
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -148,7 +148,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.18}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.19}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -388,7 +388,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.18" > /etc/wibutunnel/version
+echo "4.1.19" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -1255,9 +1255,11 @@ _need "sbin/wibu-ssl-ulang" "wibu-ssl-ulang-dl"
 _need "sbin/wibu-isp" "wibu-isp-dl"
 _need "sbin/wibu-daemon" "wibu-daemon-dl"
 _need "sbin/wibu-kuota" "wibu-kuota-dl"
+_need "sbin/wibu-udpgw" "wibu-udpgw-dl"
+_need "sbin/bot-webhook-server" "bot-webhook-server"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota; do
+for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota wibu-udpgw bot-webhook-server; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
     fi
@@ -1378,6 +1380,23 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+cat << 'EOF' > /etc/systemd/system/bot-webhook.service
+[Unit]
+Description=Telegram Bot Webhook Receiver (WIBUTUNNEL)
+After=network.target haproxy.service
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/bot-webhook-server
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 mkdir -p /etc/dropbear /etc/wibutunnel
 echo "NO_START=0" > /etc/default/dropbear
 echo "DROPBEAR_PORT=143" >> /etc/default/dropbear
@@ -1442,6 +1461,16 @@ systemctl enable dropbear.service ws-stunnel.service >/dev/null 2>&1
 # 'failed' walau layanannya sudah berjalan normal setelah installer menulis konfigurnya).
 systemctl reset-failed dropbear.service haproxy.service ws-stunnel.service >/dev/null 2>&1 || true
 systemctl restart dropbear.service ws-stunnel.service >/dev/null 2>&1
+systemctl enable bot-webhook.service >/dev/null 2>&1
+systemctl restart bot-webhook.service >/dev/null 2>&1
+
+# UDP gateway (badvpn-udpgw): dipakai klien untuk UDP (game/DNS/QUIC). Baris "UDPGW"
+# di pesan akun SSH baru hanya bermakna kalau layanan ini benar-benar ada. Gagal build
+# TIDAK menggagalkan instalasi panel (dilaporkan saja), bisa diulang dari menu SSH [14].
+if [[ -x /usr/local/sbin/wibu-udpgw ]]; then
+    echo -e "\e[1;36m[+] Memasang UDP gateway (badvpn-udpgw) untuk SSH tunnel...\e[0m"
+    /usr/local/sbin/wibu-udpgw install 2>&1 | sed 's/^/    /' || true
+fi
 systemctl enable algojo-expired.service >/dev/null 2>&1
 systemctl restart algojo-expired.service >/dev/null 2>&1
 
@@ -1576,7 +1605,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.18" > /etc/wibutunnel/version
+echo "4.1.19" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

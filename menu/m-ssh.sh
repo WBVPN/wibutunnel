@@ -413,6 +413,7 @@ echo -e " ${RED}[10] Lock / Unlock Akun${NC}"
 echo -e " ${GREEN}[11] Recovery Akun${NC}"
 echo -e " ${YELLOW}[12] Edit Banner SSH${NC}"
 echo -e " ${GREEN}[13] Edit Respon HTTP WS${NC}"
+echo -e " ${CYAN}[14] Pasang / Perbaiki UDP Gateway (UDPGW)${NC}"
 echo -e " ${WHITE}[0]  Back to Menu Dashboard${NC}"
 echo -e "${LINE}"
 echo -ne "${WHITE}Pilih menu: ${NC}"
@@ -451,6 +452,9 @@ case $sub_menu in
     11) exec menu-recovery SSH ;;
     12) edit_banner_ssh; exec m-ssh ;;
     13) edit_response_ws; exec m-ssh ;;
+    14) clear; echo -e "${LINE}"; echo -e "        ${WHITE}UDP GATEWAY (badvpn-udpgw)${NC}"; echo -e "${LINE}"
+        if [[ -x /usr/local/sbin/wibu-udpgw ]]; then /usr/local/sbin/wibu-udpgw install; else echo -e "${RED}[!] Modul belum terpasang — jalankan m-setting [5] (Update Script).${NC}"; fi
+        echo; read -p "Tekan Enter untuk kembali..." _x; exec m-ssh ;;
     0) exec menu ;;
     *) echo -e "${RED}Pilihan tidak valid!${NC}"; sleep 1; exec m-ssh ;;
 esac

@@ -1,0 +1,228 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - wibu-udpgw
+# Pemasang/pengelola badvpn-udpgw: gateway UDP di dalam sesi SSH tunnel
+# (game, DNS, QUIC). Tanpa ini, klien hanya bisa TCP.
+# ==========================================
+# Pemakaian:
+#   wibu-udpgw install     pasang + hidupkan (idempoten, aman diulang)
+#   wibu-udpgw status      bin, unit, port yang aktif
+#   wibu-udpgw ports       cetak daftar port UDP yang aktif
+#   wibu-udpgw uninstall   matikan + hapus unit (bin & source dibiarkan)
+#
+# Build dari sumber resmi (github.com/ambrop72/badvpn) — hanya target udpgw
+# yang dibangun (BUILD_NOTHING_BY_DEFAULT) supaya cepat dan tidak butuh OpenSSL.
+# Gagal build TIDAK boleh menggagalkan instalasi panel: skrip ini selalu
+# melaporkan status dan keluar 0 kecuali dipanggil dengan `install --strict`.
+set -uo pipefail
+
+UDPGW_BIN="${UDPGW_BIN:-/usr/sbin/badvpn-udpgw}"
+UDPGW_SRC="${UDPGW_SRC:-/usr/local/src/badvpn-src}"
+UDPGW_PORTS="${UDPGW_PORTS:-7100 7200 7300 7400 7500 7600}"
+UDPGW_NAME="badvpn-udpgw"
+LOG="${UDPGW_LOG:-/var/log/wibutunnel-udpgw-build.log}"
+SYSTEMD_DIR="${UDPGW_SYSTEMD_DIR:-/etc/systemd/system}"
+UNIT="${SYSTEMD_DIR}/${UDPGW_NAME}@.service"
+STRICT=0
+
+ok()   { echo "[OK] $*"; }
+info() { echo "[..] $*"; }
+warn() { echo "[!]  $*"; }
+err()  { echo "[X]  $*" >&2; }
+
+require_root() {
+    [[ "$(id -u)" == "0" ]] || { err "harus dijalankan sebagai root"; exit 1; }
+}
+
+unit_body() {
+    cat <<UNITEOF
+[Unit]
+Description=badvpn-udpgw UDP gateway (port %i)
+Documentation=https://github.com/ambrop72/badvpn
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${UDPGW_BIN} --listen-addr 127.0.0.1:%i --max-clients 1000 --client-socket-sndbuf 0
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+}
+
+write_unit() {
+    install -d -m 0755 "$SYSTEMD_DIR" 2>/dev/null
+    local tmp; tmp="$(mktemp)"
+    unit_body > "$tmp"
+    if [[ -f "$UNIT" ]] && cmp -s "$tmp" "$UNIT"; then
+        rm -f "$tmp"
+        ok "unit $UNIT sudah sesuai (tidak diubah)"
+    else
+        install -m 0644 "$tmp" "$UNIT"
+        rm -f "$tmp"
+        ok "unit ditulis: $UNIT"
+    fi
+    command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1
+    return 0
+}
+
+have_bin() {
+    [[ -x "$UDPGW_BIN" ]] || return 1
+    "$UDPGW_BIN" --help 2>&1 | grep -qi "listen-addr" || return 1
+    return 0
+}
+
+ensure_deps() {
+    local missing=""
+    for c in cmake make cc git; do
+        command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+    done
+    [[ -z "$missing" ]] && { ok "dependency build sudah ada"; return 0; }
+    info "memasang dependency build:$missing (log: $LOG)"
+    export DEBIAN_FRONTEND=noninteractive
+    { apt-get update -y; apt-get install -y --no-install-recommends build-essential cmake git ca-certificates; } \
+        >>"$LOG" 2>&1
+    for c in cmake make cc; do
+        command -v "$c" >/dev/null 2>&1 || { err "dependency build tidak lengkap ($c) — lihat $LOG"; return 1; }
+    done
+    ok "dependency build siap"
+}
+
+fetch_src() {
+    [[ -f "${UDPGW_SRC}/CMakeLists.txt" ]] && { ok "source badvpn sudah ada di $UDPGW_SRC"; return 0; }
+    if [[ -d "$UDPGW_SRC" ]]; then
+        warn "sisa source rusak, dibersihkan: $UDPGW_SRC"
+        rm -rf "$UDPGW_SRC"
+    fi
+    install -d -m 0755 "$(dirname "$UDPGW_SRC")"
+    info "mengunduh source badvpn (log: $LOG)"
+    if command -v git >/dev/null 2>&1 \
+        && git clone --depth 1 https://github.com/ambrop72/badvpn "$UDPGW_SRC" >>"$LOG" 2>&1; then
+        ok "source badvpn (git)"
+    else
+        warn "git gagal, mencoba tarball codeload"
+        if curl -4 -fsSL --retry 3 --max-time 180 -o /tmp/badvpn-src.tar.gz \
+            "https://codeload.github.com/ambrop72/badvpn/tar.gz/refs/heads/master" >>"$LOG" 2>&1; then
+            mkdir -p "$UDPGW_SRC"
+            tar xzf /tmp/badvpn-src.tar.gz -C "$UDPGW_SRC" --strip-components=1 >>"$LOG" 2>&1 \
+                || { err "gagal ekstrak tarball badvpn (lihat $LOG)"; return 1; }
+            ok "source badvpn (tarball)"
+        else
+            err "gagal mengunduh source badvpn (git & tarball) — lihat $LOG"
+            return 1
+        fi
+    fi
+    [[ -f "${UDPGW_SRC}/CMakeLists.txt" ]] || { err "source badvpn tidak valid"; return 1; }
+    return 0
+}
+
+build_bin() {
+    have_bin && { ok "$UDPGW_BIN sudah terpasang"; return 0; }
+    ensure_deps || return 1
+    fetch_src || return 1
+    # hanya bangun target udpgw (cepat, tanpa OpenSSL/systemd deps)
+    local flags="-DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1"
+    local mark="${UDPGW_SRC}/.wibu_cfg"
+    [[ -d "${UDPGW_SRC}/build" && "$(cat "$mark" 2>/dev/null)" != "$flags" ]] && rm -rf "${UDPGW_SRC}/build"
+    printf '%s' "$flags" > "$mark"
+    info "meng-compile badvpn-udpgw (beberapa menit, log: $LOG)"
+    if ( mkdir -p "${UDPGW_SRC}/build" && cd "${UDPGW_SRC}/build" \
+            && cmake .. $flags >>"$LOG" 2>&1 \
+            && make -j"$(nproc 2>/dev/null || echo 2)" badvpn-udpgw >>"$LOG" 2>&1 ); then
+        install -m 0755 "${UDPGW_SRC}/build/udpgw/badvpn-udpgw" "$UDPGW_BIN" \
+            && ok "badvpn-udpgw terpasang: $UDPGW_BIN"
+        rm -rf "${UDPGW_SRC}/build"
+        return 0
+    fi
+    err "build badvpn-udpgw GAGAL (lihat $LOG)"
+    return 1
+}
+
+start_ports() {
+    have_bin || return 1
+    write_unit
+    command -v systemctl >/dev/null 2>&1 || { warn "systemctl tidak ada — unit tidak dijalankan"; return 1; }
+    local p fail=0 started=""
+    for p in $UDPGW_PORTS; do
+        if systemctl enable --now "${UDPGW_NAME}@${p}.service" >/dev/null 2>&1; then
+            started="$started $p"
+        else
+            fail=$((fail+1)); err "port $p gagal dihidupkan"
+        fi
+    done
+    [[ -n "$started" ]] && ok "udpgw aktif di 127.0.0.1:$started"
+    return $(( fail > 0 ? 1 : 0 ))
+}
+
+cmd_ports() {
+    local p out=""
+    for p in $UDPGW_PORTS; do
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "${UDPGW_NAME}@${p}.service" 2>/dev/null; then
+            out="$out $p"
+        fi
+    done
+    [[ -n "$out" ]] && printf '%s\n' "${out# }"
+    return 0
+}
+
+cmd_status() {
+    if have_bin; then ok "binari: $UDPGW_BIN"; else warn "binari belum ada: $UDPGW_BIN"; fi
+    [[ -f "$UNIT" ]] && ok "unit: $UNIT" || warn "unit belum ada: $UNIT"
+    local act; act="$(cmd_ports)"
+    if [[ -n "$act" ]]; then
+        ok "port aktif: $act"
+        command -v ss >/dev/null 2>&1 && ss -tlnp 2>/dev/null | grep -E "badvpn|:(${act// /|})" | sed 's/^/     /'
+    else
+        warn "belum ada port udpgw yang aktif"
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+        local n=0
+        for p in $UDPGW_PORTS; do
+            systemctl is-active --quiet "${UDPGW_NAME}@${p}.service" 2>/dev/null && n=$((n+1))
+        done
+        ok "unit aktif: $n dari $(echo "$UDPGW_PORTS" | wc -w)"
+    fi
+    return 0
+}
+
+cmd_uninstall() {
+    local p
+    for p in $UDPGW_PORTS; do
+        systemctl disable --now "${UDPGW_NAME}@${p}.service" >/dev/null 2>&1
+    done
+    rm -f "$UNIT"
+    command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1
+    ok "unit udpgw dimatikan & dihapus (binari + source dibiarkan)"
+    return 0
+}
+
+main() {
+    local action="${1:-install}"
+    case "$action" in
+        install)
+            [[ "${2:-}" == "--strict" ]] && STRICT=1
+            require_root
+            local rc=0
+            build_bin || rc=1
+            start_ports || rc=$(( rc == 0 ? 1 : rc ))
+            cmd_status
+            if (( STRICT == 1 )); then return "$rc"; fi
+            # tanpa --strict: UDPGW opsional, jangan menggagalkan instalasi panel
+            return 0
+            ;;
+        status)    cmd_status ;;
+        ports)     cmd_ports ;;
+        uninstall) require_root; cmd_uninstall ;;
+        help|-h|--help)
+            sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+            ;;
+        *) err "perintah tidak dikenal: $action (pakai: install | status | ports | uninstall)"; exit 2 ;;
+    esac
+}
+
+main "$@"

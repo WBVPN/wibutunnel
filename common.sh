@@ -557,7 +557,10 @@ live_ip_pairs() {
     local log="${XRAY_ACCESS_LOG:-/var/log/xray/access.log}"
     local thresh
     [[ ! -s "$log" ]] && return 0
-    thresh=$(date -d "${LIVE_IP_WINDOW:-120 seconds} ago" +'%Y/%m/%d %H:%M:%S')
+    # WIBU_IP_TTL: berapa lama sebuah IP masih dianggap "sedang terhubung".
+    # 600 detik (bukan 120) supaya pelanggan yang berpindah jaringan / roaming
+    # tidak langsung dianggap lepas, dan limit IP tidak salah mengunci.
+    thresh=$(date -d "${LIVE_IP_WINDOW:-${WIBU_IP_TTL:-600} seconds} ago" +'%Y/%m/%d %H:%M:%S')
     awk -v thresh="$thresh" '
         { if ($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1 " " $2 < thresh) exit }
         /accepted/ && /email: / {
@@ -984,3 +987,19 @@ usage_reset() { # $1=user -> pemakaian mulai dari nol (renew / restore)
 }
 
 usage_gb_label() { awk -v b="${1:-0}" 'BEGIN{printf "%.2f GB", b/1073741824}'; }
+
+# Port badvpn-udpgw yang sedang aktif (dipakai menu/pesan akun).
+udpgw_active_ports() {
+    local p out=""
+    for p in ${UDPGW_PORTS:-7100 7200 7300 7400 7500 7600}; do
+        if systemctl is-active --quiet "badvpn-udpgw@${p}.service" 2>/dev/null; then out="$out $p"; fi
+    done
+    [[ -n "$out" ]] && printf '%s' "${out# }"
+    return 0
+}
+
+# Mode bot telegram: polling (default) atau webhook.
+bot_mode() {
+    local m; m=$(cat /etc/wibutunnel/tmp/bot_mode 2>/dev/null || echo polling)
+    [[ "$m" == "webhook" ]] && printf 'webhook' || printf 'polling'
+}

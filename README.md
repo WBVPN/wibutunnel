@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.18
+# 🦋 WIBUTUNNEL v4.1.19
 
 Panel VPN Xray **auto-install** + bot Telegram. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.18-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.19-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 ---
@@ -31,7 +31,7 @@ baru menjalankan. Hash tidak cocok = berhenti sebelum memasang apa pun.
 
 ```bash
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 4a1811e7d05c05e09d9d300c34f38edea998b891587e838fe27642330e3bd0d7
+sha256sum setup.sh     # harap: 0be69fbffc6905abb832384514bcdc3d0c289f1518d26fa9174dff3fc7a71a51
 bash setup.sh
 ```
 
@@ -202,6 +202,22 @@ curl -4 -fsSL https:///u | bash     # cadangan otomatis ke /root/wibutunnel-back
 ---
 
 ## 📝 Changelog
+
+### v4.1.19 (2026-11-16)
+
+- **UDP gateway (badvpn-udpgw) benar-benar dipasang.** Pesan akun SSH sudah lama
+  mengiklankan `UDPGW 7100-7600`, tapi layanannya belum pernah ada — klien yang
+  mengaktifkan UDP (game/DNS/QUIC) gagal. Kini `sbin/wibu-udpgw` membangun badvpn-udpgw
+  dari sumber resmi (hanya target udpgw) dan menghidupkan unit templated
+  `badvpn-udpgw@<port>.service` untuk 6 port.
+- **Mode webhook untuk bot Telegram.** `sbin/bot-webhook-server` menerima update dari
+  Telegram lewat rute `/telehook` (haproxy -> 127.0.0.1:8443), memvalidasi header
+  `X-Telegram-Bot-Api-Secret-Token` **fail-closed**, lalu menaruh update di antrean yang
+  dikonsumsi `bot-daemon` (tanpa `getUpdates`, jadi tidak bentrok 409). Ganti mode dari
+  menu Setting -> Bot Telegram -> **[5] Mode Bot**.
+- **Toleransi IP 600 detik** (`WIBU_IP_TTL`, sebelumnya 120) supaya pelanggan yang
+  berpindah jaringan/roaming tidak salah dianggap lepas atau salah terkunci.
+- Menu SSH **[14] Pasang / Perbaiki UDP Gateway** untuk memasang ulang stack UDP.
 
 ### v4.1.18 (2026-11-16)
 

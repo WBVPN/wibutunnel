@@ -1,0 +1,141 @@
+#!/bin/bash
+# ==========================================
+# Tes UDPGW (badvpn-udpgw) + mode WEBHOOK bot + toleransi IP (TTL 600)
+# ==========================================
+# Semua offline: systemctl dipalsukan lewat stub, server webhook dijalankan di
+# port lokal sementara, dan tidak ada permintaan ke Telegram.
+set -euo pipefail
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMPD=$(mktemp -d)
+SRV_PID=""
+cleanup() { [[ -n "$SRV_PID" ]] && kill "$SRV_PID" 2>/dev/null || true; rm -rf "$TMPD"; }
+trap cleanup EXIT
+
+echo "=== TEST 1: wibu-udpgw — sintaks, unit, daftar port ==="
+bash -n "$REPO_DIR/sbin/wibu-udpgw" || { echo "FAIL: sintaks sbin/wibu-udpgw"; exit 1; }
+echo "PASS: sbin/wibu-udpgw sintaks OK"
+
+# unit ditulis ke direktori temporer (jangan sentuh /etc)
+export UDPGW_SYSTEMD_DIR="$TMPD/systemd"
+export UDPGW_BIN="$TMPD/badvpn-udpgw"
+export UDPGW_LOG="$TMPD/build.log"
+printf '#!/bin/sh\necho "--listen-addr ok"\n' > "$UDPGW_BIN"; chmod +x "$UDPGW_BIN"
+out=$(bash "$REPO_DIR/sbin/wibu-udpgw" install 2>&1 || true)
+UNIT="$UDPGW_SYSTEMD_DIR/badvpn-udpgw@.service"
+[[ -f "$UNIT" ]] || { echo "FAIL: unit tidak dibuat di $UDPGW_SYSTEMD_DIR"; exit 1; }
+echo "PASS: unit templated dibuat"
+grep -qF 'ExecStart='"$UDPGW_BIN"' --listen-addr 127.0.0.1:%i --max-clients 1000' "$UNIT" \
+    || { echo "FAIL: ExecStart tidak sesuai"; grep ExecStart "$UNIT"; exit 1; }
+echo "PASS: ExecStart memakai --listen-addr 127.0.0.1:%i (satu unit untuk semua port)"
+grep -qF 'Restart=always' "$UNIT" || { echo "FAIL: unit tidak auto-restart"; exit 1; }
+echo "PASS: unit auto-restart"
+
+# idempotensi: jalankan kedua kali, isi unit tidak berubah
+h1=$(sha256sum "$UNIT" | cut -d' ' -f1)
+out2=$(bash "$REPO_DIR/sbin/wibu-udpgw" install 2>&1 || true)
+h2=$(sha256sum "$UNIT" | cut -d' ' -f1)
+[[ "$h1" == "$h2" ]] || { echo "FAIL: unit berubah saat dijalankan ulang"; exit 1; }
+grep -q "sudah sesuai (tidak diubah)" <<< "$out2" || { echo "FAIL: tidak idempoten -> $out2"; exit 1; }
+echo "PASS: idempoten (unit tidak ditulis ulang tanpa perubahan)"
+
+echo "=== TEST 2: wibu-udpgw ports — baca status unit (systemctl dipalsukan) ==="
+mkdir -p "$TMPD/bin"
+cat > "$TMPD/bin/systemctl" <<'STUB'
+#!/bin/bash
+case "$1" in
+    is-active) exit 0 ;;                  # anggap semua unit aktif
+    *) exit 0 ;;
+esac
+STUB
+chmod +x "$TMPD/bin/systemctl"
+PORTS=$(PATH="$TMPD/bin:$PATH" bash "$REPO_DIR/sbin/wibu-udpgw" ports)
+[[ "$PORTS" == "7100 7200 7300 7400 7500 7600" ]] || { echo "FAIL: daftar port -> '$PORTS'"; exit 1; }
+echo "PASS: ports melaporkan 6 port UDPGW (7100-7600)"
+grep -qE '^UDPGW_PORTS="\$\{UDPGW_PORTS:-7100 7200 7300 7400 7500 7600\}"' "$REPO_DIR/sbin/wibu-udpgw" \
+    || { echo "FAIL: daftar port default tidak seperti yang didokumentasikan"; exit 1; }
+echo "PASS: port default konsisten dengan yang diiklankan ke klien (UDPGW 7100-7600)"
+
+echo "=== TEST 3: bot-webhook-server — sintaks + perilaku HTTP ==="
+python3 -c "import py_compile, tempfile, os; py_compile.compile('$REPO_DIR/sbin/bot-webhook-server', cfile=os.path.join(tempfile.mkdtemp(), 'c.pyc'), doraise=True)" \
+    || { echo "FAIL: sintaks bot-webhook-server"; exit 1; }
+echo "PASS: bot-webhook-server sintaks OK"
+
+PORT=$(( 20000 + RANDOM % 20000 ))
+CONF="$TMPD/bot.conf"; QUEUE="$TMPD/queue.jsonl"
+printf 'BOT_TOKEN="x"\nCHAT_ID="1"\n' > "$CONF"      # tanpa WEBHOOK_SECRET -> fail-closed
+WIBU_WEBHOOK_PORT="$PORT" WIBU_BOT_CONF="$CONF" WIBU_WEBHOOK_QUEUE="$QUEUE" \
+    python3 "$REPO_DIR/sbin/bot-webhook-server" > "$TMPD/srv1.log" 2>&1 &
+SRV_PID=$!
+for _ in $(seq 1 20); do curl -4 -s -o /dev/null "http://127.0.0.1:$PORT/health" 2>/dev/null && break; sleep 0.3; done
+code=$(curl -4 -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+        -H 'X-Telegram-Bot-Api-Secret-Token: salah' -d '{"update_id":1}' "http://127.0.0.1:$PORT/telehook")
+[[ "$code" == "503" ]] || { echo "FAIL: tanpa secret harus 503, dapat $code"; exit 1; }
+echo "PASS: secret belum diatur -> 503 (fail-closed, tidak ada mode terbuka)"
+kill "$SRV_PID" 2>/dev/null; SRV_PID=""
+
+printf 'BOT_TOKEN="x"\nWEBHOOK_SECRET="rahasia-uji"\n' > "$CONF"
+WIBU_WEBHOOK_PORT="$PORT" WIBU_BOT_CONF="$CONF" WIBU_WEBHOOK_QUEUE="$QUEUE" \
+    python3 "$REPO_DIR/sbin/bot-webhook-server" >> "$TMPD/srv2.log" 2>&1 &
+SRV_PID=$!
+for _ in $(seq 1 20); do curl -4 -s -o /dev/null "http://127.0.0.1:$PORT/health" 2>/dev/null && break; sleep 0.3; done
+code=$(curl -4 -s -o /dev/null -w '%{http_code}' -X POST -H 'X-Telegram-Bot-Api-Secret-Token: salah' \
+        -d '{"update_id":1}' "http://127.0.0.1:$PORT/telehook")
+[[ "$code" == "403" ]] || { echo "FAIL: secret salah harus 403, dapat $code"; exit 1; }
+echo "PASS: secret salah -> 403 (request ditolak)"
+code=$(curl -4 -s -o /dev/null -w '%{http_code}' -X POST -H 'X-Telegram-Bot-Api-Secret-Token: rahasia-uji' \
+        -d 'bukan-json' "http://127.0.0.1:$PORT/telehook")
+[[ "$code" == "400" ]] || { echo "FAIL: body bukan JSON harus 400, dapat $code"; exit 1; }
+echo "PASS: body bukan JSON -> 400 (tidak masuk antrean)"
+code=$(curl -4 -s -o /dev/null -w '%{http_code}' -X POST -H 'X-Telegram-Bot-Api-Secret-Token: rahasia-uji' \
+        -d '{"update_id":99,"message":{"text":"/start"}}' "http://127.0.0.1:$PORT/telehook")
+[[ "$code" == "200" ]] || { echo "FAIL: update sah harus 200, dapat $code"; exit 1; }
+grep -q '"update_id":99' "$QUEUE" || { echo "FAIL: update tidak masuk antrean"; exit 1; }
+echo "PASS: update sah -> 200 dan masuk antrean"
+kill "$SRV_PID" 2>/dev/null; SRV_PID=""
+
+echo "=== TEST 4: bot-daemon mengubah antrean jadi bentuk getUpdates ==="
+if command -v jq >/dev/null 2>&1; then
+    RESP=$(jq -c -s '{ok:true, result:.}' "$QUEUE")
+    [[ "$(echo "$RESP" | jq -r '.ok')" == "true" ]] || { echo "FAIL: bentuk resp ok"; exit 1; }
+    [[ "$(echo "$RESP" | jq -r '.result | length')" == "1" ]] || { echo "FAIL: jumlah update tidak 1"; exit 1; }
+    [[ "$(echo "$RESP" | jq -r '.result[0].update_id')" == "99" ]] || { echo "FAIL: update_id hilang"; exit 1; }
+    echo "PASS: antrean -> {\"ok\":true,\"result\":[...]} (pemrosesan update tak perlu diubah)"
+else
+    echo "SKIP: konversi antrean (jq tidak terpasang di mesin ini; ada di VPS panel)"
+fi
+grep -q 'WEBHOOK_QUEUE' "$REPO_DIR/menu/bot-daemon.sh" || { echo "FAIL: bot-daemon tidak membaca antrean"; exit 1; }
+grep -q "jq -c -s '{ok:true, result:.}'" "$REPO_DIR/menu/bot-daemon.sh" || { echo "FAIL: konversi antrean hilang"; exit 1; }
+grep -q 'BOT_MODE_FILE' "$REPO_DIR/menu/bot-daemon.sh" || { echo "FAIL: bot-daemon tidak tahu mode webhook"; exit 1; }
+echo "PASS: mode webhook pada bot-daemon tidak memanggil getUpdates (tidak bentrok 409)"
+
+echo "=== TEST 5: toleransi IP (WIBU_IP_TTL=600) ==="
+export XRAY_ACCESS_LOG="$TMPD/access.log"
+NOW_TS=$(date '+%Y/%m/%d %H:%M:%S')
+OLD_TS=$(date -d '300 seconds ago' '+%Y/%m/%d %H:%M:%S')      # 5 menit: harus MASIH terbaca
+ANCIENT_TS=$(date -d '2 hours ago' '+%Y/%m/%d %H:%M:%S')      # 2 jam: harus diabaikan
+# urutan KRONOLOGIS seperti access.log nyata (dibaca terbalik oleh live_ip_pairs)
+{
+  printf '%s.100000 from 198.51.100.7:5555 accepted tcp:x:443 [vless-ws-tls >> direct] email: lama.sekali\n' "$ANCIENT_TS"
+  printf '%s.200000 from 43.156.147.95:44321 accepted tcp:x:443 [vless-ws-tls >> direct] email: roaming.one\n' "$OLD_TS"
+  printf '%s.300000 from 203.0.113.9:6666 accepted tcp:x:443 [vless-ws-tls >> direct] email: baru.dua\n' "$NOW_TS"
+} > "$XRAY_ACCESS_LOG"
+source "$REPO_DIR/common.sh"
+OUT=$(live_ip_pairs)
+grep -q "^roaming.one 43.156.147.95$" <<< "$OUT" || { echo "FAIL: IP 5 menit lalu harus masih dihitung -> '$OUT'"; exit 1; }
+echo "PASS: IP 5 menit lalu masih dianggap terhubung (toleransi roaming 600s)"
+grep -q "^lama.sekali" <<< "$OUT" && { echo "FAIL: IP 2 jam lalu seharusnya diabaikan"; exit 1; }
+echo "PASS: IP 2 jam lalu diabaikan"
+[[ "$(WIBU_IP_TTL=60 bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; live_ip_pairs" | grep -c 'roaming.one')" == "0" ]] \
+    || { echo "FAIL: WIBU_IP_TTL harus bisa diubah"; exit 1; }
+echo "PASS: WIBU_IP_TTL dapat disetel (60s -> IP 5 menit lalu keluar)"
+
+echo "=== TEST 6: penjaga regresi pemasangan ==="
+grep -q '_need "sbin/wibu-udpgw"' "$REPO_DIR/setup.sh" || { echo "FAIL: setup.sh tidak mengunduh wibu-udpgw"; exit 1; }
+grep -q 'wibu-udpgw install' "$REPO_DIR/setup.sh" || { echo "FAIL: setup.sh tidak menjalankan pemasang udpgw"; exit 1; }
+grep -q 'bot-webhook.service' "$REPO_DIR/setup.sh" || { echo "FAIL: unit bot-webhook tidak ditulis setup.sh"; exit 1; }
+grep -q 'safe_update "sbin/wibu-udpgw"' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: m-setting tidak memperbarui wibu-udpgw"; exit 1; }
+grep -q '\[14\] Pasang / Perbaiki UDP Gateway' "$REPO_DIR/menu/m-ssh.sh" || { echo "FAIL: menu SSH belum punya entri UDPGW"; exit 1; }
+grep -q 'Mode Bot (Polling / Webhook)' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: menu mode bot hilang"; exit 1; }
+echo "PASS: semua rantai pemasangan/menu terdaftar"
+
+echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="

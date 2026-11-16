@@ -997,8 +997,24 @@ fi
 OFFSET=$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Polling bot started (offset: $OFFSET)"
 
+WEBHOOK_QUEUE="${WEBHOOK_QUEUE:-/etc/wibutunnel/tmp/bot_webhook_queue.jsonl}"
+BOT_MODE_FILE="${BOT_MODE_FILE:-/etc/wibutunnel/tmp/bot_mode}"
+
 while true; do
-    resp=$(tg_api getUpdates -S --max-time 35 -G --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=30" 2>&1)
+    # [WEBHOOK] Telegram -> bot-webhook-server -> antrean -> di sini. Saat mode webhook,
+    # getUpdates DILARANG (Telegram membalas 409 "webhook is active"), jadi update dibaca
+    # dari antrean dan dibungkus menyerupai balasan getUpdates supaya seluruh pemrosesan
+    # update di bawah tidak perlu diubah sama sekali.
+    if [[ -s "$WEBHOOK_QUEUE" ]]; then
+        resp=$(jq -c -s '{ok:true, result:.}' "$WEBHOOK_QUEUE" 2>/dev/null)
+        : > "$WEBHOOK_QUEUE"
+        if [[ -z "$resp" ]]; then sleep 1; continue; fi
+    elif [[ "$(cat "$BOT_MODE_FILE" 2>/dev/null)" == "webhook" ]]; then
+        sleep 1
+        continue
+    else
+        resp=$(tg_api getUpdates -S --max-time 35 -G --data-urlencode "offset=${OFFSET}" --data-urlencode "timeout=30" 2>&1)
+    fi
     
     if [[ $(echo "$resp" | jq -r '.ok' 2>/dev/null) != "true" ]]; then
         # [FIX] Jangan gagal diam-diam. Sebelumnya loop ini hanya `sleep 1; continue`,
