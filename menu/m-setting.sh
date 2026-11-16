@@ -100,10 +100,18 @@ safe_update() {
         actual=$(sha256sum "$tmp_file" | awk '{print $1}')
         if [[ "$actual" != "$expected" ]]; then
             # [FIX] Berkas lewat CDN raw bisa basi juga -> ambil sekali lagi lewat API (otoritatif).
+            # (a) API GitHub (otoritatif; bisa 403 kalau kuota tanpa token habis)
             curl -4 -fSL --retry 2 --connect-timeout 10 --max-time 60 -H 'Accept: application/vnd.github.raw' \
                 -H 'User-Agent: wibutunnel-update' -o "$tmp_file" \
                 "https://api.github.com/repos/WBVPN/wibutunnel/contents/${repo_path}?ref=${WIBU_REF}" 2>/dev/null || true
             actual=$(sha256sum "$tmp_file" 2>/dev/null | awk '{print $1}')
+            # (b) jsDelivr pada ref yang sama: cermin yang membuang cache saat ref diperbarui,
+            #     jadi ini penyelamat saat API kena kuota DAN CDN raw menyajikan versi lama.
+            if [[ "$actual" != "$expected" ]]; then
+                curl -4 -fSL --retry 2 --connect-timeout 10 --max-time 60 -o "$tmp_file" \
+                    "https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@${WIBU_REF}/${repo_path}" 2>/dev/null || true
+                actual=$(sha256sum "$tmp_file" 2>/dev/null | awk '{print $1}')
+            fi
         fi
         if [[ "$actual" != "$expected" ]]; then
             echo -e "${RED}× HASH TIDAK COCOK untuk ${repo_path} — Update DITOLAK.${NC}"

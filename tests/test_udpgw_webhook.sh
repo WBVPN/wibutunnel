@@ -203,6 +203,9 @@ echo "PASS: semua entri safe_update sbin ada padanannya di setup.sh"
 echo "=== TEST 10: manifest diambil sekali per putaran update (hemat kuota API) ==="
 grep -q 'WIBU_MANIFEST_FILE' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: m-setting tidak memakai manifest bersama"; exit 1; }
 grep -q 'cdn.jsdelivr.net/gh/WBVPN/wibutunnel' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: jsDelivr tidak dipakai sebagai cadangan manifest"; exit 1; }
+grep -q 'cdn.jsdelivr.net/gh/WBVPN/wibutunnel@${WIBU_REF}/${repo_path}' "$REPO_DIR/menu/m-setting.sh" \
+    || { echo "FAIL: jsDelivr tidak dipakai saat hash berkas tidak cocok"; exit 1; }
+echo "PASS: jsDelivr dipakai sebagai penyelamat berkas (API kena kuota / CDN raw basi)"
 grep -q 'if \[\[ -n "${WIBU_MANIFEST_FILE:-}" && -s "${WIBU_MANIFEST_FILE:-}" \]\]' "$REPO_DIR/menu/m-setting.sh" \
     || { echo "FAIL: safe_update tidak memakai manifest bersama"; exit 1; }
 echo "PASS: safe_update memakai manifest bersama + cadangan jsDelivr"
