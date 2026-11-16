@@ -1,4 +1,6 @@
 #!/bin/bash
+# Lewati bila dijalankan di luar VPS panel (tes ini menulis /etc dan me-restart layanan)
+[[ -f /etc/wibutunnel/version ]] || { echo "LEWATI: $(basename "$0") butuh panel terpasang — jalankan di VPS panel"; exit 0; }
 # ==========================================================================
 # TEST AUTO-REPAIR SYSTEM
 # Perbaikan penting vs versi lama:

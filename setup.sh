@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.22
+# MASTER INSTALLER WIBU TUNNELING - v4.1.23
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -148,7 +148,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.22}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.23}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -388,7 +388,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.22" > /etc/wibutunnel/version
+echo "4.1.23" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -1579,7 +1579,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.22" > /etc/wibutunnel/version
+echo "4.1.23" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,4 +1,6 @@
-# Hasil Uji Nyata di VPS (v4.0.6-fixed)
+# Hasil Uji Nyata di VPS
+
+> Jejak uji dari v4.0.6 sampai v4.1.23 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
 
 Diuji pada VPS kosong **Ubuntu 20.04** (1 vCPU / 965 MB), domain `test.priasawit.web.id`,
 IP terdaftar di `izin.txt` sampai 2026-12-15. Semua temuan di bawah ditemukan karena
