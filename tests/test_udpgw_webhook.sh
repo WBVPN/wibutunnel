@@ -181,4 +181,20 @@ grep -q 'wibu-units sync' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: Update 
 grep -q '_FILES2' "$REPO_DIR/menu/m-setting.sh" || { echo "FAIL: Update Script tidak punya pass kedua untuk berkas baru"; exit 1; }
 echo "PASS: Update Script menyelaraskan unit + pass kedua berkas baru"
 
+echo "=== TEST 9: paritas daftar modul (anti modul yang tak bisa lewat OTA) ==="
+missing=0
+while read -r mod; do
+    [[ -z "$mod" ]] && continue
+    if ! grep -q "safe_update \"${mod}\"" "$REPO_DIR/menu/m-setting.sh"; then
+        echo "  FAIL: ${mod} ada di setup.sh tapi TIDAK ada di daftar Update Script"; missing=1
+    fi
+done < <(grep -oP '_need "\K(sbin/[^"]+)' "$REPO_DIR/setup.sh" | sort -u)
+[[ "$missing" -eq 0 ]] || { echo "FAIL: ada modul yang tak akan pernah terpasang lewat OTA"; exit 1; }
+echo "PASS: semua modul sbin di setup.sh punya entri safe_update di Update Script"
+while read -r mod; do
+    [[ -z "$mod" ]] && continue
+    grep -q "_need \"${mod}\"" "$REPO_DIR/setup.sh" || { echo "FAIL: ${mod} ada di Update Script tapi tidak diunduh setup.sh"; exit 1; }
+done < <(grep -oP 'safe_update "\K(sbin/[^"]+)' "$REPO_DIR/menu/m-setting.sh" | sort -u)
+echo "PASS: semua entri safe_update sbin ada padanannya di setup.sh"
+
 echo "=== ALL UDPGW/WEBHOOK TESTS PASSED ==="
