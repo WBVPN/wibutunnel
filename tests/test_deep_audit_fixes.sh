@@ -70,7 +70,8 @@ grep -q "useradd -m -s /bin/bash" "$REPO_DIR/menu/m-backup.sh" || { echo "FAIL: 
 echo "PASS: m-backup and restore handles SSH and recovery completely"
 
 echo "=== [5/5] Testing ws-stunnel python compilation & structure ==="
-python3 -m py_compile "$REPO_DIR/sbin/ws-stunnel"
+# Py_compile ke berkas SEMENTARA: jangan tinggalkan sbin/__pycache__ di pohon repo.
+python3 -c "import py_compile,sys,tempfile,os; py_compile.compile(sys.argv[1], cfile=os.path.join(tempfile.mkdtemp(),'cek.pyc'), doraise=True)" "$REPO_DIR/sbin/ws-stunnel"
 grep -q "if target:" "$REPO_DIR/sbin/ws-stunnel" || { echo "FAIL: ws-stunnel missing target cleanup"; exit 1; }
 echo "PASS: ws-stunnel verified"
 
