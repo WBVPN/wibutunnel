@@ -427,12 +427,13 @@ license_days_left() { # $1=EXP -> cetak angka hari (minimal 0)
 }
 
 # Label siap tampil. Aturan (diminta pemilik): `lifetime` DICETAK APA ADANYA
-# tanpa tambahan; entri bertanggal ditampilkan sebagai "( N Hari )" saja
-# (tanggalnya tetap jadi sumber kebenaran di izin.txt & cache, cuma tak dipajang).
-license_expiry_label() { # $1=EXP -> "lifetime" | "( N Hari )"
+# tanpa tambahan; entri bertanggal ditampilkan sebagai "N Hari" saja — tanpa
+# tanda kurung (tanggalnya tetap sumber kebenaran di izin.txt & cache, cuma
+# tidak dipajang).
+license_expiry_label() { # $1=EXP -> "lifetime" | "N Hari"
     local d
     [[ "${1,,}" == "lifetime" ]] && { printf 'lifetime'; return 0; }
-    if d=$(license_days_left "$1"); then printf '( %s Hari )' "$d"; else printf '( ? Hari )'; fi
+    if d=$(license_days_left "$1"); then printf '%s Hari' "$d"; else printf '? Hari'; fi
 }
 
 check_license() {

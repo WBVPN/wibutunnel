@@ -91,7 +91,7 @@ D=$(. "$REPO_DIR/common.sh" >/dev/null 2>&1; license_days_left "$(date -u -d '+3
 ck "14. sisa hari untuk +30 hari (~30)" "$ok" "1"
 
 LBP=$(. "$REPO_DIR/common.sh" >/dev/null 2>&1; license_expiry_label "2020-01-01")
-ck "15. tanggal lampau -> '( 0 Hari )', bukan negatif" "$LBP" "( 0 Hari )"
+ck "15. tanggal lampau -> '0 Hari', bukan negatif" "$LBP" "0 Hari"
 
 echo "=========== LISENSI: $PASS PASS / $FAIL FAIL ==========="
 [[ $FAIL -eq 0 ]]
