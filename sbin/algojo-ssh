@@ -27,38 +27,19 @@ if [[ -f "$DB_LOCK" ]]; then
 fi
 
 # Get active SSH sessions per user
-# Hitung SESI (bukan IP unik): tiap koneksi ESTABLISHED = 1 sesi.
-# AKURAT untuk koneksi relay (127.0.0.1) — IP asli tak terlihat di dropbear,
-# tapi jumlah sesi tetap benar.
+# Sumber tunggal: ssh_sessions_snapshot() dari common.sh.
+# Penting (bug nyata, VPS uji 2026-11-16): pemilik socket sesi adalah dropbear
+# yang jalan sebagai ROOT, sedangkan user sebenarnya ada di KETURUNAN proses itu.
+# Cara lama (`ps -o user= -p <pid-socket>`) selalu memberi "root" -> user tak ada
+# di ssh_exp.conf -> sesi tak dihitung -> limit tak pernah terpicu.
 declare -A user_sessions
 
-while read -r line; do
-    # Skip header
-    [[ "$line" =~ ^State|^Recv-Q ]] && continue
-    
-    # Correct parsing: $3=Local $4=Peer $5=Process
-    local_addr=$(echo "$line" | awk '{print $3}')
-    process=$(echo "$line" | awk '{print $5}')
-    
-    local_port=${local_addr##*:}
-    
-    # Filter SSH ports (22=openssh, 109/143=dropbear direct, 2222=dropbear loopback)
-    [[ ! "$local_port" =~ ^(22|109|143|2222)$ ]] && continue
-    
-    # Extract pid from process column: users:(("dropbear",pid=12345,fd=6))
-    # If multiple PIDs (parent+child), take LAST one (client session)
-    pid=$(echo "$process" | grep -oP 'pid=\K[0-9]+' | tail -1)
-    [[ -z "$pid" ]] && continue
-    
-    # Get username from pid
-    username=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+while IFS=$'\t' read -r username _client_ip; do
     [[ -z "$username" ]] && continue
-    
     # Skip if user not in ssh_exp.conf
     grep -q "^${username}:" "$SSH_EXP" 2>/dev/null || continue
-    
     user_sessions[$username]=$(( ${user_sessions[$username]:-0} + 1 ))
-done < <(ss -tnp state established 2>/dev/null | grep -E 'dropbear|sshd')
+done < <(ssh_sessions_snapshot)
 
 # Check each user against session limit
 for user in "${!user_sessions[@]}"; do

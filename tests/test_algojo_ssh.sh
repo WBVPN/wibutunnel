@@ -98,4 +98,28 @@ cnt=$(ssh_session_count "root")
 [[ "$cnt" =~ ^[0-9]+$ ]] || { echo "FAIL: ssh_session_count not integer (got: $cnt)"; exit 1; }
 echo "PASS: ssh_session_count valid output"
 
+echo "=== TEST 4: parsing baris ss + atribusi user sesi (bug pemilik-socket) ==="
+L1='0      0      103.150.60.84:109     43.156.147.95:57024 users:(("dropbear",pid=243623,fd=0))'
+P=$(ssh_parse_line "$L1" | cut -f1); D=$(ssh_parse_line "$L1" | cut -f2); I=$(ssh_parse_line "$L1" | cut -f3)
+[[ "$P" == "109" && "$D" == "243623" && "$I" == "43.156.147.95" ]] || { echo "FAIL: ssh_parse_line (port=$P pid=$D ip=$I)"; exit 1; }
+echo "PASS: ssh_parse_line port/pid/ip"
+
+L2='0 0 127.0.0.1:2222 127.0.0.1:1234 users:(("dropbear",pid=111,fd=6),("dropbear",pid=222,fd=7))'
+[[ "$(ssh_parse_line "$L2" | cut -f2)" == "222" ]] || { echo "FAIL: pid terakhir (sesi klien) tak diambil"; exit 1; }
+echo "PASS: pid terakhir (sesi klien) diambil"
+
+for ok in 22 109 143 2222; do
+    [[ "$ok" =~ $SSH_SESSION_PORTS ]] || { echo "FAIL: port $ok tak dianggap sesi SSH"; exit 1; }
+done
+for no in 443 8080 38497; do
+    [[ ! "$no" =~ $SSH_SESSION_PORTS ]] || { echo "FAIL: port $no dianggap sesi SSH"; exit 1; }
+done
+echo "PASS: filter port sesi SSH (22/109/143/2222)"
+
+# Penjaga regresi: user sesi dicari lewat KETURUNAN proses, bukan pemilik socket
+grep -q "ssh_pid_session_user" "$REPO_DIR/common.sh" || { echo "FAIL: helper keturunan hilang dari common.sh"; exit 1; }
+grep -q "ssh_sessions_snapshot" "$REPO_DIR/sbin/algojo-ssh" || { echo "FAIL: algojo-ssh tak memakai snapshot"; exit 1; }
+grep -q 'ps -o user= -p "\$pid"' "$REPO_DIR/sbin/algojo-ssh" && { echo "FAIL: algojo-ssh kembali ke atribusi pemilik socket"; exit 1; }
+echo "PASS: atribusi sesi lewat keturunan (bug pemilik-socket tidak kembali)"
+
 echo "=== ALL ALGOJO-SSH TESTS PASSED ==="

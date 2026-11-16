@@ -595,21 +595,64 @@ ssh_get_pass() {
     db_get "$1" "$SSH_DB_PASS"
 }
 
-ssh_session_count() {
-    local user="$1" count=0
-    count=$(ps -u "$user" -o comm= 2>/dev/null | grep -cE '^(dropbear|sshd|sh|bash)$' || true)
-    printf '%s' "$count"
+# --- Deteksi sesi SSH -------------------------------------------------------
+# Fakta lapangan (dibuktikan di VPS uji 24.04): proses PEMILIK socket sesi adalah
+# dropbear yang masih jalan sebagai ROOT; shell user (`bash`) adalah ANAK dari
+# proses itu. Jadi `ps -o user= -p <pid-socket>` selalu "root" -> seluruh
+# penilaian per-user (jumlah sesi, limit IP, "user aktif") gagal dan limit tak
+# pernah terpicu. Pemetaannya harus menelusuri KETURUNAN sampai ketemu non-root.
+
+# Pisah satu baris `ss -tnp` -> "<port>\t<pid>\t<peer-ip>"
+ssh_parse_line() { # $1=baris ss
+    local l="$1" lp pid ip
+    lp=$(printf '%s\n' "$l" | awk '{print $3}'); lp=${lp##*:}
+    pid=$(printf '%s\n' "$l" | awk '{print $5}' | grep -oP 'pid=\K[0-9]+' | tail -1)
+    ip=$(printf '%s\n' "$l" | awk '{print $4}'); ip=${ip%:*}; ip=${ip#[}; ip=${ip%]}
+    printf '%s\t%s\t%s\n' "$lp" "$pid" "$ip"
 }
 
-ssh_active_ips() {
-    local user="$1" out=""
-    local pids
-    pids=$(pgrep -u "$user" 2>/dev/null || true)
-    [[ -z "$pids" ]] && return 0
-    while read -r line; do
-        out+="${line} "
-    done < <(ss -tnp 2>/dev/null | grep "haproxy" | grep ":443" | grep ESTAB | awk '{print $5}' | sed 's/:[0-9]*$//' | grep -vE '^(127\.0\.0\.1|::1)$' | sort -u)
-    printf '%s' "$out"
+# Baris `ss` yang benar-benar sesi SSH (22=sshd, 109/143=dropbear langsung, 2222=dropbear loopback/WS)
+SSH_SESSION_PORTS='^(22|109|143|2222)$'
+ssh_ss_lines() {
+    local l lp
+    while IFS= read -r l; do
+        lp=$(ssh_parse_line "$l" | cut -f1)
+        [[ "$lp" =~ $SSH_SESSION_PORTS ]] && printf '%s\n' "$l"
+    done < <(ss -tnp state established 2>/dev/null | grep -E 'dropbear|sshd')
+}
+
+# User sesi dari pid pemilik socket: turun ke keturunan pertama yang bukan root
+ssh_pid_session_user() { # $1=pid -> cetak user (return 1 bila tak ada)
+    local pid="$1" u p i=0
+    while [[ -n "$pid" && $i -lt 4 ]]; do
+        u=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
+        [[ -n "$u" && "$u" != "root" ]] && { printf '%s' "$u"; return 0; }
+        p=$(pgrep -P "$pid" 2>/dev/null | head -1)
+        [[ -z "$p" ]] && break
+        pid="$p"; i=$((i+1))
+    done
+    return 1
+}
+
+# Snapshot sesi: satu baris per sesi -> "<user>\t<ip-klien|via-WS>"
+ssh_sessions_snapshot() {
+    local l pid u ip f
+    ssh_ss_lines | while IFS= read -r l; do
+        f=$(ssh_parse_line "$l"); pid=$(printf '%s' "$f" | cut -f2); ip=$(printf '%s' "$f" | cut -f3)
+        [[ -n "$pid" ]] || continue
+        u=$(ssh_pid_session_user "$pid") || continue
+        # jalur WS: peer = loopback (haproxy/ws-stunnel) -> IP klien tak terlihat di ss
+        [[ "$ip" == 127.* || "$ip" == "::1" ]] && ip="via-WS"
+        printf '%s\t%s\n' "$u" "$ip"
+    done
+}
+
+ssh_session_count() { # $1=user -> jumlah sesi aktif
+    ssh_sessions_snapshot | awk -F'\t' -v u="$1" '$1==u {n++} END {print n+0}'
+}
+
+ssh_active_ips() { # $1=user -> IP unik jalur langsung (WS tak terlihat di ss)
+    ssh_sessions_snapshot | awk -F'\t' -v u="$1" '$1==u && $2!="via-WS" {print $2}' | sort -u | tr '\n' ' '
 }
 
 add_ssh_user() {
