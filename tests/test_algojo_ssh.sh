@@ -159,4 +159,45 @@ print("PASS: ws-stunnel memilih IP klien dari header (CF-Connecting-IP > XFF > p
 sys.exit(0 if ok else 1)
 PY
 
+echo "=== TEST 6: deteksi user xray (live_ip_pairs) ==="
+XLOG=$(mktemp)
+NOWTS=$(date +'%Y/%m/%d %H:%M:%S')
+{
+    printf '%s.100000 from 43.156.147.95:44321 accepted tcp:api.ipify.org:443 [vless-ws-tls >> direct] email: roodyz.prem\n' "$NOWTS"
+    printf '%s.200000 from 43.156.147.95:44322 accepted tcp:www.google.com:443 [vless-ws-tls >> direct] email: roodyz.prem\n' "$NOWTS"
+    printf '%s.300000 from 127.0.0.1:44323 accepted tcp:x:443 [vless-ws-tls >> direct] email: dia\n' "$NOWTS"
+    printf '%s.400000 from 198.51.100.7:5555 accepted tcp:x:443 [vless-ws-ntls >> direct] email: api\n' "$NOWTS"
+} > "$XLOG"
+OUT=$(XRAY_ACCESS_LOG="$XLOG" bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; live_ip_pairs" || true)
+grep -q "^roodyz.prem 43.156.147.95$" <<< "$OUT" || { echo "FAIL: user ber-titik/IP asli tak terbaca -> '$OUT'"; exit 1; }
+echo "PASS: user ber-titik (.prem) + IP asli terbaca, duplikat IP disatukan"
+grep -q "^dia " <<< "$OUT" && { echo "FAIL: baris 127.0.0.1 seharusnya dibuang"; exit 1; }
+echo "PASS: 127.0.0.1 dibuang (bukan IP pelanggan, jangan dikira online)"
+grep -q "^api " <<< "$OUT" && { echo "FAIL: email 'api' seharusnya dibuang"; exit 1; }
+echo "PASS: email sistem (api/dummy) dibuang"
+
+OLDTS=$(date -d '30 minutes ago' +'%Y/%m/%d %H:%M:%S')
+printf '%s.100000 from 203.0.113.9:1 accepted tcp:x:443 [vless-ws-tls >> direct] email: lama.sekali\n' "$OLDTS" > "$XLOG"
+OUT=$(XRAY_ACCESS_LOG="$XLOG" bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; live_ip_pairs" || true)
+[[ -z "$OUT" ]] || { echo "FAIL: baris di luar jendela waktu harus diabaikan -> '$OUT'"; exit 1; }
+echo "PASS: baris di luar jendela waktu diabaikan (user lama tak dikira online)"
+rm -f "$XLOG"
+
+python3 - "$REPO_DIR" <<'PY' || exit 1
+import importlib.util, importlib.machinery, sys
+sys.dont_write_bytecode = True
+repo = sys.argv[1]
+loader = importlib.machinery.SourceFileLoader('ws', f'{repo}/sbin/ws-stunnel')
+spec = importlib.util.spec_from_loader('ws', loader)
+m = importlib.util.module_from_spec(spec); loader.exec_module(m)
+# header PROXY protocol v2 (TCP/IPv4): sig + ver/cmd + fam + len + src(4+2) + dst(4+2)
+hdr = m.PROXY_V2_SIG + b'\x21\x11' + (12).to_bytes(2, 'big') + bytes([203, 0, 113, 9, 0, 0]) + bytes([10, 0, 0, 1, 0, 0])
+ok = m.proxy_v2_addr(hdr) == '203.0.113.9'
+ok = ok and m.proxy_v2_addr(b'GET / HTTP/1.1\r\n\r\n') is None
+# header HTTP (CF-Connecting-IP) harus tetap menang atas alamat PROXY
+ok = ok and m.client_ip_from(b'GET / HTTP/1.1\r\nCF-Connecting-IP: 198.51.100.7\r\n\r\n', '203.0.113.9') == '198.51.100.7'
+print("PASS: ws-stunnel membaca PROXY protocol v2 (IP asli tak lagi 127.0.0.1)" if ok else "FAIL: parsing PROXY v2 ws-stunnel")
+sys.exit(0 if ok else 1)
+PY
+
 echo "=== ALL ALGOJO-SSH TESTS PASSED ==="

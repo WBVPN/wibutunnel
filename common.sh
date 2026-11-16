@@ -546,22 +546,37 @@ sanitize_user() {
 escape_sed() { printf '%s' "$1" | sed 's/[].\/[\\*^$()+?{|]/\\&/g'; }
 escape_grep() { printf '%s' "$1" | sed 's/[].\/[\\*^$()+?{|]/\\&/g'; }
 
-# live_ip_pairs: cetak "user ip ip ..." hanya untuk koneksi yang socket TCP-nya masih hidup.
-# Asosiasi user<->IP diambil dari access.log 10 menit terakhir, liveness dari socket ESTABLISHED :443.
-# ponytail: kalau client lewat CDN/reverse-proxy, IP di ss != IP di log -> user tidak terhitung.
-#           Ganti ke conntrack per-UUID kalau topologi CDN dipakai.
+# live_ip_pairs: cetak "<user> <ip> <ip> ..." dari access.log dalam jendela LIVE_IP_WINDOW.
+# Asosiasi user<->IP murni dari log (xray melihat IP asli karena rantai haproxy
+# mengirim PROXY protocol v2: ssl_sni -> hub(accept-proxy) -> xray(acceptProxyProtocol)).
+# ponytail: perangkat yang idle lebih lama dari jendela ini lepas dari hitungan walau
+#           socket-nya masih terbuka. `ss`/conntrack TIDAK dipakai: pada box ini peer
+#           :443 berisi IP haproxy/Cloudflare, bukan IP client.
+#           Upgrade path: ekspos jumlah koneksi aktif per-user dari xray (butuh plugin).
 live_ip_pairs() {
-    # IP diambil dari access.log (xray melihat IP asli via PROXY protocol).
-    # ponytail: liveness murni dari log, jadi device yang idle lebih lama dari jendela ini
-    #           akan lepas dari hitungan walau socket-nya masih terbuka. Alternatif `ss`/conntrack
-    #           TIDAK dipakai: pada box ini peer :80/:443 berisi IP Cloudflare, bukan IP client,
-    #           sehingga filter socket membuang semua user nyata. Upgrade path: ekspos jumlah
-    #           koneksi aktif per-user dari xray (butuh fork/plugin), bukan dari ss.
-    local log="/var/log/xray/access.log"
+    local log="${XRAY_ACCESS_LOG:-/var/log/xray/access.log}"
     local thresh
     [[ ! -s "$log" ]] && return 0
     thresh=$(date -d "${LIVE_IP_WINDOW:-120 seconds} ago" +'%Y/%m/%d %H:%M:%S')
-    awk -v thresh="$thresh" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/ && /email: /){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; } } } } END { for (e in ips) print e, ips[e] }' <(tail -n 5000 "$log" 2>/dev/null | tac) 2>/dev/null
+    awk -v thresh="$thresh" '
+        { if ($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1 " " $2 < thresh) exit }
+        /accepted/ && /email: / {
+            em = ""; ip = ""
+            for (i = 1; i <= NF; i++) {
+                if ($i == "accepted") {
+                    ip = $(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); gsub(/[\[\]]/, "", ip)
+                } else if ($i == "email:") {
+                    em = $(i+1)
+                }
+            }
+            # nama user xray boleh mengandung titik/@ (a-zA-Z0-9._@-) -> jangan dibuang
+            gsub(/[^a-zA-Z0-9._@-]/, "", em)
+            if (em != "" && em != "dummy" && em != "api" && ip != "" && ip != "127.0.0.1" && ip != "::1") {
+                if (!seen[em, ip]++) ips[em] = (ips[em] ? ips[em] " " : "") ip
+            }
+        }
+        END { for (e in ips) print e, ips[e] }
+    ' <(tail -n 5000 "$log" 2>/dev/null | tac) 2>/dev/null
 }
 
 # ==========================================

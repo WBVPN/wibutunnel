@@ -296,3 +296,58 @@ Ditemukan dari laporan pemilik: "bikin akun SSH, konek direct, user aktifnya tak
 IP VPS dengan TLS) akan tercatat sebagai IP peer haproxy jika haproxy sendirilah yang menjadi peer — dalam
 praktik langsung-ke-IP memberi IP klien sebenarnya karena haproxy melihat socket asli; yang residual hanya
 sesi WS yang datang lewat proxy pihak ketiga tanpa header IP sama sekali (jatuh ke `via-WS`).
+
+---
+
+## 12. Deteksi user XRAY: rantai PROXY protocol v2 putus (2026-11-16)
+
+Keluhan: "cek juga untuk user xray beneran kebaca akurat tak". Hasil: **tidak** — user xray
+**tak pernah** terdeteksi online, dan penyebabnya bukan di panel tapi di rantai haproxy.
+
+**Rantai sebelum perbaikan:**
+
+```
+klien -> ssl_sni(:443, mode tcp) --TANPA proxy--> bk_hub443 -> hub(:8444, mode http didalam haproxy)
+       -> xray(:10086, acceptProxyProtocol) <-- send-proxy-v2 (tapi isinya 127.0.0.1!)
+```
+
+Karena dua hop pertama tidak membawa PROXY protocol, `send-proxy-v2` milik hop terakhir
+mengirim **alamat peer hop sebelumnya**, yaitu `127.0.0.1` (haproxy sendiri). Bukti dari log
+xray sebelum perbaikan, pada koneksi klien LUAR (IP publik 43.156.147.95):
+
+```
+2026/11/16 12:57:27 from 127.0.0.1:45350 accepted tcp:api.ipify.org:443 [vless-ws-tls >> direct] email: staging-1
+```
+
+Akibat berantai:
+- `live_ip_pairs()` membuang baris ber-IP `127.0.0.1` (memang benar: itu bukan IP pelanggan)
+  -> **daftar user xray online selalu kosong**;
+- `algojo-wibu` mengambil `LOGIN_DATA=$(live_ip_pairs)` -> **limit IP xray tak pernah terpicu**.
+
+Bug kedua di parser: `email=$NF` + `gsub(/[^a-zA-Z0-9_-]/,"")` membuang titik dan `@`, padahal
+nama user xray boleh memuat `._@-` (mis. `roodyz.prem`) -> user ber-titik juga tak pernah terbaca.
+
+**Perbaikan (v4.1.18):**
+
+1. `setup.sh` template haproxy: `send-proxy-v2` pada `ws_tunnel`, `bk_hub443`, `bk_hub80`;
+   `accept-proxy` pada bind hub `127.0.0.1:8444` dan `127.0.0.1:8445`. Klien asli kini terbawa
+   sampai xray.
+2. `ws-stunnel` membaca header PROXY protocol v2 (dan menanganinya bila tidak ada), sehingga
+   jalur SSH lewat WS (443/80) juga mendapat IP klien asli, bukan `127.0.0.1`.
+3. `live_ip_pairs()`: ambil token setelah literal `email:`, jangan buang `.`/`@`, buang bracket IPv6,
+   jendela `LIVE_IP_WINDOW` (default 120 s), log bisa dialihkan untuk uji (`XRAY_ACCESS_LOG`).
+
+**Bukti uji ulang (klien luar, sama, setelah perbaikan):**
+
+| Uji | Sebelum | Sesudah |
+|---|---|---|
+| Log xray (klien vless/ws/TLS 443 dari 43.156.147.95) | `from 127.0.0.1:45350 ... email: staging-1` | `from 43.156.147.95:44050 ... email: staging-1` |
+| `live_ip_pairs` | kosong | `staging-1 43.156.147.95` |
+| `LOGIN_DATA` di `algojo-wibu` | kosong | `staging-1 43.156.147.95` |
+| SSH lewat WS tanpa header IP apa pun | catatan `127.0.0.1` | catatan `43.156.147.95` (dari PROXY v2) |
+| Sesi pelanggan asli (bukan uji) di `ws_client_ip.log` | `127.0.0.1` | `45.138.12.58` (IP asli) |
+
+**Batas yang disadari:** `live_ip_pairs()` murni dari log, jadi perangkat yang benar-benar idle
+lebih lama dari `LIVE_IP_WINDOW` lepas dari hitungan walau socket-nya masih terbuka; bila klien
+lewat CDN pihak ketiga yang tidak mengirim `CF-Connecting-IP`/`X-Forwarded-For`, IP yang tercatat
+adalah IP edge CDN (bukan pengguna akhir).

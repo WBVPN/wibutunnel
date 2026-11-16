@@ -946,21 +946,27 @@ backend dropbear_raw
     mode tcp
     server local_dropbear 127.0.0.1:143 check
 
+# PROXY protocol v2 diteruskan sepanjang rantai agar IP KLIEN ASLI tidak hilang:
+#   klien -> ssl_sni(:443) --send-proxy-v2--> hub(:8444, accept-proxy)
+#          --send-proxy-v2--> xray(1008x, acceptProxyProtocol)
+#   klien -> ssl_sni(:443) --send-proxy-v2--> ws-stunnel(:10015) [SSH lewat WS]
+# Tanpa ini peer di ujung rantai selalu 127.0.0.1 -> log xray berisi 127.0.0.1
+# (user xray tak pernah terdeteksi online) dan ws-stunnel mencatat IP salah.
 backend ws_tunnel
     mode tcp
-    server local_ws_stunnel 127.0.0.1:10015 check
+    server local_ws_stunnel 127.0.0.1:10015 send-proxy-v2 check
 
 backend bk_hub443
     mode tcp
-    server hub443 127.0.0.1:8444
+    server hub443 127.0.0.1:8444 send-proxy-v2
 
 backend bk_hub80
     mode tcp
-    server hub80 127.0.0.1:8445
+    server hub80 127.0.0.1:8445 send-proxy-v2
 
 # ===================== TAHAP 2 =====================
 listen http_hub443
-    bind 127.0.0.1:8444
+    bind 127.0.0.1:8444 accept-proxy
     mode http
     option forwardfor
     acl is_vless_grpc path_beg /vless/
@@ -986,7 +992,7 @@ listen http_hub443
     use_backend xray_trojan if is_trojan_ws
 
 listen http_hub80
-    bind 127.0.0.1:8445
+    bind 127.0.0.1:8445 accept-proxy
     mode http
     option forwardfor
     acl is_vless_ntls path_beg /vless-ntls

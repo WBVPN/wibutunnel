@@ -18,10 +18,25 @@ RESPONSE_FILE = '/etc/wibutunnel/ws-response'
 # 127.0.0.1 dan IP klien hilang di hop ws-stunnel.
 CLIENT_IP_FILE = '/etc/wibutunnel/tmp/ws_client_ip.log'
 CLIENT_IP_KEEP = 500          # jumlah baris terakhir yang disimpan
+PROXY_V2_SIG = b'\r\n\r\n\x00\r\nQUIT\n'
+
+
+def proxy_v2_addr(hdr):
+    """Alamat klien dari header PROXY protocol v2 (TCP atas IPv4/IPv6)."""
+    try:
+        fam = hdr[13]
+        body = hdr[16:16 + int.from_bytes(hdr[14:16], 'big')]
+        if fam == 0x11 and len(body) >= 12:      # AF_INET + STREAM
+            return '.'.join(str(b) for b in body[:4])
+        if fam == 0x21 and len(body) >= 36:      # AF_INET6 + STREAM
+            return socket.inet_ntop(socket.AF_INET6, body[:16])
+    except Exception:
+        pass
+    return None
 
 
 def client_ip_from(req, peer_ip):
-    """IP klien: CF-Connecting-IP > X-Forwarded-For (entri pertama) > IP peer."""
+    """IP klien: CF-Connecting-IP > X-Forwarded-For (entri pertama) > PROXY/peer."""
     ip = ''
     try:
         head = req.split(b'\r\n\r\n', 1)[0].decode('latin-1', 'ignore')
@@ -74,8 +89,29 @@ class ConnectionHandler(threading.Thread):
     def run(self):
         target = None
         try:
-            req = b''
             self.client.settimeout(10)
+
+            # 1) Header PROXY protocol v2 dari haproxy (bila ada). Header ini
+            #    membawa ALAMAT KLIEN ASLI: tanpa membacanya, peer di sini selalu
+            #    127.0.0.1 (haproxy) dan IP klien hilang di hop ini.
+            req = b''
+            while len(req) < 16:
+                chunk = self.client.recv(1024)
+                if not chunk:
+                    return
+                req += chunk
+            proxy_ip = None
+            if req.startswith(PROXY_V2_SIG):
+                plen = int.from_bytes(req[14:16], 'big')
+                while len(req) < 16 + plen:
+                    chunk = self.client.recv(1024)
+                    if not chunk:
+                        return
+                    req += chunk
+                proxy_ip = proxy_v2_addr(req)
+                req = req[16 + plen:]
+
+            # 2) Handshake HTTP/WebSocket dari klien
             while b'\r\n\r\n' not in req and len(req) < 8192:
                 chunk = self.client.recv(1024)
                 if not chunk:
@@ -97,7 +133,8 @@ class ConnectionHandler(threading.Thread):
             # sebagai peer port milik sesi dropbear).
             try:
                 local_port = target.getsockname()[1]
-                record_client_ip(local_port, client_ip_from(req, self.client.getpeername()[0]))
+                peer = proxy_ip or self.client.getpeername()[0]
+                record_client_ip(local_port, client_ip_from(req, peer))
             except Exception:
                 pass
 
