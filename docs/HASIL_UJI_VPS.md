@@ -256,3 +256,43 @@ Ini OS terakhir dalam matriks; sekaligus penutup uji portabilitas 5 OS.
    terpasang`. Perbaikan: **jalur cadangan tanpa API** (unduh `Xray-linux-64.zip` dari aset rilis versi terpin,
    verifikasi hash biner `e87bce58...a66d`, pasang biner + geodata + user + unit systemd) + rantai unduhan
    berhenti memakai API setelah 403/429. Jalur cadangan ini benar-benar terpakai saat uji ulang.
+
+---
+
+## 11. Deteksi sesi SSH: atribusi user & IP klien jalur WS (2026-11-16)
+
+Ditemukan dari laporan pemilik: "bikin akun SSH, konek direct, user aktifnya tak kebaca".
+
+| Yang diperiksa | Temuan sebelum perbaikan |
+|---|---|
+| Pemilik socket sesi (`ss -tnp`) | Proses dropbear yang **masih jalan sebagai root**; shell user (`bash`) adalah **anak** dari proses itu |
+| Atribusi lama (`ps -o user= -p <pid socket>`) | Selalu `root` -> user tak ada di `ssh_exp.conf` -> **sesi tak pernah dihitung, limit IP SSH tak pernah terpicu** |
+| `ssh_active_ips()` | Mengabaikan argumen user; mengembalikan **IP milik klien lain** (contoh terukur: `162.158.102.133 172.64.198.32` padahal sesi berasal dari satu IP saja) |
+| Sesi lewat WS (443) | IP klien hilang di hop ws-stunnel; `ss` hanya melihat `127.0.0.1` |
+| User sistem `sshd` (uid 105, privsep 24.04) | Koneksi brute-force port 22 terbaca seolah **sesi milik user "sshd"** |
+| `last` (wtmp) | Kosong untuk akun SSH -> **tidak ada riwayat login** di panel; dropbear tidak menulis wtmp |
+
+**Perbaikan (v4.1.18):**
+
+1. `ssh_pid_session_user()` — menelusuri **keturunan** proses sampai menemukan akun nyata
+   (**uid >= 1000**), jadi root/sshd/privsep tak pernah dianggap pelanggan.
+2. `ssh_sessions_snapshot()` — satu sumber kebenaran untuk `ssh_session_count()`, `ssh_active_ips()`,
+   dan `algojo-ssh`.
+3. `ws-stunnel` mencatat IP klien dari handshake: **`CF-Connecting-IP` > `X-Forwarded-For` > IP peer**,
+   dipetakan lewat **port lokal soket ke dropbear** ke `ws_client_ip.log` (500 baris terakhir,
+   TTL 3600 s) -> panel bisa menampilkan IP asli walau klien lewat Cloudflare.
+4. `algojo-ssh` memakai snapshot yang sama (bukan parsing sendiri).
+
+**Bukti uji di VPS uji (103.150.60.84, Ubuntu 24.04, panel v4.1.17 + pratinjau):**
+
+| Uji | Hasil |
+|---|---|
+| SSH langsung (port 109) sebagai akun panel | `trial-rno8  43.156.147.95` — user & IP asli terbaca |
+| SSH lewat WS/443 (TLS + handshake WS, header `CF-Connecting-IP: 203.0.113.9`) | `trial-rno8  203.0.113.9` — IP dari header, bukan `127.0.0.1` |
+| `algojo-ssh` sebelum perbaikan pada sesi yang sama | tak menghitung sesi apa pun (user = root) |
+| Baris user sistem `sshd` di daftar online | **0** setelah perbaikan |
+
+**Belum akurat / batas yang disadari:** sesi WS yang **tidak** mengirim header IP (klien tanpa CF, langsung ke
+IP VPS dengan TLS) akan tercatat sebagai IP peer haproxy jika haproxy sendirilah yang menjadi peer — dalam
+praktik langsung-ke-IP memberi IP klien sebenarnya karena haproxy melihat socket asli; yang residual hanya
+sesi WS yang datang lewat proxy pihak ketiga tanpa header IP sama sekali (jatuh ke `via-WS`).

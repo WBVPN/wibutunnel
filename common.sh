@@ -621,12 +621,18 @@ ssh_ss_lines() {
     done < <(ss -tnp state established 2>/dev/null | grep -E 'dropbear|sshd')
 }
 
-# User sesi dari pid pemilik socket: turun ke keturunan pertama yang bukan root
+# User sesi dari pid pemilik socket: turun ke keturunan pertama yang merupakan
+# AKUN NYATA (uid >= 1000). Wajib begitu karena sshd 24.04 punya user sistem
+# `sshd` (uid 105) untuk privsep -> koneksi brute-force port 22 akan terbaca
+# seolah sesi milik user "sshd". Pelanggan panel selalu uid >= 1000 (useradd).
 ssh_pid_session_user() { # $1=pid -> cetak user (return 1 bila tak ada)
-    local pid="$1" u p i=0
+    local pid="$1" u uid p i=0
     while [[ -n "$pid" && $i -lt 4 ]]; do
-        u=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' ')
-        [[ -n "$u" && "$u" != "root" ]] && { printf '%s' "$u"; return 0; }
+        u=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' \n')
+        uid=$(id -u "$u" 2>/dev/null)
+        if [[ -n "$u" && "$uid" =~ ^[0-9]+$ && "$uid" -ge 1000 ]]; then
+            printf '%s' "$u"; return 0
+        fi
         p=$(pgrep -P "$pid" 2>/dev/null | head -1)
         [[ -z "$p" ]] && break
         pid="$p"; i=$((i+1))
@@ -635,14 +641,32 @@ ssh_pid_session_user() { # $1=pid -> cetak user (return 1 bila tak ada)
 }
 
 # Snapshot sesi: satu baris per sesi -> "<user>\t<ip-klien|via-WS>"
+# Sesi lewat WS (443) tiba di dropbear dari 127.0.0.1; IP klien aslinya dicatat
+# ws-stunnel di ws_client_ip.log, dipetakan lewat PORT LOKAL soket yang dipakai
+# ws-stunnel menghubungi dropbear (port itulah yang tampak sebagai peer port).
+WS_IP_LOG="${WS_IP_LOG:-/etc/wibutunnel/tmp/ws_client_ip.log}"
+WS_IP_TTL="${WS_IP_TTL:-3600}"   # catatan lebih tua dari ini diabaikan (nomor port bisa dipakai ulang)
+ws_client_ip_of_port() { # $1=port -> cetak IP (return 1 bila tak ada catatan segar)
+    [[ -f "$WS_IP_LOG" ]] || return 1
+    local ip now
+    now=$(date +%s)
+    ip=$(awk -v p="$1" -v now="$now" -v ttl="$WS_IP_TTL" \
+        '$1==p && (now - $3) <= ttl {last=$2} END {if (last!="") print last}' "$WS_IP_LOG" 2>/dev/null)
+    [[ -n "$ip" ]] && { printf '%s' "$ip"; return 0; }
+    return 1
+}
+
 ssh_sessions_snapshot() {
-    local l pid u ip f
+    local l pid u ip f port
     ssh_ss_lines | while IFS= read -r l; do
         f=$(ssh_parse_line "$l"); pid=$(printf '%s' "$f" | cut -f2); ip=$(printf '%s' "$f" | cut -f3)
         [[ -n "$pid" ]] || continue
         u=$(ssh_pid_session_user "$pid") || continue
-        # jalur WS: peer = loopback (haproxy/ws-stunnel) -> IP klien tak terlihat di ss
-        [[ "$ip" == 127.* || "$ip" == "::1" ]] && ip="via-WS"
+        # peer loopback = jalur WS: coba petakan ke IP asli dari catatan ws-stunnel
+        if [[ "$ip" == 127.* || "$ip" == "::1" ]]; then
+            port=$(printf '%s\n' "$l" | awk '{print $4}'); port=${port##*:}
+            ip=$(ws_client_ip_of_port "$port") || ip="via-WS"
+        fi
         printf '%s\t%s\n' "$u" "$ip"
     done
 }

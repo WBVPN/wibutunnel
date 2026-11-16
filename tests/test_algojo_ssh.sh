@@ -122,4 +122,40 @@ grep -q "ssh_sessions_snapshot" "$REPO_DIR/sbin/algojo-ssh" || { echo "FAIL: alg
 grep -q 'ps -o user= -p "\$pid"' "$REPO_DIR/sbin/algojo-ssh" && { echo "FAIL: algojo-ssh kembali ke atribusi pemilik socket"; exit 1; }
 echo "PASS: atribusi sesi lewat keturunan (bug pemilik-socket tidak kembali)"
 
+echo "=== TEST 5: pemetaan IP klien jalur WS (443) ==="
+LOGF=$(mktemp)
+NOW=$(date +%s)
+# catatan harus SEGAR (ada TTL): port -> IP -> epoch
+printf '%s 203.0.113.9 %s\n%s 198.51.100.7 %s\n' 40412 "$NOW" 40413 "$NOW" > "$LOGF"
+IP=$(WS_IP_LOG="$LOGF" bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; ws_client_ip_of_port 40412" || true)
+[[ "$IP" == "203.0.113.9" ]] || { echo "FAIL: ws_client_ip_of_port (dapat '$IP')"; exit 1; }
+echo "PASS: ws_client_ip_of_port membaca catatan IP ws-stunnel"
+
+# catatan BASI (lebih tua dari TTL) harus diabaikan -> port bisa dipakai ulang
+printf '%s 203.0.113.9 %s\n' 40414 "$((NOW - 7200))" > "$LOGF"
+if WS_IP_LOG="$LOGF" bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; ws_client_ip_of_port 40414"; then
+    echo "FAIL: catatan basi (lewat TTL) seharusnya diabaikan"; exit 1
+fi
+echo "PASS: catatan basi diabaikan (port dipakai ulang tak salah IP)"
+
+printf '%s 203.0.113.9 %s\n' 40415 "$NOW" > "$LOGF"
+if WS_IP_LOG="$LOGF" bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; ws_client_ip_of_port 99999"; then
+    echo "FAIL: port tanpa catatan seharusnya gagal (fallback via-WS)"; exit 1
+fi
+echo "PASS: port tanpa catatan -> gagal (jujur 'via-WS', bukan IP karangan)"
+rm -f "$LOGF"
+
+python3 - "$REPO_DIR" <<'PY' || exit 1
+import importlib.util, importlib.machinery, sys
+repo = sys.argv[1]
+loader = importlib.machinery.SourceFileLoader('ws', f'{repo}/sbin/ws-stunnel')
+spec = importlib.util.spec_from_loader('ws', loader)
+m = importlib.util.module_from_spec(spec); loader.exec_module(m)
+ok = m.client_ip_from(b'GET / HTTP/1.1\r\nCF-Connecting-IP: 203.0.113.9\r\n\r\n', '10.0.0.1') == '203.0.113.9'
+ok = ok and m.client_ip_from(b'GET / HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7, 10.1.1.1\r\n\r\n', '10.0.0.1') == '198.51.100.7'
+ok = ok and m.client_ip_from(b'GET / HTTP/1.1\r\nHost: x\r\n\r\n', '10.0.0.1') == '10.0.0.1'
+print("PASS: ws-stunnel memilih IP klien dari header (CF-Connecting-IP > XFF > peer)" if ok else "FAIL: parser header ws-stunnel")
+sys.exit(0 if ok else 1)
+PY
+
 echo "=== ALL ALGOJO-SSH TESTS PASSED ==="

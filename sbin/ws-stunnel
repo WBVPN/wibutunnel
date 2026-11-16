@@ -3,6 +3,8 @@ import socket
 import threading
 import select
 import sys
+import os
+import time
 
 LISTENING_ADDR = '127.0.0.1'
 LISTENING_PORT = 10015
@@ -11,6 +13,45 @@ TIMEOUT = 300
 DEFAULT_HOST = ('127.0.0.1', 109)
 DEFAULT_RESPONSE = b'HTTP/1.1 101 <b><font color=blue>WIBUVPNSTORE</font></b>\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
 RESPONSE_FILE = '/etc/wibutunnel/ws-response'
+# Peta "port lokal ke dropbear -> IP klien" supaya panel bisa menampilkan IP
+# ASLI untuk sesi SSH lewat WS (jalur 443). Tanpa ini, ss hanya melihat
+# 127.0.0.1 dan IP klien hilang di hop ws-stunnel.
+CLIENT_IP_FILE = '/etc/wibutunnel/tmp/ws_client_ip.log'
+CLIENT_IP_KEEP = 500          # jumlah baris terakhir yang disimpan
+
+
+def client_ip_from(req, peer_ip):
+    """IP klien: CF-Connecting-IP > X-Forwarded-For (entri pertama) > IP peer."""
+    ip = ''
+    try:
+        head = req.split(b'\r\n\r\n', 1)[0].decode('latin-1', 'ignore')
+    except Exception:
+        head = ''
+    for line in head.split('\r\n'):
+        if ':' not in line:
+            continue
+        k, v = line.split(':', 1)
+        k = k.strip().lower()
+        if k == 'cf-connecting-ip':
+            ip = v.strip()
+            break
+        if k == 'x-forwarded-for' and not ip:
+            ip = v.split(',')[0].strip()
+    return ip or peer_ip
+
+
+def record_client_ip(local_port, ip):
+    try:
+        os.makedirs(os.path.dirname(CLIENT_IP_FILE), exist_ok=True)
+        with open(CLIENT_IP_FILE, 'a') as f:
+            f.write('%d %s %d\n' % (local_port, ip, int(time.time())))
+        # rapikan: simpan CLIENT_IP_KEEP baris terakhir saja
+        with open(CLIENT_IP_FILE) as f:
+            lines = f.readlines()[-CLIENT_IP_KEEP:]
+        with open(CLIENT_IP_FILE, 'w') as f:
+            f.writelines(lines)
+    except Exception:
+        pass
 
 def get_response():
     try:
@@ -50,6 +91,15 @@ class ConnectionHandler(threading.Thread):
             target.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             self.client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             target.connect(DEFAULT_HOST)
+
+            # Catat IP klien untuk sesi ini: dipetakan lewat port lokal soket
+            # yang dipakai menghubungi dropbear (itulah yang terlihat di `ss`
+            # sebagai peer port milik sesi dropbear).
+            try:
+                local_port = target.getsockname()[1]
+                record_client_ip(local_port, client_ip_from(req, self.client.getpeername()[0]))
+            except Exception:
+                pass
 
             self.forward_clean(self.client, target)
         except Exception:
