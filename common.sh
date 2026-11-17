@@ -928,6 +928,17 @@ acct_apply_one() {
 }
 
 usage_apply_ssh() { # [berkas-keluaran-ss] — pemetaan sesi->user + akumulasi
+    # [v4.1.33] Dua pemanggil bisa jalan bersamaan (algojo-kuota 60 dtk + wibu-acct 1 dtk).
+    # acct_apply_one adalah baca-ubah-tulis atas ACCT_DB dan USAGE_DB; tanpa lock keduanya
+    # bisa membaca `prev` yang sama lalu menghitung delta yang sama dua kali.
+    local _lock="${ACCT_LOCK:-/etc/wibutunnel/tmp/ssh_acct.lock}"
+    mkdir -p "$(dirname "$_lock")" 2>/dev/null || true
+    ( flock -w 15 199 || exit 0
+      _usage_apply_ssh_body "$@"
+    ) 199>"$_lock"
+}
+
+_usage_apply_ssh_body() { # [berkas-keluaran-ss]
     local port pid total key u counters
     local -A seen=()
     acct_init

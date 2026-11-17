@@ -235,7 +235,7 @@ case $sub_setting in
         else
             echo -e "$LINE"; echo -e "         ${WHITE}MERESTART SERVICES...${NC}"; echo -e "$LINE"
             bot_enable_guard
-            systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon network-tune cron 2>/dev/null || true
+            systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon network-tune wibu-acct cron 2>/dev/null || true
             bot_boleh_jalan && systemctl restart telegram-bot 2>/dev/null || true
             echo -e "${GREEN}Semua service berhasil direstart!${NC}"
         fi
@@ -408,6 +408,7 @@ case $sub_setting in
         safe_update "sbin/algojo-kuota"
         safe_update "sbin/wibu-kuota"
         safe_update "sbin/wibu-udpgw"
+        safe_update "sbin/wibu-acct"
         safe_update "sbin/wibu-isp"
         safe_update "sbin/wibu-ssl-ulang"
         safe_update "sbin/algojo-wibu"
@@ -467,7 +468,7 @@ case $sub_setting in
         
         dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
         bot_enable_guard
-        systemctl restart algojo-expired wibu-daemon ws-stunnel >/dev/null 2>&1 || true
+        systemctl restart algojo-expired wibu-daemon ws-stunnel wibu-acct >/dev/null 2>&1 || true
         bot_boleh_jalan && systemctl restart telegram-bot >/dev/null 2>&1 || true
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."

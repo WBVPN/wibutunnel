@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.32
+# MASTER INSTALLER WIBU TUNNELING - v4.1.33
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -148,7 +148,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.32}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.33}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -392,7 +392,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.32" > /etc/wibutunnel/version
+echo "4.1.33" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -1065,7 +1065,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.32}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.33}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 # [FIX-CACHE] Cache manifest HARUS per-ref: cache tetap membuat rilis berikutnya memverifikasi
 # berkas baru terhadap manifest LAMA (gejala: "hash tidak cocok" untuk berkas yang baru diubah,
@@ -1252,9 +1252,10 @@ _need "sbin/wibu-isp" "wibu-isp-dl"
 _need "sbin/wibu-daemon" "wibu-daemon-dl"
 _need "sbin/wibu-kuota" "wibu-kuota-dl"
 _need "sbin/wibu-udpgw" "wibu-udpgw-dl"
+_need "sbin/wibu-acct" "wibu-acct-dl"
 
 # Install sbin scripts
-for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota wibu-udpgw; do
+for s in algojo-wibu algojo-kuota algojo-ssh lock-user unlock-user unlocker-wibu algojo-expired algojo-expired-daemon ws-stunnel wibu-repair wibu-daemon wibu-audit-akun wibu-ssl-ulang wibu-isp wibu-kuota wibu-udpgw wibu-acct; do
     if [ -f "/usr/local/bin/${s}-dl" ]; then
         mv "/usr/local/bin/${s}-dl" "/usr/local/sbin/${s}"
     fi
@@ -1303,6 +1304,28 @@ StartLimitBurst=5
 ExecStart=/usr/local/bin/wibu-daemon
 Restart=on-failure
 RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# [v4.1.33] Sampler akuntansi byte SSH berinterval pendek. `ss` hanya bisa membaca
+# counter soket yang MASIH hidup; siklus 60 detik membuat sesi lebih pendek dari itu
+# tidak pernah tercatat (terukur: unduh 50 MB dalam 7 detik -> 0 byte). Unit ini
+# memanggil usage_apply_ssh tiap detik (ber-flock, jadi tidak dobel dengan algojo-kuota).
+cat << 'EOF' > /etc/systemd/system/wibu-acct.service
+[Unit]
+Description=Wibu Tunneling - SSH byte accounting sampler
+After=network.target dropbear.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wibu-acct
+Restart=on-failure
+RestartSec=5
+Nice=10
 
 [Install]
 WantedBy=multi-user.target
@@ -1448,7 +1471,8 @@ else
     systemctl reset-failed telegram-bot.service >/dev/null 2>&1 || true
     echo -e "\e[1;33m[i] Bot Telegram belum diatur -> unit tidak diaktifkan (Setting -> [6] Setup Bot Telegram).\e[0m"
 fi
-systemctl enable dropbear.service ws-stunnel.service >/dev/null 2>&1
+systemctl enable dropbear.service ws-stunnel.service wibu-acct.service >/dev/null 2>&1
+systemctl restart wibu-acct.service >/dev/null 2>&1 || true
 # [FIX] Bersihkan status 'failed' sisa percobaan sebelum konfigurasi ditulis (di Debian 12
 # dropbear/haproxy sempat gagal start dengan config bawaan paket -> `systemctl status` menampilkan
 # 'failed' walau layanannya sudah berjalan normal setelah installer menulis konfigurnya).
@@ -1597,7 +1621,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.32" > /etc/wibutunnel/version
+echo "4.1.33" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

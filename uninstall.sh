@@ -89,7 +89,7 @@ systemctl disable netfilter-persistent >/dev/null 2>&1
 # keduanya tertinggal di /usr/local/{bin,sbin} setelah uninstall (terukur di VPS uji).
 for _f in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemon lock-user unlock-user \
           unlocker-wibu ws-stunnel wibu-daemon wibu-repair wibu-audit-akun wibu-ssl-ulang wibu-isp wibutunnel-firewall \
-          wibutunnel-firewall.sh network-tune network-tune.sh wibu-kuota wibu-udpgw; do
+          wibutunnel-firewall.sh network-tune network-tune.sh wibu-kuota wibu-udpgw wibu-acct; do
     rm -f "/usr/local/sbin/$_f" "/usr/local/bin/$_f" 2>/dev/null
 done
 rm -f /usr/local/bin/algojo-expired-daemon
@@ -114,6 +114,7 @@ rm -f /etc/systemd/system/telegram-bot.service
 rm -f /etc/wibutunnel/bot_off
 rm -f /etc/systemd/system/algojo-expired.service
 rm -f /etc/systemd/system/network-tune.service
+rm -f /etc/systemd/system/wibu-acct.service
 rm -f /etc/systemd/system/ws-stunnel.service
 rm -f /etc/systemd/system/dropbear.service
 rm -f /etc/systemd/system/telegram-webhook.socket

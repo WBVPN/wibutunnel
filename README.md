@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.32
+# 🦋 WIBUTUNNEL v4.1.33
 
 Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.32-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.33-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 **[Instalasi](#-instalasi)** · **[Fitur](#-fitur)** · **[Bot Telegram](#-bot-telegram)** · **[Perintah](#-perintah)** · **[Port](#-port--alur)** · **[Keamanan](#-keamanan)** · **[Uji](#-uji)** · **[Troubleshooting](#-troubleshooting)** · **[Changelog](docs/CHANGELOG.md)**
@@ -48,12 +48,12 @@ menjalankannya. Hash tidak cocok → berhenti sebelum menyentuh apa pun.
 ```bash
 # pasang (langsung dari repo, tanpa perantara)
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 5dcb86de3b582e28f6e0d87f35c7fc5ab1e9a978f66d1c730ccd8c4b30d93cea
+sha256sum setup.sh     # harap: 2123788df0b50a8b88a7987a7f6023c7b883005456ef910d3d0c4d41685c8d74
 bash setup.sh
 
 # hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)
 curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
-sha256sum uninstall.sh   # harap: 53edab8dee49431f2cea7c606bff491f84a601bdcdd5b62ab25a774805113128
+sha256sum uninstall.sh   # harap: ddc7c72e1802375051cf5fa549a91b96474f59845d8391117ea06910ee45900c
 bash uninstall.sh
 ```
 
@@ -116,7 +116,7 @@ Trial: format `trial-xxxx` · 1 jam · 1 GB · terhapus otomatis saat habis.
 `wibu-isp` `wibu-ssl-ulang` `wibu-kuota` `wibu-udpgw` `network-tune.sh` `wibutunnel-firewall.sh`
 
 **Unit**: `xray` `haproxy` `dropbear` `ws-stunnel` `telegram-bot` `algojo-expired` `algojo-expired-daemon`
-`wibu-daemon` `network-tune` `wibutunnel-firewall` `badvpn-udpgw@<port>`
+`wibu-daemon` `network-tune` `wibutunnel-firewall` `wibu-acct` `badvpn-udpgw@<port>`
 
 ---
 

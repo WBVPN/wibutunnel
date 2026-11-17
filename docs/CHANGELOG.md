@@ -4,6 +4,29 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.33 (2026-11-17)
+
+- **BUG: kuota SSH tidak menghitung sesi pendek sama sekali.** `ss -tie` hanya bisa membaca
+  counter soket yang **masih hidup**, dan akuntansi SSH hanya berjalan di siklus penegakan 60 detik
+  (`algojo-kuota`). Terukur di VPS uji: unduh **50 MB dalam 7 detik** lalu sesi ditutup →
+  `user_usage.db` tetap **0 byte**; sesi yang sama bila ditahan 75 detik tercatat 31.963.212 byte.
+  Artinya pelanggan bisa memakai bandwidth gratis dengan menjaga tiap koneksi di bawah satu menit.
+- **Unit baru `wibu-acct`**: sampler akuntansi byte SSH tiap **1 detik** (`usage_apply_ssh`).
+  Biaya: satu `ss -tie` per detik, `Nice=10`. Interval bisa diatur lewat `WIBU_ACCT_INTERVAL`.
+- **Serialisasi akuntansi**: `usage_apply_ssh` kini dibungkus `flock` — dua pemanggil (algojo-kuota
+  60 dtk + wibu-acct 1 dtk) bisa membaca `prev` yang sama dan menghitung delta yang sama dua kali
+  tanpa lock. Kunci: `/etc/wibutunnel/tmp/ssh_acct.lock`.
+- Unit ikut jalur pasang/hapus/update: `setup.sh` (unduh + pasang + enable), `m-setting.sh`
+  (daftar `safe_update`, restart-all, jalur update), `uninstall.sh`, README, dan tes invarian.
+- **Hasil uji live yang menyertai rilis ini** (VPS uji, akun `ujissh` & `ujivless`, limit 1 IP / 1 GB):
+  - limit IP SSH: 2 IP berbeda → `locked_users: ...:SSH_IP_LIMIT`, login ditolak, auto-unlock
+    setelah `LOCK_DURATION` (15 menit) — terbukti lewat cron `unlocker-wibu`.
+  - limit IP Xray: 2 IP berbeda → user masuk `routing.rules` (blocked) + `locked_users: ...:IP_LIMIT`;
+    trafik berikutnya **ditolak** (`http_code=000`, log `rejected`).
+  - akuntansi Xray tepat: `user_usage.db` = 30.052.691 byte = uplink (1.591) + downlink (30.051.100).
+
+---
+
 ### v4.1.32 (2026-11-17)
 
 - **Perintah instalasi di README ternyata tidak bekerja pada VPS baru.** `curl …/install.sh | bash`

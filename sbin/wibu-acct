@@ -1,0 +1,31 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - wibu-acct (v4.1.33)
+# Sampler akuntansi byte SSH berinterval pendek.
+#
+# Kenapa ada: `ss -tie` hanya bisa membaca counter soket yang MASIH HIDUP.
+# Selama ini akuntansi SSH hanya berjalan di siklus penegakan 60 detik
+# (algojo-kuota), sehingga sesi yang lebih pendek dari itu tidak pernah
+# tercatat sama sekali. Terukur di VPS uji: unduh 50 MB dalam 7 detik
+# (sesi langsung ditutup) -> user_usage.db tetap 0 byte.
+#
+# Unit ini memanggil usage_apply_ssh() tiap detik. Fungsi itu ber-flock
+# (lihat common.sh), jadi tidak bisa dobel-hitung dengan algojo-kuota.
+# Interval bisa diatur lewat WIBU_ACCT_INTERVAL (detik, default 1).
+# ==========================================
+source /usr/local/bin/common.sh 2>/dev/null || {
+    echo "[wibu-acct] common.sh tidak ditemukan" >&2
+    exit 1
+}
+
+INTERVAL="${WIBU_ACCT_INTERVAL:-1}"
+if [[ ! "$INTERVAL" =~ ^[0-9]+$ ]] || (( 10#$INTERVAL < 1 )); then
+    INTERVAL=1
+fi
+
+mkdir -p /etc/wibutunnel/tmp 2>/dev/null || true
+
+while true; do
+    usage_apply_ssh >/dev/null 2>&1
+    sleep "$INTERVAL"
+done
