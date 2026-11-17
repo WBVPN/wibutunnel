@@ -29,20 +29,25 @@ TMPROOT="$(mktemp -d /tmp/wibu_bot_enable.XXXXXX)" || { echo "FAIL: mktemp gagal
 cleanup() { [[ -n "${TMPROOT:-}" && -d "${TMPROOT:-}" ]] && rm -rf "$TMPROOT"; }
 trap cleanup EXIT
 
-stub_systemctl() { # $1 = dir
-    mkdir -p "$1/bin" "$1/etc"
-    cat > "$1/bin/systemctl" <<'STUB'
-#!/bin/bash
-printf '%s\n' "systemctl $*" >> "$SYSTEMCTL_LOG"
-exit 0
-STUB
-    chmod +x "$1/bin/systemctl"
+# Stub systemctl sebagai FUNGSI bash yang di-export, bukan lewat PATH: di VPS panel,
+# `bash -c` bisa memuat BASH_ENV/.bashrc yang menimpa PATH -> stub PATH diam-diam tidak
+# terpakai dan potongan kode memanggil systemctl SUNGGUHAN (pernah terukur: "Failed to
+# stop uji.service"). Sentinel di bawah wajib hijau sebelum satu skenario dijalankan.
+LOG=""
+systemctl() { [[ -n "${LOG:-}" ]] && printf '%s\n' "systemctl $*" >> "$LOG"; return 0; }
+export -f systemctl
+
+stub_siap() { # pastikan stub benar-benar mencegat; kalau tidak, JANGAN jalankan skenario
+    local d="$1"
+    mkdir -p "$d/etc"
+    : > "$d/sentinel"
+    LOG="$d/sentinel" bash -c 'systemctl __wibu_sentinel__' >/dev/null 2>&1
+    grep -q '__wibu_sentinel__' "$d/sentinel" 2>/dev/null
 }
 
-# jalankan potongan kode dengan PATH+LOG diarahkan ke sandbox
 jalankan() { # $1=dir sandbox  $2=perintah bash utuh
     : > "$1/log"
-    PATH="$1/bin:$PATH" SYSTEMCTL_LOG="$1/log" bash -c "$2" >/dev/null 2>&1
+    LOG="$1/log" bash -c "$2" >/dev/null 2>&1
     cat "$1/log"
 }
 
@@ -105,7 +110,8 @@ PY
                 || bad "produsen penanda bot_off tidak lengkap (Stop bisa tidak menghasilkan penanda)"
 
 echo "=== [4/8] Guard: perilaku (systemctl di-stub) ==="
-D1="$TMPROOT/guard"; stub_systemctl "$D1"
+D1="$TMPROOT/guard"
+stub_siap "$D1" || { bad "stub systemctl tidak mencegat (BASH_ENV?) — skenario DIBATALKAN agar tidak menyentuh layanan nyata"; }
 awk '/^bot_conf_lengkap\(\)/,/^}/' "$TARGET" | sed "s#/etc/wibutunnel#$D1/etc#g" > "$D1/guard.sh"
 awk '/^bot_enable_guard\(\)/,/^}/' "$TARGET" | sed "s#/etc/wibutunnel#$D1/etc#g" >> "$D1/guard.sh"
 printf 'BOT_TOKEN="123:abc"\nCHAT_ID="42"\n' > "$D1/etc/bot.conf"
@@ -127,7 +133,8 @@ out=$(jalankan "$D1" "source '$D1/guard.sh'; bot_enable_guard")
                 || bad "guard meng-enable dengan konfigurasi tidak lengkap ($out)"
 
 echo "=== [5/8] wibu-repair: perilaku (systemctl di-stub) ==="
-D2="$TMPROOT/repair"; stub_systemctl "$D2"
+D2="$TMPROOT/repair"
+stub_siap "$D2" || { bad "stub systemctl tidak mencegat di sandbox repair — skenario DIBATALKAN"; }
 awk '/^if \[\[ -f \/etc\/wibutunnel\/bot_off \]\]/{f=1} f{print} f&&/^fi$/{exit}' "$REPAIR" \
   | sed "s#/etc/wibutunnel#$D2/etc#g" > "$D2/blok.sh"
 [[ -s "$D2/blok.sh" ]] || bad "blok bot wibu-repair tidak bisa diekstrak"

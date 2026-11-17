@@ -8,8 +8,8 @@
 # ==========================================================================
 set -eu
 
-REF="${WIBU_REF:-v4.1.27}"
-EXPECT="53ecee9e1dcfc8aa3bce74f5415f349e078bcb802cb8691891812d3850050168"
+REF="${WIBU_REF:-v4.1.28}"
+EXPECT="e32bac0e4baddea46a207a024c6892f98379649bd6b3912119e377d029b7577a"
 PRIMARY="https://raw.githubusercontent.com/WBVPN/wibutunnel/$REF/setup.sh"
 MIRROR="https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@$REF/setup.sh"
 

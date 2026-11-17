@@ -1,6 +1,6 @@
 # Hasil Uji Nyata di VPS
 
-> Jejak uji dari v4.0.6 sampai v4.1.26 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
+> Jejak uji dari v4.0.6 sampai v4.1.28 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
 
 Diuji pada VPS kosong **Ubuntu 20.04** (1 vCPU / 965 MB), domain `test.priasawit.web.id`,
 IP terdaftar di `izin.txt` sampai 2026-12-15. Semua temuan di bawah ditemukan karena
@@ -544,3 +544,23 @@ Kini divalidasi (`-n` + `-d`) sebelum satu berkas pun ditulis.
 1. Menghormati "Stop" butuh gerbang pada `start`/`restart`; `enable` saja tidak cukup.
 2. Predikat konfigurasi harus satu untuk semua berkas, kalau tidak menu dan repair saling bantah.
 3. Tes konsumen tanpa tes produsen adalah hijau palsu; buktikan dengan mutasi.
+
+### v4.1.27 dan v4.1.28 — dua jalur terakhir, dan satu pelajaran tak terduga
+
+| Temuan | Bukti | Perbaikan |
+|---|---|---|
+| `setup.sh` langsung `enable`+`restart` saat konfigurasi lengkap → menjalankan ulang installer membatalkan `Stop` | cabang penanda tidak ada di blok itu | cabang `bot_off` diperiksa lebih dulu: stop + disable + `reset-failed` |
+| `wibu-repair` memakai `source`, menu/installer memakai `grep` pola `KEY="…"` → berkas berkutip tunggal membuat **menu bilang belum diatur, repair menghidupkan bot** | parsing berbeda atas berkas yang sama | repair memakai `grep` yang sama; `source` dihapus |
+
+**Pelajaran tak terduga di v4.1.28.** Harness tes memakai stub `systemctl` lewat `PATH`. Di VPS panel,
+`bash -c` memuat lingkungan yang menimpa `PATH`, sehingga stub **tidak terpakai** dan blok yang diuji
+memanggil `systemctl` sungguhan — terukur: bot berhenti dan ter-`disable` hanya karena menjalankan tes.
+Perbaikannya: stub menjadi **fungsi bash yang di-export** + **sentinel** yang wajib tercatat sebelum
+skenario dijalankan (fail-closed). Bukti sesudahnya, diukur di VPS panel:
+
+| Keadaan | Sebelum tes | Sesudah tes |
+|---|---|---|
+| `telegram-bot` | `active/enabled` | `active/enabled` (15 PASS / 0 FAIL) |
+
+Artinya suite ini sekarang benar-benar non-destruktif — bukan karena tujuannya begitu, tetapi karena
+dibuktikan dengan membandingkan keadaan layanan sebelum dan sesudah.

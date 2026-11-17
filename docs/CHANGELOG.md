@@ -4,6 +4,22 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.28 (2026-11-17)
+
+- **Harness tes tidak bisa lagi menyentuh layanan nyata.** Stub `systemctl` versi lama memakai
+  `PATH`; di VPS panel, `bash -c` memuat lingkungan lain sehingga **stub itu tidak terpakai** dan
+  potongan kode yang diuji memanggil `systemctl` sungguhan — terukur: bot benar-benar berhenti dan
+  ter-`disable` saat tes dijalankan di VPS. Stub kini berupa **fungsi bash yang di-export**, ditambah
+  **sentinel**: satu panggilan percobaan sebelum skenario; kalau sentinel tidak tercatat, seluruh
+  skenario dibatalkan dan tes ditandai gagal (fail-closed), bukan diam-diam mengeksekusi perintah asli.
+- **Diverifikasi di VPS panel**: keadaan bot `active/enabled` sebelum dan **sesudah** suite dijalankan
+  tetap sama, dengan 15 PASS / 0 FAIL. Sebelum perbaikan ini, menjalankan suite di VPS bisa mematikan
+  bot produksi.
+- Catatan operasional: kegagalan stub PATH ini juga menjelaskan kenapa uji manual di VPS bisa
+  "berhasil" padahal efek sampingnya nyata — angka PASS tidak membuktikan tidak ada efek samping.
+
+---
+
 ### v4.1.27 (2026-11-17)
 
 - **Installer tidak lagi membatalkan `Stop`.** `setup.sh` punya cabang sendiri yang langsung
