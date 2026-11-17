@@ -18,6 +18,8 @@ acct_init
 
 echo "=== TEST 1: byte per sesi dari kernel (ss -tie) ==="
 cat > "$TMPD/ss.txt" <<'SS'
+LISTEN     0      1000         127.0.0.1:109       0.0.0.0:*    users:(("dropbear",pid=282081,fd=3))
+LISTEN     0      128          0.0.0.0:22          0.0.0.0:*    users:(("sshd",pid=284251,fd=3))
 ESTAB      0      0            127.0.0.1:109       127.0.0.1:50506 users:(("dropbear",pid=282081,fd=0))
 	 skmem:(r0,rb3145728,t0,tb3145728,f2680,w0,o0,bl0,d0)
 	 ts sack cubic wscale:7,7 rto:204 mss:32768 cwnd:10 bytes_sent:1234 bytes_acked:1235 bytes_received:4321 segs_out:12 segs_in:11 data_segs_out:3
@@ -93,5 +95,34 @@ grep -q 'usage_apply_ssh' "$REPO_DIR/sbin/algojo-kuota" || { echo "FAIL: algojo-
 echo "PASS: algojo-kuota memakai akuntansi byte kernel untuk SSH"
 grep -q 'lock_ssh_user "\(.*\)QUOTA_EXCEEDED' "$REPO_DIR/sbin/algojo-kuota" || { echo "FAIL: kuota SSH tidak bisa mengunci akun"; exit 1; }
 echo "PASS: kuota habis pada akun SSH benar-benar mengunci (passwd -l)"
+
+echo ""
+echo "--- regresi v4.1.35: hanya soket SISI-KLIEN yang dihitung (bukan 2x) ---"
+TMPF=$(mktemp -d /tmp/wibu_acct.XXXXXX) || exit 1
+cat > "$TMPF/ss.txt" <<'SSFIX'
+State Recv-Q Send-Q Local Address:Port  Peer Address:Port Process
+LISTEN 0      1000   203.0.113.9:143        0.0.0.0:*     users:(("dropbear",pid=100,fd=3))
+ESTAB  0      0      203.0.113.9:143      198.51.100.7:33138 users:(("dropbear",pid=100,fd=0))
+	 ts sack bytes_sent:48530226 bytes_acked:48514790 bytes_received:6870
+ESTAB  430864 0      203.0.113.9:34554    172.66.0.218:443   users:(("dropbear",pid=100,fd=5))
+	 ts sack bytes_sent:724 bytes_acked:725 bytes_received:48833439
+SSFIX
+awk '/^ssh_sessions_bytes\(\)/,/^}$/' "$REPO_DIR/common.sh" > "$TMPF/fn.sh" 2>/dev/null || \
+  awk '/^ssh_sessions_bytes\(\)/,/^}$/' ./common.sh > "$TMPF/fn.sh"
+# jalankan dengan sumber fixture
+HASIL=$(bash -c 'src="$1"; shift; '"$(cat "$TMPF/fn.sh")"'; ssh_sessions_bytes "$src"' _ "$TMPF/ss.txt" 2>/dev/null)
+TOTAL=$(printf '%s\n' "$HASIL" | awk '$1==143 {print $3}')
+ADA_KELUAR=$(printf '%s\n' "$HASIL" | awk '$1==34554 {c++} END{print c+0}')
+if [[ "$TOTAL" == "48537096" ]]; then
+    echo "PASS: soket sisi-klien dihitung utuh (48.537.096)"
+else
+    echo "FAIL: total sisi-klien salah: '$TOTAL' (harap 48537096)"; exit 1
+fi
+if [[ "$ADA_KELUAR" == "0" ]]; then
+    echo "PASS: soket keluar (trafik pelanggan sendiri) TIDAK ikut dihitung"
+else
+    echo "FAIL: soket keluar masih dihitung -> pemakaian bisa 2x"; exit 1
+fi
+rm -rf "$TMPF"
 
 echo "=== ALL KUOTA TESTS PASSED ==="

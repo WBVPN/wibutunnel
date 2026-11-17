@@ -896,19 +896,54 @@ acct_init() {
 # Cetak: "<port_lokal> <pid> <total_byte>"
 ssh_sessions_bytes() {
     local src="${1:-}"
+    # [v4.1.35] Hanya soket SISI-KLIEN yang dihitung.
+    #
+    # Versi sebelumnya menjumlahkan SEMUA soket milik dropbear, termasuk soket keluar
+    # yang dibuat oleh trafik pelanggan sendiri (ssh -D/-L). Satu unduhan lalu terhitung
+    # dua kali: soket masuk (server->klien) dan soket keluar (server->internet).
+    # Terukur di VPS: satu sesi 48,5 MB menghasilkan 42,9 MB + 47,2 MB.
+    #
+    # Aturan: soket dihitung bila (a) port lokalnya port LISTEN dropbear (jalur langsung
+    # 143/109), atau (b) peer-nya loopback (jalur SSH-over-WS lewat ws-stunnel).
+    # Soket keluar ke internet (peer = IP publik) tidak dihitung.
     if [[ -n "$src" ]]; then cat "$src"; else ss -tie -tnp 2>/dev/null; fi | awk '
+        function flush_prev() {
+            if (cur_port != "") {
+                n++
+                lp[n] = cur_port; pa[n] = cur_peer; pp[n] = cur_peerport
+                bs[n] = (sent == "" ? 0 : sent); br[n] = (recv == "" ? 0 : recv)
+                pd[n] = pid; li[n] = is_listen; ssh[n] = is_ssh
+            }
+            cur_port = ""; cur_peer = ""; cur_peerport = ""; pid = ""; sent = ""; recv = ""; is_listen = 0; is_ssh = 0
+        }
         /^[^ \t]/ {
-            port = ""; pid = ""; sent = ""; recv = ""; active = 0
-            n = split($4, a, ":")
-            port = a[n]
-            if (index($0, "pid=") > 0) { s = $0; sub(/.*pid=/, "", s); sub(/[^0-9].*/, "", s); pid = s }
-            if ($0 ~ /users:\(\("dropbear"|users:\(\("sshd"/) active = 1
+            flush_prev()
+            split($4, a, ":")
+            cur_port = a[length(a)]
+            split($5, b, ":")
+            cur_peerport = b[length(b)]
+            cur_peer = $5; sub(/:[^:]*$/, "", cur_peer); gsub(/[\[\]]/, "", cur_peer)
+            if (index($0, "pid=") > 0) { t = $0; sub(/.*pid=/, "", t); sub(/[^0-9].*/, "", t); pid = t }
+            if ($0 ~ /users:\(\("dropbear"|users:\(\("sshd"/) is_ssh = 1
+            if (index($0, "LISTEN") > 0) is_listen = 1
             next
         }
-        active == 1 {
+        {
             if (index($0, "bytes_sent:") > 0) { t = $0; sub(/.*bytes_sent:/, "", t); sub(/[^0-9].*/, "", t); sent = t }
             if (index($0, "bytes_received:") > 0) { t = $0; sub(/.*bytes_received:/, "", t); sub(/[^0-9].*/, "", t); recv = t }
-            if (sent != "" && recv != "") { print port, pid, sent + recv; active = 0 }
+        }
+        END {
+            flush_prev()
+            for (i = 1; i <= n; i++) {
+                if (li[i] == 1) { listen[lp[i]] = 1 }
+            }
+            for (i = 1; i <= n; i++) {
+                if (li[i] == 1 || pd[i] == "" || ssh[i] != 1) continue
+                sisi_klien = (lp[i] in listen) || (pa[i] ~ /^(127\.|::1$)/)
+                if (!sisi_klien) continue
+                total = bs[i] + br[i]
+                if (total > 0) print lp[i], pd[i], total
+            }
         }
     '
 }

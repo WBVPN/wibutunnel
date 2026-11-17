@@ -4,6 +4,23 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.35 (2026-11-17)
+
+- **BUG: pemakaian SSH terhitung DUA KALI.** `ssh_sessions_bytes` menjumlahkan **semua** soket milik
+  dropbear — termasuk soket **keluar** yang dibuat trafik pelanggan sendiri (`ssh -D`/`-L`). Satu
+  unduhan menghasilkan dua angka: soket masuk (server→klien) dan soket keluar (server→internet).
+  Terukur di VPS uji: satu sesi 48,5 MB tercatat **42,9 MB + 47,2 MB**.
+- **Perbaikan**: hanya soket **sisi-klien** yang dihitung — port lokalnya port LISTEN dropbear
+  (jalur langsung 143/109), atau peer-nya loopback (jalur SSH-over-WS lewat ws-stunnel) — dan hanya
+  soket milik proses `dropbear`/`sshd`. Soket keluar ke internet diabaikan.
+- **Regresi dijaga tes offline**: fixture `ss -tie` berisi LISTEN + sesi masuk + soket keluar;
+  tes menuntut total sisi-klien utuh (48.537.096) dan **port keluar tidak muncul** di keluaran.
+- Catatan diagnostik: keluhan "20 MB hanya tercatat 1,3 MB" berasal dari kombinasi dua hal —
+  sebagian byte teratribusi ke soket keluar, dan sisa detik terakhir hilang karena sampler hanya
+  melihat soket yang masih hidup (sekarang 1 detik, jadi kerugian maksimal ~1 detik trafik).
+
+---
+
 ### v4.1.34 (2026-11-17)
 
 - **Unit systemd tidak ikut Update Script, jadi fitur baru bisa terpasang sebagai biner yang tidak
