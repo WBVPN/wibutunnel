@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.31
+# MASTER INSTALLER WIBU TUNNELING - v4.1.32
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -148,7 +148,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.31}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.32}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -315,7 +315,11 @@ while true; do
     if [[ -z "$domain" ]]; then
         # [FIX] tanpa penjaga ini, input habis (EOF) = loop tanpa henti (1,4 juta baris log / 2 menit)
         if ! read -r -p "Masukkan Domain Anda: " domain; then
-            echo -e "\e[31m[!] Input berakhir (EOF). Instalasi dihentikan.\e[0m"
+            echo -e "\e[31m[!] Input berakhir (EOF) — domain tidak bisa ditanyakan.\e[0m"
+            echo -e "\e[1;33m    Jalankan dengan domain sebagai argumen:\e[0m"
+            echo -e "      bash install.sh domain.anda.com"
+            echo -e "    Mode tanpa TTY (mis. pipa): berikan domain sebagai argumen — lihat README."
+            echo -e "    Token bot bisa diisi menyusul di menu Setting -> [6]."
             exit 1
         fi
         [[ -z "$domain" ]] && { echo -e "\e[31m[!] Domain tidak boleh kosong!\e[0m"
@@ -388,7 +392,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.31" > /etc/wibutunnel/version
+echo "4.1.32" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -1061,7 +1065,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.31}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.32}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 # [FIX-CACHE] Cache manifest HARUS per-ref: cache tetap membuat rilis berikutnya memverifikasi
 # berkas baru terhadap manifest LAMA (gejala: "hash tidak cocok" untuk berkas yang baru diubah,
@@ -1593,7 +1597,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.31" > /etc/wibutunnel/version
+echo "4.1.32" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

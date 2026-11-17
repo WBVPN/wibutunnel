@@ -4,6 +4,19 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.32 (2026-11-17)
+
+- **Perintah instalasi di README ternyata tidak bekerja pada VPS baru.** `curl …/install.sh | bash`
+  berhenti dengan `[!] Input berakhir (EOF). Instalasi dihentikan.` karena pada mode pipa `stdin`
+  dipakai skrip, sehingga pertanyaan domain tidak bisa dijawab. Terbukti di VPS uji (RC=1).
+- README kini memuat **dua bentuk yang benar**: interaktif (`curl -o install.sh` lalu `bash install.sh`)
+  dan satu baris tanpa TTY (`… | bash -s -- vpn.domain-anda.com`), plus penjelasan singkat kenapa
+  bentuk lama gagal.
+- Pesan EOF di `setup.sh` tidak lagi buntu: ia menampilkan dua perintah yang bisa langsung dipakai dan
+  memberi tahu bahwa token bot bisa diisi menyusul lewat menu Setting → [6].
+
+---
+
 ### v4.1.31 (2026-11-17)
 
 - **Instalasi baru GAGAL total karena pin hash instaleler Xray sudah basi.** Ditemukan saat uji

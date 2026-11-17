@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.31
+# 🦋 WIBUTUNNEL v4.1.32
 
 Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.31-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.32-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 **[Instalasi](#-instalasi)** · **[Fitur](#-fitur)** · **[Bot Telegram](#-bot-telegram)** · **[Perintah](#-perintah)** · **[Port](#-port--alur)** · **[Keamanan](#-keamanan)** · **[Uji](#-uji)** · **[Troubleshooting](#-troubleshooting)** · **[Changelog](docs/CHANGELOG.md)**
@@ -12,12 +12,25 @@ Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VP
 
 ## ⚡ Instalasi
 
+**Disarankan (interaktif — domain & bot ditanyakan):**
+
 ```bash
-curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash
+curl -4 -fsSL -o install.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh
+bash install.sh
+```
+
+**Satu baris tanpa TTY** (domain wajib jadi argumen; token bot diisi belakangan lewat menu):
+
+```bash
+curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash -s -- vpn.domain-anda.com
 ```
 
 Skrip resmi dari **Release GitHub**: mengunduh `setup.sh` dari **tag rilis**, **memverifikasi sha256**, baru
 menjalankannya. Hash tidak cocok → berhenti sebelum menyentuh apa pun.
+
+> Kenapa bukan `... | bash` saja: pada mode pipa `stdin` dipakai skrip, sehingga pertanyaan domain
+> tidak bisa dijawab (`Input berakhir (EOF)`). Instalasi berhenti sebelum menyentuh konfigurasi apa pun.
+> Berikan domain sebagai argumen, atau jalankan berkasnya seperti contoh pertama.
 
 | Syarat | |
 |---|---|
@@ -35,7 +48,7 @@ menjalankannya. Hash tidak cocok → berhenti sebelum menyentuh apa pun.
 ```bash
 # pasang (langsung dari repo, tanpa perantara)
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 1f2109feff9f90664a3ab0b1472c485a118290734be50fd7be2f466f549e4c10
+sha256sum setup.sh     # harap: 5dcb86de3b582e28f6e0d87f35c7fc5ab1e9a978f66d1c730ccd8c4b30d93cea
 bash setup.sh
 
 # hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)
