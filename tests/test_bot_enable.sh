@@ -128,7 +128,7 @@ out=$(jalankan "$D1" "source '$D1/guard.sh'; bot_enable_guard")
 
 echo "=== [5/8] wibu-repair: perilaku (systemctl di-stub) ==="
 D2="$TMPROOT/repair"; stub_systemctl "$D2"
-awk '/^source \/etc\/wibutunnel\/bot.conf/{f=1} f{print} f&&/^fi$/{exit}' "$REPAIR" \
+awk '/^if \[\[ -f \/etc\/wibutunnel\/bot_off \]\]/{f=1} f{print} f&&/^fi$/{exit}' "$REPAIR" \
   | sed "s#/etc/wibutunnel#$D2/etc#g" > "$D2/blok.sh"
 [[ -s "$D2/blok.sh" ]] || bad "blok bot wibu-repair tidak bisa diekstrak"
 
@@ -155,6 +155,12 @@ grep -q 'systemctl disable telegram-bot' <<<"$out" \
   && ok "konfigurasi tidak lengkap -> repair disable (tidak ada 'failed' tiap boot)" \
   || bad "repair membiarkan unit enabled tanpa CHAT_ID ($out)"
 
+printf "BOT_TOKEN='1:a'\nCHAT_ID='9'\n" > "$D2/etc/bot.conf"   # kutip tunggal
+out=$(jalankan "$D2" "source '$D2/blok.sh'")
+grep -q 'systemctl disable telegram-bot' <<<"$out" \
+  && ok "parser seragam: konfigurasi berkutip tunggal ditolak repair seperti menu" \
+  || bad "repair memakai parser berbeda dari menu (source vs grep) -> keduanya bisa berseberangan ($out)"
+
 echo "=== [6/8] Restore backup menulis penanda Stop ==="
 if awk '/bot.conf ikut dipulihkan/,/^    fi$/' "$BACKUP" | grep -q 'touch /etc/wibutunnel/bot_off'; then
     ok "restore menandai bot berhenti (tidak dihidupkan lagi oleh repair/update berikutnya)"
@@ -176,6 +182,14 @@ for i, ln in enumerate(s.splitlines()):
         break
 if 'rm -f /etc/wibutunnel/bot_off' in s:
     print("SETUP_MENGHAPUS_PENANDA"); sys.exit(1)   # re-run setup tidak boleh membatalkan Stop
+
+lines = s.splitlines()
+i_marker = next((i for i, ln in enumerate(lines) if 'bot_off' in ln), -1)
+i_enable = next((i for i, ln in enumerate(lines) if 'systemctl enable telegram-bot.service' in ln), -1)
+if i_marker < 0:
+    print("SETUP_TANPA_CABANG_PENANDA"); sys.exit(1)   # installer bisa membatalkan Stop
+if i_enable >= 0 and i_marker > i_enable:
+    print("SETUP_CABANG_PENANDA_SETELAH_ENABLE"); sys.exit(1)
 sys.exit(0 if ok else 1)
 PY
 [[ $? -eq 0 ]] && ok "installer menuntut token + chat id dan tidak menghapus penanda Stop" \

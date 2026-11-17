@@ -4,6 +4,24 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.27 (2026-11-17)
+
+- **Installer tidak lagi membatalkan `Stop`.** `setup.sh` punya cabang sendiri yang langsung
+  `enable` + `restart` begitu konfigurasi lengkap — jadi menjalankan ulang skrip instalasi
+  menghidupkan kembali bot yang sengaja dimatikan admin. Sekarang cabang penanda `bot_off`
+  diperiksa **lebih dulu**: unit di-stop + disable + `reset-failed`, dengan pesan bahwa cara
+  menghidupkannya adalah Setting → [6] → [2].
+- **Parser konfigurasi diseragamkan betulan.** `sbin/wibu-repair` masih `source bot.conf` lalu
+  menguji `-n "$BOT_TOKEN"`, sedangkan menu/installer memakai `grep` pola `KEY="…"`. Berkas yang
+  formatnya berbeda (mis. kutip tunggal, spasi di sekitar `=`) membuat **menu bilang "belum diatur"
+  sementara repair menghidupkan bot** — persis kelas bug yang diklaim sudah dibereskan di v4.1.26,
+  hanya pindah ke cara membaca berkas. Repair kini memakai `grep` yang sama; tidak ada lagi `source`.
+- **Tes menambah dua penjaga**: kasus konfigurasi berkutip tunggal (menu dan repair harus sepakat
+  menolak) dan pemeriksaan bahwa cabang penanda di installer berada **sebelum** baris `enable`.
+  Keduanya dibuktikan MERAH lewat dua mutasi (hapus cabang penanda; kembalikan `source` di repair).
+
+---
+
 ### v4.1.26 (2026-11-17)
 
 - **`Stop` manual kini menggerbangi `start`/`restart`, bukan hanya `enable`.** Temuan reviewer atas
