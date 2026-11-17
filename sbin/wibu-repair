@@ -230,8 +230,8 @@ if [[ -f /etc/wibutunnel/bot_off ]]; then
     systemctl disable telegram-bot >/dev/null 2>&1 || true
     systemctl reset-failed telegram-bot >/dev/null 2>&1 || true
 elif [[ -s /etc/wibutunnel/bot.conf ]] \
-     && grep -qE '^BOT_TOKEN="[^"]+"' /etc/wibutunnel/bot.conf 2>/dev/null \
-     && grep -qE '^CHAT_ID="[^"]+"' /etc/wibutunnel/bot.conf 2>/dev/null; then
+     && grep -qE '^BOT_TOKEN="?[^"]+"?[[:space:]]*$' /etc/wibutunnel/bot.conf 2>/dev/null \
+     && grep -qE '^CHAT_ID="?[^"]+"?[[:space:]]*$' /etc/wibutunnel/bot.conf 2>/dev/null; then
     systemctl enable telegram-bot >/dev/null 2>&1 || true
     systemctl restart telegram-bot >/dev/null 2>&1 || true
 else

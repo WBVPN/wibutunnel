@@ -4,6 +4,28 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.29 (2026-11-17)
+
+- **BUG MAJOR: installer menulis `bot.conf` dalam format yang ditolak oleh pembacanya sendiri.**
+  `setup.sh` menulis `BOT_TOKEN=<nilai>` **tanpa tanda kutip**, sementara semua predikat memakai pola
+  `^BOT_TOKEN="…"`. Akibatnya instalasi baru yang mengisi token **saat instalasi** dinilai "belum
+  diatur": unit di-`disable`, bot di-`stop`, layar mencetak "Bot Telegram belum diatur" padahal admin
+  baru saja mengisinya. Kalau nanti dinyalakan lewat menu [2], `systemctl start` jalan tetapi guard
+  menolak `enable` — bot hidup sampai reboot lalu mati lagi: gejala v4.1.24, dari arah lain.
+- **Perbaikan ganda**: penulis di installer kini menulis ber-kutip (sama dengan menu), dan **predikat
+  dibuat toleran** `^KEY="?[^"]+"?[[:space:]]*$` sehingga berkas lama tanpa kutip (warisan
+  ≤ v4.1.28) tetap terbaca — upgrade tidak memutus VPS yang bot-nya sudah jalan.
+- **Tes [9/9] baru: penulis vs pembaca.** Menjalankan baris `printf` milik installer, lalu menguji
+  berkas hasilnya dengan `bot_conf_lengkap()`; ditambah kasus berkas lama tanpa kutip dan kontrol
+  negatif berkas kosong. Mutasi "kembalikan keadaan v4.1.28" memerahkan **tiga** asersi sekaligus,
+  termasuk kalimat "installer menulis format yang DITOLAK predikatnya sendiri".
+- **Tes [5/9] tidak lagi mematok satu verdict**: yang diuji adalah **kesepakatan** menu dan repair
+  atas berkas yang sama (format apa pun boleh, asal kedua pihak satu suara).
+- **Tes [2/9] tidak lagi bergantung urutan nama service** (dulu grep string literal, pecah bila
+  daftar diurutkan ulang tanpa perubahan perilaku).
+
+---
+
 ### v4.1.28 (2026-11-17)
 
 - **Harness tes tidak bisa lagi menyentuh layanan nyata.** Stub `systemctl` versi lama memakai
@@ -52,7 +74,8 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
   lama" sekarang bertahan, tidak dibatalkan Auto-Repair/Update berikutnya.
 - **Predikat konfigurasi diseragamkan**: `bot_conf_lengkap()` (token **dan** chat id) dipakai guard,
   `wibu-repair`, dan installer. Sebelumnya menu menilai cukup token sementara repair menuntut token
-  + chat id, sehingga Auto-Repair menghidup-matikan bot pada setiap putaran.
+  + chat id, sehingga bot hidup-mati setiap kali menu [1] Auto-Repair dijalankan (tidak ada timer
+  yang memanggilnya — pemicunya hanya menu).
 - **`setup.sh` tidak lagi menghapus `/etc/wibutunnel/bot_off`**: alasan lamanya (penanda terbawa
   backup) tidak terbukti — berkas backup tidak pernah memuat penanda itu — dan efek nyatanya adalah
   membatalkan `Stop` admin saat skrip dijalankan ulang.

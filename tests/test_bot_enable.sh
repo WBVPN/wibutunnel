@@ -51,7 +51,7 @@ jalankan() { # $1=dir sandbox  $2=perintah bash utuh
     cat "$1/log"
 }
 
-echo "=== [1/8] Setiap start/restart bot di menu dijaga (bot_boleh_jalan / enable dulu) ==="
+echo "=== [1/9] Setiap start/restart bot di menu dijaga (bot_boleh_jalan / enable dulu) ==="
 python3 - "$TARGET" <<'PY'
 import re, sys
 lines = open(sys.argv[1], encoding='utf-8').read().splitlines()
@@ -75,18 +75,28 @@ PY
 [[ $? -eq 0 ]] && ok "tidak ada start/restart bot yang lolos dari gerbang" \
                 || bad "ada start/restart bot tanpa gerbang (Stop manual bisa dibatalkan)"
 
-echo "=== [2/8] restart-all & Update Script TIDAK menyalakan bot yang di-Stop ==="
-if grep -q 'systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon network-tune cron' "$TARGET" \
-   && ! grep -q 'algojo-expired wibu-daemon telegram-bot network-tune' "$TARGET"; then
-    ok "telegram-bot dikeluarkan dari daftar restart massal (hanya ikut lewat gerbang)"
-else
-    bad "telegram-bot masih ikut restart massal tanpa syarat"
-fi
+echo "=== [2/9] restart-all & Update Script TIDAK menyalakan bot yang di-Stop ==="
+python3 - "$TARGET" <<'PY'
+import sys
+lines = open(sys.argv[1], encoding='utf-8').read().splitlines()
+masalah = []
+for i, ln in enumerate(lines):
+    if 'systemctl restart' not in ln:
+        continue
+    # restart massal = satu baris yang menyalakan beberapa layanan inti sekaligus
+    if sum(x in ln for x in ('xray', 'dropbear', 'haproxy')) >= 2 and 'telegram-bot' in ln:
+        masalah.append(f"baris {i+1}: {ln.strip()}")
+if masalah:
+    for m in masalah: print("BOT_DI_RESTART_MASSAL " + m)
+    sys.exit(1)
+PY
+[[ $? -eq 0 ]] && ok "telegram-bot tidak pernah ikut restart massal (urutan nama tidak dipatok)" \
+                || bad "telegram-bot masih ikut restart massal tanpa syarat"
 n_gate=$(grep -c 'bot_boleh_jalan && systemctl restart telegram-bot' "$TARGET")
 [[ "$n_gate" -ge 2 ]] && ok "gerbang dipakai di restart-all dan Update Script ($n_gate tempat)" \
                       || bad "gerbang bot_boleh_jalan tidak dipakai di kedua jalur ($n_gate)"
 
-echo "=== [3/8] Penanda bot_off ditulis oleh Stop dan dihapus oleh Start/simpan token ==="
+echo "=== [3/9] Penanda bot_off ditulis oleh Stop dan dihapus oleh Start/simpan token ==="
 python3 - "$TARGET" <<'PY'
 import sys
 lines = open(sys.argv[1], encoding='utf-8').read().splitlines()
@@ -109,7 +119,7 @@ PY
 [[ $? -eq 0 ]] && ok "Stop menulis penanda sebelum unit dimatikan; Start/simpan token menghapusnya" \
                 || bad "produsen penanda bot_off tidak lengkap (Stop bisa tidak menghasilkan penanda)"
 
-echo "=== [4/8] Guard: perilaku (systemctl di-stub) ==="
+echo "=== [4/9] Guard: perilaku (systemctl di-stub) ==="
 D1="$TMPROOT/guard"
 stub_siap "$D1" || { bad "stub systemctl tidak mencegat (BASH_ENV?) — skenario DIBATALKAN agar tidak menyentuh layanan nyata"; }
 awk '/^bot_conf_lengkap\(\)/,/^}/' "$TARGET" | sed "s#/etc/wibutunnel#$D1/etc#g" > "$D1/guard.sh"
@@ -132,7 +142,7 @@ out=$(jalankan "$D1" "source '$D1/guard.sh'; bot_enable_guard")
 [[ -z "$out" ]] && ok "konfigurasi tidak lengkap (tanpa CHAT_ID) -> tidak di-enable" \
                 || bad "guard meng-enable dengan konfigurasi tidak lengkap ($out)"
 
-echo "=== [5/8] wibu-repair: perilaku (systemctl di-stub) ==="
+echo "=== [5/9] wibu-repair: perilaku (systemctl di-stub) ==="
 D2="$TMPROOT/repair"
 stub_siap "$D2" || { bad "stub systemctl tidak mencegat di sandbox repair — skenario DIBATALKAN"; }
 awk '/^if \[\[ -f \/etc\/wibutunnel\/bot_off \]\]/{f=1} f{print} f&&/^fi$/{exit}' "$REPAIR" \
@@ -163,19 +173,33 @@ grep -q 'systemctl disable telegram-bot' <<<"$out" \
   || bad "repair membiarkan unit enabled tanpa CHAT_ID ($out)"
 
 printf "BOT_TOKEN='1:a'\nCHAT_ID='9'\n" > "$D2/etc/bot.conf"   # kutip tunggal
+# Yang diuji bukan "harus ditolak", melainkan KESEPAKATAN: keputusan repair harus sama
+# dengan keputusan predikat menu atas berkas yang sama. Format apa pun boleh, asal satu suara.
+awk '/^bot_conf_lengkap\(\)/,/^}/' "$TARGET" | sed "s#/etc/wibutunnel#$D2/etc#g" > "$D2/predikat.sh"
+if bash -c "source '$D2/predikat.sh'; bot_conf_lengkap" >/dev/null 2>&1; then
+    harap='enable'; lawan='disable'
+else
+    harap='disable'; lawan='enable'
+fi
 out=$(jalankan "$D2" "source '$D2/blok.sh'")
-grep -q 'systemctl disable telegram-bot' <<<"$out" \
-  && ok "parser seragam: konfigurasi berkutip tunggal ditolak repair seperti menu" \
-  || bad "repair memakai parser berbeda dari menu (source vs grep) -> keduanya bisa berseberangan ($out)"
+if [[ "$harap" == "enable" ]]; then
+    grep -q 'systemctl enable telegram-bot' <<<"$out" \
+      && ok "menu dan repair sepakat: berkas berkutip tunggal dinilai LENGKAP oleh keduanya" \
+      || bad "predikat menu bilang lengkap tapi repair tidak meng-enable ($out)"
+else
+    grep -q 'systemctl disable telegram-bot' <<<"$out" && ! grep -q 'systemctl enable telegram-bot' <<<"$out" \
+      && ok "menu dan repair sepakat: berkas berkutip tunggal dinilai BELUM LENGKAP oleh keduanya" \
+      || bad "predikat menu bilang belum lengkap tapi repair menghidupkan bot ($out)"
+fi
 
-echo "=== [6/8] Restore backup menulis penanda Stop ==="
+echo "=== [6/9] Restore backup menulis penanda Stop ==="
 if awk '/bot.conf ikut dipulihkan/,/^    fi$/' "$BACKUP" | grep -q 'touch /etc/wibutunnel/bot_off'; then
     ok "restore menandai bot berhenti (tidak dihidupkan lagi oleh repair/update berikutnya)"
 else
     bad "restore mematikan bot tanpa penanda -> repair/update berikutnya menghidupkannya (409)"
 fi
 
-echo "=== [7/8] Predikat konfigurasi seragam di installer ==="
+echo "=== [7/9] Predikat konfigurasi seragam di installer ==="
 python3 - "$SETUP" <<'PY'
 import sys
 s = open(sys.argv[1], encoding='utf-8').read()
@@ -202,11 +226,48 @@ PY
 [[ $? -eq 0 ]] && ok "installer menuntut token + chat id dan tidak menghapus penanda Stop" \
                 || bad "predikat installer beda dari guard/repair, atau menghapus penanda Stop"
 
-echo "=== [8/8] Status boot tetap menunjukkan fakta is-enabled walau penanda ada ==="
+echo "=== [8/9] Status boot tetap menunjukkan fakta is-enabled walau penanda ada ==="
 if grep -q 'unit: ${text_en}' "$TARGET"; then
     ok "menu menampilkan status unit sebenarnya, bukan hanya 'dimatikan manual'"
 else
     bad "penanda menyembunyikan is-enabled (unit bisa hidup saat boot tanpa terlihat)"
+fi
+
+
+echo "=== [9/9] Penulis bot.conf dan pembacanya harus sepakat ==="
+D3="$TMPROOT/writer"; mkdir -p "$D3/etc"
+WK=$(grep -n "printf 'BOT_TOKEN=" "$SETUP" | head -1 | cut -d: -f1)
+if [[ -z "$WK" ]]; then
+    bad "tidak menemukan baris penulis bot.conf di setup.sh (format penulis berubah?)"
+else
+    sed -n "${WK}p" "$SETUP" | sed "s#/etc/wibutunnel#$D3/etc#g" > "$D3/writer.sh"
+    awk '/^bot_conf_lengkap\(\)/,/^}/' "$TARGET" | sed "s#/etc/wibutunnel#$D3/etc#g" > "$D3/predikat.sh"
+
+    # (a) berkas hasil tulisan INSTALLER harus dianggap lengkap oleh predikat menu
+    : > "$D3/etc/bot.conf"
+    bash -c "_bt='111:AAA'; _bc='42'; source '$D3/writer.sh'" >/dev/null 2>&1
+    isi=$(tr '\n' ' ' < "$D3/etc/bot.conf")
+    if bash -c "source '$D3/predikat.sh'; bot_conf_lengkap" >/dev/null 2>&1; then
+        ok "tulisan installer diterima predikat menu (isi: $isi)"
+    else
+        bad "installer menulis format yang DITOLAK predikatnya sendiri (isi: $isi) — bot tidak akan pernah enabled"
+    fi
+
+    # (b) berkas lama tanpa tanda kutip (warisan setup.sh <= v4.1.28) tetap terbaca
+    printf 'BOT_TOKEN=111:AAA\nCHAT_ID=42\n' > "$D3/etc/bot.conf"
+    if bash -c "source '$D3/predikat.sh'; bot_conf_lengkap" >/dev/null 2>&1; then
+        ok "berkas lama tanpa kutip tetap dianggap lengkap (tidak memutus VPS yang sudah jalan)"
+    else
+        bad "berkas tanpa kutip (format lama) ditolak -> upgrade mematikan bot yang tadinya jalan"
+    fi
+
+    # (c) kontrol negatif: berkas kosong harus ditolak
+    : > "$D3/etc/bot.conf"
+    if bash -c "source '$D3/predikat.sh'; bot_conf_lengkap" >/dev/null 2>&1; then
+        bad "berkas KOSONG dianggap lengkap (predikat terlalu longgar)"
+    else
+        ok "kontrol negatif: berkas kosong ditolak"
+    fi
 fi
 
 echo

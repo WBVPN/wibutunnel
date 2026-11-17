@@ -1,6 +1,6 @@
 # Hasil Uji Nyata di VPS
 
-> Jejak uji dari v4.0.6 sampai v4.1.28 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
+> Jejak uji dari v4.0.6 sampai v4.1.29 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
 
 Diuji pada VPS kosong **Ubuntu 20.04** (1 vCPU / 965 MB), domain `test.priasawit.web.id`,
 IP terdaftar di `izin.txt` sampai 2026-12-15. Semua temuan di bawah ditemukan karena
@@ -564,3 +564,27 @@ skenario dijalankan (fail-closed). Bukti sesudahnya, diukur di VPS panel:
 
 Artinya suite ini sekarang benar-benar non-destruktif — bukan karena tujuannya begitu, tetapi karena
 dibuktikan dengan membandingkan keadaan layanan sebelum dan sesudah.
+
+### v4.1.29 — bug yang ditemukan justru oleh tes yang baru dibuat
+
+Reviewer terakhir menemukan sesuatu yang tidak terlihat oleh delapan bagian sebelumnya: **`setup.sh`
+menulis `bot.conf` tanpa tanda kutip**, sedangkan semua predikat membaca pola `^BOT_TOKEN="…"`.
+Instalasi baru yang mengisi token saat instalasi karena itu jatuh ke cabang "belum diatur": unit
+di-`disable`, bot di-`stop`, dan layar mengatakan bot belum diatur — padahal admin baru saja mengisinya.
+Bila nanti dinyalakan lewat menu [2], `systemctl start` jalan tetapi guard menolak `enable`: bot hidup
+sampai reboot lalu mati. Gejala v4.1.24, datang dari arah lain.
+
+Perbaikannya bukan sekadar menambah kutip: penulis diseragamkan **dan** predikat dibuat toleran
+(`^KEY="?[^"]+"?`) supaya berkas lama di VPS yang sudah jalan tidak tiba-tiba dinilai kosong.
+Dijaga oleh bagian tes **[9/9]** yang menjalankan baris `printf` milik installer lalu menguji hasilnya
+dengan predikat yang sebenarnya. Mutasi "kembalikan keadaan v4.1.28" memerahkan tiga asersi:
+
+```
+FAIL  predikat menu bilang belum lengkap tapi repair menghidupkan bot
+FAIL  installer menulis format yang DITOLAK predikatnya sendiri (isi: BOT_TOKEN=111:AAA … )
+FAIL  berkas tanpa kutip (format lama) ditolak -> upgrade mematikan bot yang tadinya jalan
+```
+
+Pelajaran: **uji penulis dan pembaca bersama-sama.** Delapan bagian sebelumnya menguji pembaca
+(predikat, repair, gerbang) dan semuanya hijau — cacatnya ada di penulis yang tidak pernah dijalankan
+tes mana pun.

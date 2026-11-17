@@ -21,8 +21,10 @@ source /etc/wibutunnel/lock.conf 2>/dev/null || LOCK_DURATION=15
 # dan installer supaya tidak ada berkas yang enable sementara berkas lain disable.
 bot_conf_lengkap() {
     [[ -s /etc/wibutunnel/bot.conf ]] || return 1
-    grep -qE '^BOT_TOKEN="[^"]+"' /etc/wibutunnel/bot.conf 2>/dev/null || return 1
-    grep -qE '^CHAT_ID="[^"]+"' /etc/wibutunnel/bot.conf 2>/dev/null || return 1
+    # Toleran terhadap berkas lama: setup.sh versi <= v4.1.28 menulis TANPA tanda kutip,
+    # jadi pola ini menerima keduanya (dengan/tanpa kutip ganda).
+    grep -qE '^BOT_TOKEN="?[^"]+"?[[:space:]]*$' /etc/wibutunnel/bot.conf 2>/dev/null || return 1
+    grep -qE '^CHAT_ID="?[^"]+"?[[:space:]]*$' /etc/wibutunnel/bot.conf 2>/dev/null || return 1
 }
 
 bot_enable_guard() {
