@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.29
+# 🦋 WIBUTUNNEL v4.1.30
 
 Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.29-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.30-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 **[Instalasi](#-instalasi)** · **[Fitur](#-fitur)** · **[Bot Telegram](#-bot-telegram)** · **[Perintah](#-perintah)** · **[Port](#-port--alur)** · **[Keamanan](#-keamanan)** · **[Uji](#-uji)** · **[Troubleshooting](#-troubleshooting)** · **[Changelog](docs/CHANGELOG.md)**
@@ -35,12 +35,12 @@ menjalankannya. Hash tidak cocok → berhenti sebelum menyentuh apa pun.
 ```bash
 # pasang (langsung dari repo, tanpa perantara)
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 0fcfab9e7e53a5855032bf2a0df15ec7e0d408cb0d23dc75893e79e9c1f89e7d
+sha256sum setup.sh     # harap: 46a8898568c3c2898fd67dcb6875bb0cd0334f2819c866b1b9be822c70197c0d
 bash setup.sh
 
 # hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)
 curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
-sha256sum uninstall.sh   # harap: 409f93da7bd0403d9a999e6118506941da8b07befa447f4d0a86f2283578a7ea
+sha256sum uninstall.sh   # harap: 5d1ea9eb52a2cb058eb81c8ab35ee4c56fe5c21d5eb9cadacb3c1dc66c1e76f7
 bash uninstall.sh
 ```
 
@@ -220,6 +220,13 @@ m-setting          # [5] Update Script — verifikasi SHA256 per berkas, cadanga
 ```bash
 curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
 bash uninstall.sh  # cadangan otomatis ke /root/wibutunnel-backup-*/
+```
+
+Uninstall menghapus seluruh bagian panel — termasuk **UDPGW** (unit `badvpn-udpgw@*`, biner
+`/usr/sbin/badvpn-udpgw`, direktori build, dan proses yang masih mendengarkan port 7100-7600).
+Akses SSH (port 22) tidak disentuh.
+
+```bash
 ```
 
 Riwayat rilis: [`docs/CHANGELOG.md`](docs/CHANGELOG.md) · Rilis & aset: https://github.com/WBVPN/wibutunnel/releases

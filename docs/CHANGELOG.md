@@ -4,6 +4,26 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.30 (2026-11-17)
+
+- **BUG: `uninstall.sh` meninggalkan dua skrip dan seluruh UDPGW.** Ditemukan saat siklus
+  uninstall → install ulang di VPS uji. `wibu-kuota` dan `wibu-udpgw` dipasang oleh `setup.sh`
+  tetapi tidak ada di daftar hapus, jadi tertinggal di `/usr/local/{bin,sbin}`. Lebih besar:
+  **UDPGW** — unit templated `badvpn-udpgw@.service`, biner `/usr/sbin/badvpn-udpgw`, direktori
+  build `/usr/local/src/badvpn-src`, dan **enam proses** yang tetap mendengarkan
+  `127.0.0.1:7100-7600` setelah panel "dihapus". Kini dibersihkan semua (stop per-instance,
+  disable, hapus unit + biner + build, `pkill` sisa proses).
+- **Invarian baru di `test_hardening.sh`**: setiap berkas `sbin/*` dan `menu/*.sh` **wajib**
+  disebut `uninstall.sh`. Tanpa ini "uninstall bersih" hanya berlaku untuk berkas yang kebetulan
+  diingat — persis cara dua skrip tadi lolos.
+- **Catatan risiko**: uninstaller resmi Xray yang dipanggil `uninstall.sh` sekarang **gagal
+  verifikasi hash** (skrip upstream berubah). Jalur cadangan manual tetap berjalan dan terbukti
+  membersihkan `/etc/xray`, `/usr/local/bin/xray`, unit xray — tetapi pesan `[ABORT]` muncul di
+  log. Pin hash perlu diperbarui saat ada kesempatan.
+- README bagian uninstall menyebut bahwa UDPGW ikut dibersihkan.
+
+---
+
 ### v4.1.29 (2026-11-17)
 
 - **BUG MAJOR: installer menulis `bot.conf` dalam format yang ditolak oleh pembacanya sendiri.**

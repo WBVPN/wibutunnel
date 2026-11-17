@@ -85,9 +85,11 @@ systemctl disable netfilter-persistent >/dev/null 2>&1
 # Hapus file executable menu & daemon
 # [FIX] Daftar hapus lengkap: sebelumnya algojo-ssh, lock-user, unlock-user, ws-stunnel & wibu-daemon
 # tertinggal di /usr/local/sbin|bin setelah uninstall.
+# [FIX v4.1.30] wibu-kuota & wibu-udpgw ikut dipasang setup.sh tetapi dulu tidak ada di daftar ini:
+# keduanya tertinggal di /usr/local/{bin,sbin} setelah uninstall (terukur di VPS uji).
 for _f in algojo-wibu algojo-kuota algojo-ssh algojo-expired algojo-expired-daemon lock-user unlock-user \
           unlocker-wibu ws-stunnel wibu-daemon wibu-repair wibu-audit-akun wibu-ssl-ulang wibu-isp wibutunnel-firewall \
-          wibutunnel-firewall.sh network-tune network-tune.sh; do
+          wibutunnel-firewall.sh network-tune network-tune.sh wibu-kuota wibu-udpgw; do
     rm -f "/usr/local/sbin/$_f" "/usr/local/bin/$_f" 2>/dev/null
 done
 rm -f /usr/local/bin/algojo-expired-daemon
@@ -121,6 +123,17 @@ rm -rf /etc/systemd/system/xray.service.d
 rm -f /etc/systemd/system/wibutunnel-bot.service /etc/systemd/system/xray.service /etc/systemd/system/xray@.service
 rm -f /etc/systemd/system/wibutunnel-firewall.service /etc/systemd/system/wibutunnel-firewall.timer
 rm -f /usr/local/sbin/wibutunnel-firewall /usr/local/sbin/wibutunnel-firewall.sh /usr/local/bin/wibutunnel-firewall /usr/local/bin/wibutunnel-firewall.sh
+
+# [FIX v4.1.30] UDPGW: unit templated badvpn-udpgw@ + biner hasil build + proses yang masih hidup.
+# Tanpa blok ini uninstall meninggalkan 6 proses yang tetap mendengarkan 127.0.0.1:7100-7600.
+for _u in $(systemctl list-units --all --no-legend 'badvpn-udpgw@*' 2>/dev/null | awk '{print $1}'); do
+    systemctl stop "$_u" >/dev/null 2>&1 || true
+done
+systemctl disable badvpn-udpgw@.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/badvpn-udpgw@.service
+pkill -f 'badvpn-udpgw' >/dev/null 2>&1 || true
+rm -f /usr/sbin/badvpn-udpgw /usr/local/sbin/badvpn-udpgw /usr/local/bin/badvpn-udpgw
+rm -rf /usr/local/src/badvpn-src
 systemctl daemon-reload
 
 # Hapus logrotate

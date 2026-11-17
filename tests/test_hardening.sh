@@ -167,6 +167,14 @@ t "installer Xray dipanggil bentuk berkas (tanpa \"-s --\")" "! grep -q 'XRAY_TM
 t "ada penjaga dini bila Xray gagal terpasang"  "grep -q \"Xray gagal terpasang\" \"\$REPO/setup.sh\""
 t "perintah instalasi README pakai curl -4 (bukan wget)" "grep -q 'curl -4 -fsSL -o setup.sh' \"\$REPO/README.md\" && ! grep -qE '^wget -qO setup.sh' \"\$REPO/README.md\""
 t "unduhan setup.sh pakai IPv4 (\\\$(curl -4 ...))" "! grep -E '\$\\(curl ' \"\$REPO/setup.sh\" | grep -qv -- ' -4 '"
+# [v4.1.30] Invarian: setiap skrip yang dipasang (sbin/*, menu/*.sh) harus punya jalur hapus di
+# uninstall.sh — tanpa ini "uninstall bersih" hanya berlaku untuk berkas yang kebetulan diingat.
+_unmiss=""
+for _f in "$REPO"/sbin/*; do _n="$(basename "$_f")"; grep -q "\b$_n\b" "$REPO/uninstall.sh" || _unmiss="$_unmiss $_n"; done
+for _f in "$REPO"/menu/*.sh; do _n="$(basename "$_f" .sh)"; grep -q "\b$_n\b" "$REPO/uninstall.sh" || _unmiss="$_unmiss $_n"; done
+if [[ -z "$_unmiss" ]]; then ok "uninstall.sh menyebut semua berkas sbin/ & menu/"; else
+  echo "     uninstall.sh belum menyebut:$_unmiss"; bad "uninstall.sh tidak lengkap (sisa berkas setelah uninstall)"; fi
+t "UDPGW dibersihkan saat uninstall (unit + biner + build)" "grep -q 'badvpn-udpgw@.service' \"\$REPO/uninstall.sh\" && grep -q '/usr/sbin/badvpn-udpgw' \"\$REPO/uninstall.sh\" && grep -q '/usr/local/src/badvpn-src' \"\$REPO/uninstall.sh\""
 for u in xray haproxy dropbear ws-stunnel telegram-bot algojo-expired wibu-daemon network-tune wibutunnel-firewall; do
   grep -q "$u" "$REPO/README.md" || { echo "     README belum menyebut unit: $u"; _rmiss=1; }
 done
