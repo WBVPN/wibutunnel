@@ -4,6 +4,24 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.31 (2026-11-17)
+
+- **Instalasi baru GAGAL total karena pin hash instaleler Xray sudah basi.** Ditemukan saat uji
+  uninstall → install ulang di VPS bersih: `setup.sh` mengunduh `install-release.sh` resmi Xray,
+  hash-nya tidak cocok dengan pin (`a562d1…` vs `91fd40…`), lalu **ABORT** — fail-closed bekerja
+  seperti desainnya, tetapi artinya tidak ada VPS baru yang bisa dipasang sampai pin diperbarui.
+  Upstream memang mengubah skripnya sejak rilis sebelumnya.
+- **Pin diperbarui setelah inspeksi isi**, bukan asal ganti: skrip 34.831 byte, `#!/usr/bin/env bash`,
+  176 rujukan `xray`, memasang ke `/usr/local/bin/xray` + unit systemd — bentuk yang sama dengan
+  sebelumnya. Nilai baru dipakai di `setup.sh` **dan** `uninstall.sh` (keduanya memanggil skrip itu).
+- Catatan: `uninstall.sh` juga menampilkan `[ABORT]` untuk instaleler Xray dan jatuh ke pembersihan
+  manual — setelah pin ini sama, jalur resmi kembali dipakai.
+- Pelajaran operasional: pin pihak ketiga adalah **tanggungan waktu**. Gejalanya bukan error di
+  panel, melainkan instalasi baru yang berhenti di tengah; uji "VPS kosong" adalah satu-satunya cara
+  menemukannya lebih awal.
+
+---
+
 ### v4.1.30 (2026-11-17)
 
 - **BUG: `uninstall.sh` meninggalkan dua skrip dan seluruh UDPGW.** Ditemukan saat siklus

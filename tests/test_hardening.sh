@@ -26,6 +26,9 @@ t "validasi numerik sebelum banding"           "grep -qE '\\^\\[0-9\\]\\+\\$|=~ 
 
 echo "== C. Rantai pasok / update =="
 t "installer Xray dipin (hash) di setup.sh"    "grep -q 'XRAY_INSTALL_SHA256' \"\$REPO/setup.sh\""
+_p1=$(grep -oP 'XRAY_INSTALL_SHA256="\$\{XRAY_INSTALL_SHA256:-\K[0-9a-f]{64}' "$REPO/setup.sh" | head -1)
+_p2=$(grep -oP 'XRAY_INSTALL_SHA256="\$\{XRAY_INSTALL_SHA256:-\K[0-9a-f]{64}' "$REPO/uninstall.sh" | head -1)
+t "pin instaleler Xray sama di setup.sh & uninstall.sh" "[[ -n '$_p1' && '$_p1' == '$_p2' ]]"
 t "installer Xray dipin (hash) di uninstall.sh" "grep -q 'XRAY_INSTALL_SHA256' \"\$REPO/uninstall.sh\""
 t "tidak ada curl|bash lagi"                   "! grep -qE 'curl[^|]*\\| *(ba)?sh' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
 t "safe_update pakai SHA256SUMS"               "grep -q 'SHA256SUMS' \"\$REPO/menu/m-setting.sh\""

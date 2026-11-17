@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.30
+# 🦋 WIBUTUNNEL v4.1.31
 
 Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.30-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.31-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 **[Instalasi](#-instalasi)** · **[Fitur](#-fitur)** · **[Bot Telegram](#-bot-telegram)** · **[Perintah](#-perintah)** · **[Port](#-port--alur)** · **[Keamanan](#-keamanan)** · **[Uji](#-uji)** · **[Troubleshooting](#-troubleshooting)** · **[Changelog](docs/CHANGELOG.md)**
@@ -35,12 +35,12 @@ menjalankannya. Hash tidak cocok → berhenti sebelum menyentuh apa pun.
 ```bash
 # pasang (langsung dari repo, tanpa perantara)
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 46a8898568c3c2898fd67dcb6875bb0cd0334f2819c866b1b9be822c70197c0d
+sha256sum setup.sh     # harap: 1f2109feff9f90664a3ab0b1472c485a118290734be50fd7be2f466f549e4c10
 bash setup.sh
 
 # hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)
 curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
-sha256sum uninstall.sh   # harap: 5d1ea9eb52a2cb058eb81c8ab35ee4c56fe5c21d5eb9cadacb3c1dc66c1e76f7
+sha256sum uninstall.sh   # harap: 53edab8dee49431f2cea7c606bff491f84a601bdcdd5b62ab25a774805113128
 bash uninstall.sh
 ```
 
