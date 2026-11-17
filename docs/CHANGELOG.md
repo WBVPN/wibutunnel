@@ -4,6 +4,26 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.36 (2026-11-17)
+
+- **Regresi v4.1.35 tertangkap uji live: pemakaian SSH tercatat 0 byte.** Penyebabnya, soket
+  "sisi-klien" dikenali lewat baris `LISTEN` di keluaran `ss -tie -tnp` — padahal perintah itu
+  **tidak** mencetak LISTEN tanpa `-l`. Daftar port jadi kosong, semua soket dibuang, akuntansi
+  berhenti tanpa error. Port listen kini dibaca dari `ss -tlnp` (atau dari fixture saat diuji).
+- **Biaya siklus diturunkan** supaya sampling makin rapat: port listen di-cache 60 detik, dan
+  pemetaan pid→user di-cache 15 detik (`SSH_PID_CACHE_TTL`). Tanpa cache, setiap soket `ssh -N`
+  memicu `journalctl` (~150 ms) sehingga satu siklus bisa >1 detik.
+- **Interval sampler `wibu-acct` jadi 0,5 detik** (dulu 1 detik).
+- **Hasil ukur di VPS (sesi nyata lewat dropbear):** unduh 50 MB dalam 4,0 detik → tercatat
+  **49.673.576 byte (0,99x)**. Sesi sangat pendek 20 MB dalam 1,7 detik masih under-count
+  (0,23x) — lihat "batas yang diketahui" di bawah.
+- **Batas yang diketahui (jujur):** `ss` hanya bisa membaca counter soket yang masih hidup, jadi
+  byte antara sampel terakhir dan socket close tidak pernah terbaca. Untuk sesi normal (detikan-
+  menitan) galatnya <1%; untuk burst sangat pendek galatnya bisa besar. Usulan berikutnya:
+  fallback ke counter `conntrack` untuk soket yang baru menutup.
+
+---
+
 ### v4.1.35 (2026-11-17)
 
 - **BUG: pemakaian SSH terhitung DUA KALI.** `ssh_sessions_bytes` menjumlahkan **semua** soket milik

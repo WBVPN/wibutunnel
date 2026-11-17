@@ -18,9 +18,9 @@ source /usr/local/bin/common.sh 2>/dev/null || {
     exit 1
 }
 
-INTERVAL="${WIBU_ACCT_INTERVAL:-1}"
-if [[ ! "$INTERVAL" =~ ^[0-9]+$ ]] || (( 10#$INTERVAL < 1 )); then
-    INTERVAL=1
+INTERVAL="${WIBU_ACCT_INTERVAL:-0.5}"
+if [[ ! "$INTERVAL" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    INTERVAL=0.5
 fi
 
 mkdir -p /etc/wibutunnel/tmp 2>/dev/null || true

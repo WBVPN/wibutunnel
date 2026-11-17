@@ -672,7 +672,29 @@ ssh_auth_user_of_pid() { # $1=pid -> cetak user (return 1 bila tak ada di log)
 # AKUN NYATA (uid >= 1000). Wajib begitu karena sshd 24.04 punya user sistem
 # `sshd` (uid 105) untuk privsep -> koneksi brute-force port 22 akan terbaca
 # seolah sesi milik user "sshd". Pelanggan panel selalu uid >= 1000 (useradd).
+# [v4.1.36] Cache pid->user. Tanpa ini setiap soket `ssh -N` memicu `journalctl`
+# (~150 ms) dan satu siklus sampler bisa melewati 1 detik -> byte di ujung sesi hilang.
+declare -gA SSH_PID_USER_CACHE=() 2>/dev/null || true
+_SSH_PID_CACHE_TS=0
+SSH_PID_CACHE_TTL="${SSH_PID_CACHE_TTL:-15}"
+
 ssh_pid_session_user() { # $1=pid -> cetak user (return 1 bila tak ada)
+    local _now=${EPOCHSECONDS:-$(date +%s)}
+    if (( _now - _SSH_PID_CACHE_TS > SSH_PID_CACHE_TTL )); then
+        SSH_PID_USER_CACHE=(); _SSH_PID_CACHE_TS=$_now
+    fi
+    if [[ -n "${SSH_PID_USER_CACHE[$1]:-}" ]]; then
+        printf '%s' "${SSH_PID_USER_CACHE[$1]}"; return 0
+    fi
+    local _u
+    if _u=$(_ssh_pid_session_user_uncached "$1"); then
+        SSH_PID_USER_CACHE[$1]="$_u"
+        printf '%s' "$_u"; return 0
+    fi
+    return 1
+}
+
+_ssh_pid_session_user_uncached() {
     local pid="$1" u uid p i=0
     while [[ -n "$pid" && $i -lt 4 ]]; do
         u=$(ps -o user= -p "$pid" 2>/dev/null | tr -d ' \n')
@@ -895,33 +917,32 @@ acct_init() {
 # ssh_sessions_bytes [berkas] — kosong = baca langsung dari kernel.
 # Cetak: "<port_lokal> <pid> <total_byte>"
 ssh_sessions_bytes() {
-    local src="${1:-}"
-    # [v4.1.35] Hanya soket SISI-KLIEN yang dihitung.
+    local src="${1:-}" listen_ports=""
+    # [v4.1.35] Hanya soket SISI-KLIEN (pelanggan) yang dihitung.
     #
-    # Versi sebelumnya menjumlahkan SEMUA soket milik dropbear, termasuk soket keluar
-    # yang dibuat oleh trafik pelanggan sendiri (ssh -D/-L). Satu unduhan lalu terhitung
-    # dua kali: soket masuk (server->klien) dan soket keluar (server->internet).
-    # Terukur di VPS: satu sesi 48,5 MB menghasilkan 42,9 MB + 47,2 MB.
-    #
-    # Aturan: soket dihitung bila (a) port lokalnya port LISTEN dropbear (jalur langsung
-    # 143/109), atau (b) peer-nya loopback (jalur SSH-over-WS lewat ws-stunnel).
-    # Soket keluar ke internet (peer = IP publik) tidak dihitung.
-    if [[ -n "$src" ]]; then cat "$src"; else ss -tie -tnp 2>/dev/null; fi | awk '
+    # Dua bug sebelumnya:
+    #  1) semua soket milik dropbear dijumlahkan, termasuk soket KELUAR yang dibuat
+    #     trafik pelanggan sendiri (ssh -D/-L) -> satu unduhan terhitung dua kali;
+    #  2) soket dikenali "sisi-klien" lewat baris LISTEN, padahal `ss -tie -tnp`
+    #     tidak mencetak LISTEN tanpa `-l` -> daftar port kosong -> SEMUA soket
+    #     dibuang dan pemakaian tercatat 0.
+    # Port listen kini dibaca dari `ss -tlnp` (atau dari berkas fixture bila diuji),
+    # dan soket dianggap sisi-klien bila port lokalnya port listen dropbear/sshd
+    # (jalur langsung) atau peer-nya loopback (jalur SSH-over-WS lewat ws-stunnel).
+    local prog='
         function flush_prev() {
             if (cur_port != "") {
                 n++
-                lp[n] = cur_port; pa[n] = cur_peer; pp[n] = cur_peerport
+                lp[n] = cur_port; pa[n] = cur_peer
                 bs[n] = (sent == "" ? 0 : sent); br[n] = (recv == "" ? 0 : recv)
                 pd[n] = pid; li[n] = is_listen; ssh[n] = is_ssh
             }
-            cur_port = ""; cur_peer = ""; cur_peerport = ""; pid = ""; sent = ""; recv = ""; is_listen = 0; is_ssh = 0
+            cur_port = ""; cur_peer = ""; pid = ""; sent = ""; recv = ""; is_listen = 0; is_ssh = 0
         }
         /^[^ \t]/ {
             flush_prev()
             split($4, a, ":")
             cur_port = a[length(a)]
-            split($5, b, ":")
-            cur_peerport = b[length(b)]
             cur_peer = $5; sub(/:[^:]*$/, "", cur_peer); gsub(/[\[\]]/, "", cur_peer)
             if (index($0, "pid=") > 0) { t = $0; sub(/.*pid=/, "", t); sub(/[^0-9].*/, "", t); pid = t }
             if ($0 ~ /users:\(\("dropbear"|users:\(\("sshd"/) is_ssh = 1
@@ -935,17 +956,27 @@ ssh_sessions_bytes() {
         END {
             flush_prev()
             for (i = 1; i <= n; i++) {
-                if (li[i] == 1) { listen[lp[i]] = 1 }
-            }
-            for (i = 1; i <= n; i++) {
                 if (li[i] == 1 || pd[i] == "" || ssh[i] != 1) continue
-                sisi_klien = (lp[i] in listen) || (pa[i] ~ /^(127\.|::1$)/)
+                sisi_klien = (("," LP ",") ~ ("," lp[i] ",")) || (pa[i] ~ /^(127\.|::1$)/)
                 if (!sisi_klien) continue
                 total = bs[i] + br[i]
                 if (total > 0) print lp[i], pd[i], total
             }
-        }
-    '
+        }'
+
+    if [[ -n "$src" ]]; then
+        listen_ports=$(awk '/LISTEN/ && /users:\(\("(dropbear|sshd)"/ { n = split($4, a, ":"); print a[n] }' "$src" 2>/dev/null | sort -u | paste -sd, -)
+        awk -v LP="$listen_ports" "$prog" < "$src"
+    else
+        # port listen jarang berubah -> cache 60 detik (ss -tlnp ~29 ms tiap siklus itu mahal)
+        local now=${EPOCHSECONDS:-$(date +%s)}
+        if [[ -z "${_SSH_LISTEN_CACHE:-}" ]] || (( now - ${_SSH_LISTEN_TS:-0} > 60 )); then
+            _SSH_LISTEN_CACHE=$(ss -tlnp 2>/dev/null | awk '/users:\(\("(dropbear|sshd)"/ { n = split($4, a, ":"); print a[n] }' | sort -u | paste -sd, -)
+            _SSH_LISTEN_TS=$now
+        fi
+        listen_ports="$_SSH_LISTEN_CACHE"
+        ss -tie -tnp 2>/dev/null | awk -v LP="$listen_ports" "$prog"
+    fi
 }
 
 # acct_apply_one <key> <user> <total_byte>: tambahkan DELTA ke USAGE_DB.
