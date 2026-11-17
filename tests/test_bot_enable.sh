@@ -17,7 +17,7 @@ bad() { echo "  FAIL  $1"; FAILS=$((FAILS+1)); }
 
 [[ -f "$TARGET" ]] || { echo "FAIL: $TARGET tidak ada"; exit 1; }
 
-echo "=== [1/4] Setiap start/restart telegram-bot disertai enable ==="
+echo "=== [1/6] Setiap start/restart telegram-bot disertai enable ==="
 python3 - "$TARGET" <<'PY'
 import re, sys
 path = sys.argv[1]
@@ -55,26 +55,79 @@ PY
 [[ $? -eq 0 ]] && ok "start/restart selalu diikuti enable (dan stop diikuti disable)" \
                 || bad "ada start/restart telegram-bot tanpa enable pasangannya"
 
-echo "=== [2/4] Status boot ditampilkan di menu (bisa diaudit user) ==="
+echo "=== [2/6] Status boot ditampilkan di menu (bisa diaudit user) ==="
 if grep -q 'is-enabled telegram-bot' "$TARGET"; then
     ok "menu menampilkan status boot bot (is-enabled)"
 else
     bad "menu tidak menampilkan status boot bot -> user tak tahu bot akan mati saat reboot"
 fi
 
-echo "=== [3/4] Pesan sukses menyebut ketahanan reboot ==="
+echo "=== [3/6] Pesan sukses menyebut ketahanan reboot ==="
 if grep -qiE 'otomatis (hidup|aktif|jalan).{0,40}(reboot|boot)|enabled.{0,30}reboot|tahan reboot' "$TARGET"; then
     ok "konfirmasi ke user menyebut bot hidup lagi setelah reboot"
 else
     bad "pesan sukses tidak memberi tahu bahwa bot otomatis aktif setelah reboot"
 fi
 
-echo "=== [4/4] setup.sh tetap tidak mengaktifkan unit tanpa token ==="
+echo "=== [4/6] setup.sh tetap tidak mengaktifkan unit tanpa token ==="
 if grep -q "unit tidak diaktifkan" "$REPO_DIR/setup.sh" \
    && grep -q 'systemctl disable telegram-bot.service' "$REPO_DIR/setup.sh"; then
     ok "instalasi tanpa token tetap tidak meng-enable unit (tidak ada status failed)"
 else
     bad "guard instalasi tanpa token hilang/berubah"
+fi
+
+
+echo "=== [5/6] Perilaku guard (systemctl di-stub, tanpa menyentuh sistem) ==="
+TMPG=$(mktemp -d /tmp/wibu_botguard.XXXXXX)
+mkdir -p "$TMPG/bin" "$TMPG/etc"
+cat > "$TMPG/bin/systemctl" <<'STUB'
+#!/bin/bash
+printf '%s\n' "systemctl $*" >> "$SYSTEMCTL_LOG"
+exit 0
+STUB
+chmod +x "$TMPG/bin/systemctl"
+sed "s#/etc/wibutunnel#$TMPG/etc#g" > "$TMPG/guard.sh" <<EOF
+$(awk '/^bot_enable_guard\(\)/,/^}/' "$TARGET")
+EOF
+
+jalankan_guard() { # $1=deskripsi ; stdout = isi log systemctl
+    : > "$TMPG/log"
+    PATH="$TMPG/bin:$PATH" SYSTEMCTL_LOG="$TMPG/log" bash -c "source '$TMPG/guard.sh'; bot_enable_guard" || true
+    cat "$TMPG/log"
+}
+
+printf 'BOT_TOKEN="123:abc"\nCHAT_ID="1"\n' > "$TMPG/etc/bot.conf"
+rm -f "$TMPG/etc/bot_off"
+out=$(jalankan_guard)
+if grep -q 'systemctl enable telegram-bot' <<<"$out"; then
+    ok "token ada + tanpa penanda -> guard meng-enable unit"
+else bad "guard TIDAK meng-enable padahal token ada (log: $out)"
+fi
+
+touch "$TMPG/etc/bot_off"
+out=$(jalankan_guard)
+if [[ -z "$out" ]]; then
+    ok "penanda bot_off dihormati -> guard tidak menyentuh unit (Stop manual tidak dibatalkan)"
+else bad "guard menghidupkan bot meski admin sudah Stop (log: $out)"
+fi
+
+rm -f "$TMPG/etc/bot_off"
+: > "$TMPG/etc/bot.conf"
+out=$(jalankan_guard)
+if [[ -z "$out" ]]; then
+    ok "token kosong -> guard tidak meng-enable (tidak ada 'failed' tiap boot)"
+else bad "guard meng-enable unit tanpa token (log: $out)"
+fi
+rm -rf "$TMPG"
+
+echo "=== [6/6] wibu-repair konsisten dengan guard ==="
+REPAIR="$REPO_DIR/sbin/wibu-repair"
+if grep -q '/etc/wibutunnel/bot_off' "$REPAIR" \
+   && grep -q 'systemctl disable telegram-bot' "$REPAIR"; then
+    ok "repair menghormati penanda Stop dan men-disable unit saat token tidak ada"
+else
+    bad "repair tidak konsisten: bisa menghidupkan bot yang sengaja dimatikan / membiarkan unit enabled tanpa token"
 fi
 
 echo

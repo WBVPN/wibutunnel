@@ -109,6 +109,7 @@ crontab -l 2>/dev/null | grep -v -E 'watchdog\.sh|/usr/local/bin/xp|unlocker-wib
 # Hapus service systemd
 rm -f /etc/systemd/system/wibu-daemon.service
 rm -f /etc/systemd/system/telegram-bot.service
+rm -f /etc/wibutunnel/bot_off
 rm -f /etc/systemd/system/algojo-expired.service
 rm -f /etc/systemd/system/network-tune.service
 rm -f /etc/systemd/system/ws-stunnel.service

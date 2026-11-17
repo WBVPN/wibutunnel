@@ -224,9 +224,18 @@ for svc in xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon cron; do
 done
 
 source /etc/wibutunnel/bot.conf 2>/dev/null
-if [[ -n "$BOT_TOKEN" && -n "$CHAT_ID" ]]; then
+if [[ -f /etc/wibutunnel/bot_off ]]; then
+    # Admin sengaja mematikan bot (menu [6] -> [3] Stop): repair tidak boleh menghidupkannya.
+    systemctl stop telegram-bot >/dev/null 2>&1 || true
+elif [[ -n "${BOT_TOKEN:-}" && -n "${CHAT_ID:-}" ]]; then
     systemctl enable telegram-bot >/dev/null 2>&1 || true
     systemctl restart telegram-bot >/dev/null 2>&1 || true
+else
+    # Tanpa token unit TIDAK boleh enabled: tiap boot ia gagal start ("failed"),
+    # dan itu persis gejala yang dulu dikeluhkan pada instalasi tanpa bot.
+    systemctl disable telegram-bot >/dev/null 2>&1 || true
+    systemctl stop telegram-bot >/dev/null 2>&1 || true
+    systemctl reset-failed telegram-bot >/dev/null 2>&1 || true
 fi
 
 # Verifikasi loop (tunggu maksimal 6 detik)

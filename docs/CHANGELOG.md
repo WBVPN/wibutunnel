@@ -4,12 +4,31 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.25 (2026-11-17)
+
+- **`Stop` manual dihormati.** Penanda `/etc/wibutunnel/bot_off` dipasang saat admin memilih
+  menu [6] → [3] Matikan Bot. Selama penanda ada, `bot_enable_guard` **dan** `wibu-repair` tidak
+  meng-enable unit — jadi restart-all / Auto-Repair / Update Script tidak lagi menghidupkan bot
+  yang sengaja dimatikan. Penanda dihapus oleh opsi Start, simpan token, dan installer.
+- **`wibu-repair` konsisten dengan `setup.sh`**: saat token tidak ada, unit sekarang `disable` +
+  `reset-failed` (sebelumnya hanya "kalau token ada, enable" — tanpa cabang sebaliknya, sehingga
+  unit bisa tertinggal enabled dan gagal start tiap boot).
+- **Tes bot jadi behavior, bukan grep**: `tests/test_bot_enable.sh` kini menjalankan
+  `bot_enable_guard` sungguhan dengan `systemctl` di-stub (token ada / penanda Stop / token kosong).
+  Sudah dibuktikan MERAH terhadap guard versi lama sebelum patch ini diterima.
+- **Koreksi narasi v4.1.24** (lihat entri di bawah): notifikasi limit/expired tidak pernah ikut mati
+  bersama unit bot karena dikirim langsung oleh `sbin/*`.
+
+---
+
 ### v4.1.24 (2026-11-17)
 
 - **Bot Telegram tahan reboot.** Menu Setting → [6] dulu hanya `start`/`restart` unit, tidak pernah
-  `enable`: bot hidup sampai reboot pertama lalu mati **diam-diam** — panel tetap jalan, notifikasi
-  limit/expired hilang tanpa jejak. Sekarang `bot_enable_guard` dipanggil di semua jalur yang
-  menyalakan bot (simpan token, opsi Start, restart-all, dan Update Script).
+  `enable`: bot hidup sampai reboot pertama lalu mati **diam-diam**. Yang ikut mati adalah **panel
+  interaktif Telegram** (buat akun, lock/unlock, cek trafik, callback menu) — sedangkan notifikasi
+  limit/expired tetap terkirim karena dikirim **langsung** ke API oleh `sbin/*`, bukan lewat unit.
+  Sekarang `bot_enable_guard` dipanggil di semua jalur yang menyalakan bot (simpan token, opsi Start,
+  restart-all, dan Update Script).
 - **Status boot ditampilkan di menu bot**: `Aktif saat Boot : enabled / disabled (mati setelah reboot!)`
   supaya kondisi ini bisa diaudit tanpa `systemctl`.
 - **Opsi [3] Stop ikut `disable`** — state jadi jujur: bot yang dimatikan manual tidak bangkit sendiri.
