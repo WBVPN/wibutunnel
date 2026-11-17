@@ -553,6 +553,49 @@ escape_grep() { printf '%s' "$1" | sed 's/[].\/[\\*^$()+?{|]/\\&/g'; }
 #           socket-nya masih terbuka. `ss`/conntrack TIDAK dipakai: pada box ini peer
 #           :443 berisi IP haproxy/Cloudflare, bukan IP client.
 #           Upgrade path: ekspos jumlah koneksi aktif per-user dari xray (butuh plugin).
+# ==========================================
+# CDN / CLOUDFLARE IP (v4.1.38)
+#
+# Kalau domain dilayani lewat CDN, access.log mencatat IP edge CDN, bukan IP
+# pelanggan. Satu orang bisa muncul sebagai 40+ "IP" (terukur di VPS: akun
+# 'admin' kena limit 10 padahal cuma satu perangkat, karena 162.158.x,
+# 172.64.x, 104.23.x semuanya milik Cloudflare AS13335).
+#
+# IP CDN BUKAN identitas -> tidak boleh dihitung sebagai "IP login".
+# Daftar: https://www.cloudflare.com/ips/  (IPv4 + IPv6)
+# Matikan dengan WIBU_IP_IGNORE_CDN=0 bila ingin perilaku lama.
+# ==========================================
+_IP_CDN4="173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18
+108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17
+162.158.0.0/15 104.16.0.0/13 172.64.0.0/13 131.0.72.0/22"
+
+ip_is_cdn() { # $1=ip -> 0 bila termasuk rentang CDN (Cloudflare)
+    local ip="${1%%[[:space:]]*}" cidr net bits n mask
+    local a b c d v4
+    [[ -n "$ip" ]] || return 1
+
+    if [[ "$ip" == *:* ]]; then
+        case "${ip,,}" in
+            2400:cb00:*|2606:4700:*|2803:f800:*|2405:b500:*|2405:8100:*|2a06:98c0:*|2c0f:f248:*) return 0 ;;
+        esac
+        return 1
+    fi
+
+    IFS=. read -r a b c d <<< "$ip"
+    [[ "$a" =~ ^[0-9]+$ && "$b" =~ ^[0-9]+$ && "$c" =~ ^[0-9]+$ && "$d" =~ ^[0-9]+$ ]] || return 1
+    (( a <= 255 && b <= 255 && c <= 255 && d <= 255 )) || return 1
+    v4=$(( (a << 24) + (b << 16) + (c << 8) + d ))
+
+    for cidr in $_IP_CDN4; do
+        net="${cidr%/*}"; bits="${cidr#*/}"
+        IFS=. read -r a b c d <<< "$net"
+        n=$(( (a << 24) + (b << 16) + (c << 8) + d ))
+        mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+        (( (v4 & mask) == (n & mask) )) && return 0
+    done
+    return 1
+}
+
 live_ip_pairs() {
     local log="${XRAY_ACCESS_LOG:-/var/log/xray/access.log}"
     local thresh
@@ -579,7 +622,14 @@ live_ip_pairs() {
             }
         }
         END { for (e in ips) print e, ips[e] }
-    ' <(tail -n 5000 "$log" 2>/dev/null | tac) 2>/dev/null
+    ' <(tail -n 5000 "$log" 2>/dev/null | tac) 2>/dev/null | while read -r _u _ips; do
+        local keep="" _ip
+        for _ip in $_ips; do
+            if [[ "${WIBU_IP_IGNORE_CDN:-1}" == "1" ]] && ip_is_cdn "$_ip"; then continue; fi
+            keep="$keep $_ip"
+        done
+        [[ -n "${keep// /}" ]] && printf '%s %s\n' "$_u" "${keep# }"
+    done
 }
 
 # ==========================================
@@ -746,7 +796,12 @@ ssh_session_count() { # $1=user -> jumlah sesi aktif
 }
 
 ssh_active_ips() { # $1=user -> IP unik jalur langsung (WS tak terlihat di ss)
-    ssh_sessions_snapshot | awk -F'\t' -v u="$1" '$1==u && $2!="via-WS" {print $2}' | sort -u | tr '\n' ' '
+    local _ip
+    ssh_sessions_snapshot | awk -F'\t' -v u="$1" '$1==u && $2!="via-WS" {print $2}' | sort -u | while read -r _ip; do
+        [[ -z "$_ip" ]] && continue
+        if [[ "${WIBU_IP_IGNORE_CDN:-1}" == "1" ]] && ip_is_cdn "$_ip"; then continue; fi
+        printf '%s ' "$_ip"
+    done
 }
 
 add_ssh_user() {
@@ -1064,6 +1119,77 @@ usage_reset() { # $1=user -> pemakaian mulai dari nol (renew / restore)
 }
 
 usage_gb_label() { awk -v b="${1:-0}" 'BEGIN{printf "%.2f GB", b/1073741824}'; }
+
+# ==========================================
+# PENEGAKAN KUOTA SSH JALUR CEPAT (v4.1.37)
+#
+# algojo-kuota berjalan tiap 60 detik. Pelanggan yang melewati limit masih bisa
+# menarik data selama sisa siklus itu (terukur 11 MB/s -> +-600 MB). Fungsi di
+# bawah ini memeriksa HANYA akun SSH (tanpa statsquery xray, tanpa tulis config)
+# sehingga cukup murah untuk dipanggil tiap beberapa detik dari wibu-acct.
+#
+# Semua jalur penguncian tetap lewat lock_ssh_user() di atas, dan teks pesan
+# dibangun kuota_ssh_lock_message() supaya jalur cepat & jalur lambat tidak
+# pernah berbeda kalimat.
+# ==========================================
+kuota_ssh_lock_message() { # $1=user $2=limit_gb -> pesan HTML
+    local user="$1" limit_gb="$2" domain waktu terpakai
+    domain=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
+    waktu=$(date '+%d %b %Y %H:%M WIB')
+    terpakai=$(usage_gb_label "$(usage_of "$user")")
+    printf "🔒 <b>AKUN SSH DI-LOCK (KUOTA HABIS)</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Limit    :</b> %s GB\n<b>Terpakai :</b> %s\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>" \
+        "$user" "$limit_gb" "$terpakai" "$waktu" "$domain"
+}
+
+kuota_send_message() { # $1=pesan ; kirim ke Telegram bila token & chat tersedia
+    local pesan="$1" token chat
+    token="${BOT_TOKEN:-}"; chat="${CHAT_ID:-}"
+    if [[ -z "$token" || -z "$chat" ]] && [[ -f /etc/wibutunnel/bot.conf ]]; then
+        token=$(sed -n 's/^BOT_TOKEN="\?\([^"]*\)"\?.*/\1/p' /etc/wibutunnel/bot.conf 2>/dev/null | head -1)
+        chat=$(sed -n 's/^CHAT_ID="\?\([^"]*\)"\?.*/\1/p' /etc/wibutunnel/bot.conf 2>/dev/null | head -1)
+    fi
+    [[ -z "$token" || -z "$chat" ]] && return 1
+    curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+        -F "chat_id=${chat}" -F "disable_web_page_preview=true" -F "parse_mode=html" \
+        -F "text=${pesan}" >/dev/null 2>&1
+}
+
+kuota_scan_ssh() {
+    local db_bw="${KUOTA_DB_BW:-/etc/wibutunnel/limit_bw.db}"
+    local db_usage="${KUOTA_DB_USAGE:-${USAGE_DB:-/etc/wibutunnel/user_usage.db}}"
+    local db_lock="${KUOTA_DB_LOCK:-/etc/wibutunnel/locked_users.db}"
+    local lock="${KUOTA_LOCK:-/etc/wibutunnel/tmp/kuota_scan.lock}"
+
+    [[ -f "$db_bw" ]] || return 0
+    mkdir -p "$(dirname "$lock")" 2>/dev/null || true
+
+    ( flock -n 198 || exit 0
+      local line user limit_gb total
+      local -A locked=()
+      if [[ -f "$db_lock" ]]; then
+          while IFS=: read -r user _; do
+              [[ -n "$user" ]] && locked["$user"]=1
+          done < "$db_lock"
+      fi
+      while IFS= read -r line; do
+          [[ -n "$line" ]] || continue
+          user="${line%%:*}"
+          limit_gb="${line#*:}"; limit_gb="${limit_gb%%:*}"
+          [[ -n "$user" ]] || continue
+          [[ "$limit_gb" =~ ^[0-9]+$ ]] || continue
+          (( 10#$limit_gb > 0 )) || continue
+          [[ -n "${locked[$user]:-}" ]] && continue
+          ssh_user_exists "$user" || continue
+          total=$(usage_of "$user")
+          [[ "$total" =~ ^[0-9]+$ ]] || total=0
+          if (( 10#$total >= 10#$limit_gb * 1073741824 )); then
+              lock_ssh_user "$user" "QUOTA_EXCEEDED"
+              locked["$user"]=1
+              ( kuota_send_message "$(kuota_ssh_lock_message "$user" "$limit_gb")" ) &
+          fi
+      done < "$db_bw"
+    ) 198>"$lock"
+}
 
 # Port badvpn-udpgw yang sedang aktif (dipakai menu/pesan akun).
 udpgw_active_ports() {

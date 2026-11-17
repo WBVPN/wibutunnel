@@ -68,11 +68,8 @@ while read -r line; do
         if ssh_user_exists "$user"; then
             lock_ssh_user "$user" "QUOTA_EXCEEDED"
             (
-                DOMAIN=$(cat /etc/xray/domain 2>/dev/null || echo "Unknown")
-                WAKTU=$(date '+%d %b %Y %H:%M WIB')
-                TERPAKAI=$(usage_gb_label "$(usage_of "$user")")
-                PESAN=$(printf "🔒 <b>AKUN SSH DI-LOCK (KUOTA HABIS)</b>\n\n<b>User     :</b> <code>%s</code>\n<b>Limit    :</b> %s GB\n<b>Terpakai :</b> %s\n<b>Waktu    :</b> %s\n<b>Domain   :</b> <code>%s</code>" "$user" "$limit_gb" "$TERPAKAI" "$WAKTU" "$DOMAIN")
-                curl -4 -s --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -F "chat_id=${CHAT_ID}" -F "disable_web_page_preview=true" -F "parse_mode=html" -F "text=${PESAN}" >/dev/null 2>&1
+                PESAN=$(kuota_ssh_lock_message "$user" "$limit_gb")
+                kuota_send_message "$PESAN"
             ) &
             continue
         fi

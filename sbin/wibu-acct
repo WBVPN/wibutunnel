@@ -1,17 +1,23 @@
 #!/bin/bash
 # ==========================================
-# WIBU TUNNELING - wibu-acct (v4.1.33)
-# Sampler akuntansi byte SSH berinterval pendek.
+# WIBU TUNNELING - wibu-acct (v4.1.37)
+# Sampler akuntansi byte SSH + penegak kuota jalur cepat.
 #
-# Kenapa ada: `ss -tie` hanya bisa membaca counter soket yang MASIH HIDUP.
-# Selama ini akuntansi SSH hanya berjalan di siklus penegakan 60 detik
-# (algojo-kuota), sehingga sesi yang lebih pendek dari itu tidak pernah
-# tercatat sama sekali. Terukur di VPS uji: unduh 50 MB dalam 7 detik
-# (sesi langsung ditutup) -> user_usage.db tetap 0 byte.
+# Kenapa ada:
+# 1. `ss -tie` hanya bisa membaca counter soket yang MASIH HIDUP. Akuntansi SSH
+#    dulu hanya berjalan di siklus penegakan 60 detik (algojo-kuota), sehingga
+#    sesi lebih pendek dari itu tidak pernah tercatat (terukur: unduh 50 MB
+#    dalam 7 detik -> user_usage.db tetap 0 byte).
+# 2. Penegakan kuota juga hanya di siklus 60 detik itu, jadi pelanggan yang
+#    melewati limit masih bisa menarik data sampai siklus berikutnya
+#    (terukur 11 MB/s -> +-600 MB kelebihan). Sekarang kuota_scan_ssh() ikut
+#    dipanggil di sini tiap WIBU_QUOTA_EVERY detik (default 5).
 #
-# Unit ini memanggil usage_apply_ssh() tiap detik. Fungsi itu ber-flock
-# (lihat common.sh), jadi tidak bisa dobel-hitung dengan algojo-kuota.
-# Interval bisa diatur lewat WIBU_ACCT_INTERVAL (detik, default 1).
+# Kedua fungsi ber-flock (lihat common.sh), jadi tidak bisa dobel-hitung atau
+# dobel-lock dengan algojo-kuota yang tetap berjalan tiap 60 detik.
+#
+# Interval sampler  : WIBU_ACCT_INTERVAL (detik, default 0.5)
+# Interval kuota    : WIBU_QUOTA_EVERY  (detik, default 5)
 # ==========================================
 source /usr/local/bin/common.sh 2>/dev/null || {
     echo "[wibu-acct] common.sh tidak ditemukan" >&2
@@ -22,10 +28,20 @@ INTERVAL="${WIBU_ACCT_INTERVAL:-0.5}"
 if [[ ! "$INTERVAL" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     INTERVAL=0.5
 fi
+QUOTA_EVERY="${WIBU_QUOTA_EVERY:-5}"
+if [[ ! "$QUOTA_EVERY" =~ ^[0-9]+$ ]]; then
+    QUOTA_EVERY=5
+fi
 
 mkdir -p /etc/wibutunnel/tmp 2>/dev/null || true
 
+LAST_QUOTA=0
 while true; do
     usage_apply_ssh >/dev/null 2>&1
+    NOW=$(date +%s)
+    if (( NOW - LAST_QUOTA >= QUOTA_EVERY )); then
+        kuota_scan_ssh >/dev/null 2>&1
+        LAST_QUOTA=$NOW
+    fi
     sleep "$INTERVAL"
 done

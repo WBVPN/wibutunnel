@@ -4,6 +4,45 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.37 (2026-11-18)
+
+Dua perbaikan dari kejadian nyata di panel produksi.
+
+**1. Akun terkunci "Melebihi Limit IP" padahal hanya satu orang.**
+Domain dilayani lewat CDN (Cloudflare), jadi `access.log` mencatat IP *edge* CDN, bukan IP
+pelanggan. Terukur di VPS: akun `admin` muncul sebagai **41 IP** (162.158.x, 172.64.x,
+104.23.x — semuanya AS13335 Cloudflare) lalu kena limit 10. IP CDN bukan identitas, jadi:
+
+- `ip_is_cdn()` baru: 14 CIDR IPv4 + 7 prefix IPv6 Cloudflare, dicocokkan numerik.
+- `live_ip_pairs()` dan `ssh_active_ips()` membuang IP CDN sebelum dihitung.
+- `WIBU_IP_IGNORE_CDN=0` mengembalikan perilaku lama.
+- **Konsekuensi yang dicatat jujur:** koneksi yang seluruhnya lewat CDN tidak bisa ditegakkan
+  limit IP-nya, karena IP asli memang tidak pernah sampai ke server.
+
+**2. Penegakan kuota SSH baru berjalan tiap 60 detik.**
+Pelanggan yang melewati limit masih bisa menarik data selama sisa siklus (terukur 11 MB/s →
+±600 MB). Sekarang:
+
+- `kuota_scan_ssh()` memeriksa **hanya** akun SSH (tanpa statsquery xray, tanpa tulis config),
+  ber-`flock`, idempoten lewat `locked_users.db`.
+- `wibu-acct` memanggilnya tiap `WIBU_QUOTA_EVERY` detik (default **5**), di samping sampling
+  byte 0,5 detik. Jeda penguncian turun dari ~60 dtk → **≤5 dtk**.
+- Pesan penguncian dibangun `kuota_ssh_lock_message()` supaya jalur cepat (wibu-acct) dan jalur
+  lambat (algojo-kuota) tidak pernah berbeda kalimat.
+
+**Tes baru** (keduanya dibuktikan MERAH sebelum patch):
+
+- `tests/test_ip_cdn.sh` — 18 asersi, termasuk batas rentang: `172.63.255.255` dan
+  `104.15.255.255` **tidak** boleh dianggap CDN.
+- `tests/test_kuota_latency.sh` — 12 asersi: pemakaian **persis** di limit harus terkunci
+  (menahan mutasi `>=` → `>`), 1 byte di bawah limit tidak terkunci, idempoten, dan **8
+  pemindaian paralel harus menghasilkan tepat 2 penguncian** (menahan mutasi yang melepas flock).
+
+Mutasi yang diuji dan berhasil ditangkap: `>=`→`>`, `1073741824`→`1073741823`, guard
+`locked_users` dihapus, `flock` dilepas (8 proses paralel → 16 penguncian).
+
+---
+
 ### v4.1.36 (2026-11-17)
 
 - **Regresi v4.1.35 tertangkap uji live: pemakaian SSH tercatat 0 byte.** Penyebabnya, soket
