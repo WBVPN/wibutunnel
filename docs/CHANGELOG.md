@@ -4,6 +4,33 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.38 (2026-11-18)
+
+Tiga cacat pada `kuota_scan_ssh()` (jalur cepat v4.1.37), ditemukan lewat review mandiri +
+mutasi, bukan lewat pemakaian.
+
+1. **`flock` tetap dipegang notifikasi.** Subshell pengirim Telegram mewarisi fd 198, jadi lock
+   kuota tetap terkunci selama `curl` berjalan (sampai 10 detik) dan pemindaian berikutnya
+   **dilewati tanpa pesan error**. Sekarang subshell menutup fd itu lebih dulu (`exec 198>&-`).
+   Dibuktikan eksperimen: tanpa penutupan, `flock -n` gagal 0,3 dtk setelah pemindaian selesai.
+2. **Akun sistem bisa dikunci.** `lock_ssh_user()` menjalankan `pkill -u`; satu baris `root:1` di
+   `limit_bw.db` akan mematikan seluruh panel. Sekarang akun dengan uid < 1000 dilewati.
+3. **Baris ber-CRLF dilewati diam-diam.** DB yang pernah disunting di Windows membuat
+   `limit_gb="1\r"` gagal regex → akun tak pernah ditegakkan. Sekarang CR dan spasi dibersihkan
+   per baris **dan** per field.
+
+**Tes** `tests/test_kuota_latency.sh` naik 12 → **15 asersi**: baris CRLF harus terkunci, akun
+uid 0 tidak boleh terkunci, dan lock harus langsung bebas walau notifikasi masih berjalan.
+Enam mutasi diuji, semuanya tertangkap: CR-cleaner dihapus, guard uid dihapus, `exec 198>&-`
+dihapus, `>=` → `>`, guard `locked_users` dihapus, `flock` dilepas.
+
+**Catatan kejujuran:** dua reviewer otomatis yang kudelegasikan **gagal total** (satu balas
+`{"status":"corrected"}` karena skema output, satu balas `{"response":"Ready."}`), jadi temuan di
+atas berasal dari review manual + mutasi, bukan dari reviewer. Jangan menganggap rilis ini
+"sudah direview dua agen" — tidak.
+
+---
+
 ### v4.1.37 (2026-11-18)
 
 Dua perbaikan dari kejadian nyata di panel produksi.

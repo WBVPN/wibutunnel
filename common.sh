@@ -1173,19 +1173,29 @@ kuota_scan_ssh() {
       fi
       while IFS= read -r line; do
           [[ -n "$line" ]] || continue
-          user="${line%%:*}"
-          limit_gb="${line#*:}"; limit_gb="${limit_gb%%:*}"
+          # DB bisa datang dari sistem lain (CRLF) atau disunting tangan (spasi)
+          line="${line//$'\r'/}"; line="${line%"${line##*[![:space:]]}"}"
+          user="${line%%:*}"; user="${user//[[:space:]]/}"
+          limit_gb="${line#*:}"; limit_gb="${limit_gb%%:*}"; limit_gb="${limit_gb//[[:space:]]/}"
           [[ -n "$user" ]] || continue
           [[ "$limit_gb" =~ ^[0-9]+$ ]] || continue
           (( 10#$limit_gb > 0 )) || continue
           [[ -n "${locked[$user]:-}" ]] && continue
           ssh_user_exists "$user" || continue
+          # Akun sistem (uid < 1000) TIDAK boleh dikunci: lock_ssh_user menjalankan
+          # `pkill -u`, dan satu baris `root:1` di DB akan mematikan seluruh panel.
+          local _uid
+          _uid=$(id -u "$user" 2>/dev/null)
+          [[ "$_uid" =~ ^[0-9]+$ ]] || continue
+          (( _uid >= 1000 )) || continue
           total=$(usage_of "$user")
           [[ "$total" =~ ^[0-9]+$ ]] || total=0
           if (( 10#$total >= 10#$limit_gb * 1073741824 )); then
               lock_ssh_user "$user" "QUOTA_EXCEEDED"
               locked["$user"]=1
-              ( kuota_send_message "$(kuota_ssh_lock_message "$user" "$limit_gb")" ) &
+              # fd 198 (flock) DITUTUP di subshell: kalau tidak, lock tetap dipegang
+              # selama curl (sampai 10 detik) dan pemindaian berikutnya dilewati.
+              ( exec 198>&-; kuota_send_message "$(kuota_ssh_lock_message "$user" "$limit_gb")" ) &
           fi
       done < "$db_bw"
     ) 198>"$lock"

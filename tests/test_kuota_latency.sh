@@ -53,6 +53,9 @@ rusak:
 tepat:1
 kurang:1
 EOF
+# CR sungguhan (bukan teks "\r"): DB yang pernah disunting di Windows
+printf 'crlf:1\r\n' >> "$DB_BW"
+printf 'root:1\n' >> "$DB_BW"
 # 'tepat' = persis 1 GiB (harus terkunci), 'kurang' = 1 GiB - 1 byte (tidak boleh).
 # Dua baris ini yang menahan mutasi >= menjadi > dan salah ketik konstanta 1 GiB.
 cat > "$DB_USAGE" <<'EOF'
@@ -62,16 +65,19 @@ nolimit:2147483648:2147483648
 tepat:1073741824:1073741824
 kurang:1073741823:1073741823
 EOF
+printf 'crlf:2147483648:2147483648\r\n' >> "$DB_USAGE"
+printf 'root:2147483648:2147483648\n' >> "$DB_USAGE"
 
 # stub: tidak menyentuh user nyata, hanya mencatat panggilan
 STUB="$TMP/stub.log"; : > "$STUB"
-ssh_user_exists() { case "$1" in over|under|nolimit|tepat|kurang) return 0;; *) return 1;; esac; }
+ssh_user_exists() { case "$1" in over|under|nolimit|tepat|kurang|crlf|root|lambat) return 0;; *) return 1;; esac; }
+id() { case "$2" in root) echo 0;; crlf) echo 1001;; *) echo 1002;; esac; }
 lock_ssh_user() {
     echo "lock:$1:$2" >> "$STUB"
     printf '%s:1:0:%s\n' "$1" "${2:-MANUAL}" >> "${KUOTA_DB_LOCK:-/etc/wibutunnel/locked_users.db}"
     return 0
 }
-kuota_send_message() { echo "notif" >> "$STUB"; return 0; }
+kuota_send_message() { echo "notif" >> "$STUB"; sleep "${STUB_NOTIF_SLEEP:-0}"; return 0; }
 
 export KUOTA_DB_BW="$DB_BW" KUOTA_DB_USAGE="$DB_USAGE" KUOTA_DB_LOCK="$DB_LOCK" KUOTA_LOCK="$TMP/scan.lock"
 USAGE_DB="$DB_USAGE"
@@ -85,6 +91,8 @@ if grep -q "^lock:under" "$STUB"; then bad "user di bawah limit ikut dikunci"; e
 if grep -q "^lock:nolimit" "$STUB"; then bad "limit 0 (tanpa limit) ikut dikunci"; else ok "limit 0 dilewati"; fi
 if grep -q "^lock:tepat:QUOTA_EXCEEDED$" "$STUB"; then ok "pemakaian PERSIS di limit (1 GiB) dikunci"; else bad "pemakaian persis di limit TIDAK dikunci (batas >= salah)"; fi
 if grep -q "^lock:kurang" "$STUB"; then bad "1 byte di bawah limit ikut dikunci (off-by-one)"; else ok "1 byte di bawah limit tidak dikunci"; fi
+if grep -qx "lock:crlf:QUOTA_EXCEEDED" "$STUB"; then ok "baris ber-CRLF tetap terbaca & dikunci"; else bad "baris ber-CRLF dilewati (DB Windows ikut tak tertegakkan)"; fi
+if grep -qx "lock:root:QUOTA_EXCEEDED" "$STUB"; then bad "akun SISTEM (uid 0) dikunci -> bisa mematikan panel"; else ok "akun sistem (uid<1000) tidak dikunci"; fi
 # notifikasi dikirim di subshell background (tidak memblokir pemindaian) -> tunggu singkat
 for _ in $(seq 1 20); do grep -q '^notif$' "$STUB" && break; sleep 0.1; done
 if [[ "$(grep -c '^notif$' "$STUB")" -ge 1 ]]; then ok "notifikasi terkirim untuk penguncian"; else bad "notifikasi tidak terkirim"; fi
@@ -132,11 +140,33 @@ wait
 for _ in $(seq 1 20); do [[ "$(grep -c '^lock:' "$STUB")" -ge 1 ]] && break; sleep 0.1; done
 sleep 0.5
 NKUNCI=$(grep -c '^lock:' "$STUB")
-if [[ "$NKUNCI" -eq 2 ]]; then
-    ok "8 pemindaian paralel -> tepat 2 penguncian (over+, tepat), tanpa ganda"
+# fixture saat ini punya 3 akun yang memang melewati limit: over, tepat, crlf
+# (root dikecualikan karena akun sistem)
+if [[ "$NKUNCI" -eq 3 ]]; then
+    ok "8 pemindaian paralel -> tepat 3 penguncian, tanpa ganda"
 else
-    bad "8 pemindaian paralel -> $NKUNCI penguncian (harus 2; flock/guard tidak bekerja)"
+    bad "8 pemindaian paralel -> $NKUNCI penguncian (harus 3; flock/guard tidak bekerja)"
 fi
+
+
+# --- 6. flock tidak boleh dipegang oleh notifikasi background ---
+echo
+echo "--- uji 6: lock dilepas walau notifikasi masih jalan ---"
+: > "$STUB"; : > "$DB_LOCK"
+cat > "$DB_BW" <<'EOF2'
+lambat:1
+EOF2
+cat > "$DB_USAGE" <<'EOF2'
+lambat:2147483648:2147483648
+EOF2
+export STUB_NOTIF_SLEEP=3
+( kuota_scan_ssh ) 2>/dev/null
+if ( flock -n "$KUOTA_LOCK" true ) 2>/dev/null; then
+    ok "lock langsung bebas walau notifikasi (3 dtk) masih berjalan"
+else
+    bad "lock masih dipegang notifikasi background -> pemindaian berikutnya dilewati"
+fi
+unset STUB_NOTIF_SLEEP
 
 echo
 echo "RINGKAS: $PASS hijau / $FAIL merah"
