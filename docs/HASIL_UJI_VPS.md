@@ -1,6 +1,6 @@
 # Hasil Uji Nyata di VPS
 
-> Jejak uji dari v4.0.6 sampai v4.1.23 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
+> Jejak uji dari v4.0.6 sampai v4.1.26 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
 
 Diuji pada VPS kosong **Ubuntu 20.04** (1 vCPU / 965 MB), domain `test.priasawit.web.id`,
 IP terdaftar di `izin.txt` sampai 2026-12-15. Semua temuan di bawah ditemukan karena
@@ -484,3 +484,63 @@ dianggap terhubung (uji), IP 2 jam lalu diabaikan, dan nilainya bisa disetel.
    meminta 30+ berkas → putaran ketiga gagal (terukur: `remaining=0`) dan verifikasi turun
    ke CDN sehingga satu berkas ditolak walau isinya benar. Manifest kini diambil **sekali**
    per putaran (API → jsDelivr → raw).
+
+---
+
+## v4.1.24 → v4.1.26 — "bot tahan reboot" dan harga sebuah klaim yang kurang teliti
+
+Rangkaian ini berawal dari satu temuan saat audit VPS uji: `telegram-bot.service` **aktif 22 jam**
+tetapi **`disabled`**. Artinya bot hidup hanya karena pernah di-`start` manual — satu reboot lagi
+dan ia mati, tanpa error, tanpa jejak, sementara panel tetap jalan.
+
+### Akar masalah (dibaca dari kode, bukan tebakan)
+
+`setup.sh` meng-`enable` unit hanya saat instalasi **dan** hanya kalau token sudah ada. Menu
+Setting → [6] hanya memanggil `systemctl start`/`restart`. Jadi urutan yang paling umum di lapangan
+— pasang dulu, isi token belakangan — selalu berakhir dengan unit `disabled`.
+
+### Tiga putaran rilis, dua di antaranya karena reviewer membantah
+
+| Versi | Isi | Kenapa berubah |
+|---|---|---|
+| v4.1.24 | `bot_enable_guard()` dipanggil di semua jalur yang menyalakan bot; menu menampilkan status boot; Stop ikut `disable` | perbaikan awal |
+| v4.1.25 | penanda `/etc/wibutunnel/bot_off` (Stop dihormati), repair `disable`+`reset-failed`, tes jadi behavioral | reviewer menemukan: Stop dibatalkan oleh update/repair, dan tes lama bisa **false-green** |
+| v4.1.26 | gerbang `bot_boleh_jalan` untuk **start/restart** (bukan cuma `enable`), predikat `bot_conf_lengkap()` seragam, restore menulis penanda, tes 8 bagian | reviewer menemukan: `systemctl restart` menyalakan unit mati **walau** `disabled` — gejala yang sama, arah berlawanan |
+
+Bukti bahwa temuan itu nyata, bukan teoretis — dijalankan di VPS dengan `systemctl` sungguhan:
+
+| Keadaan | Hasil terukur |
+|---|---|
+| penanda `bot_off` ADA, lalu jalur Update Script | bot `inactive`, unit `disabled` (Stop bertahan) |
+| penanda dihapus, jalur yang sama | bot `active`, unit `enabled` |
+| konfigurasi tanpa `CHAT_ID` | tidak di-enable (tidak ada `failed` tiap boot) |
+
+### Mutasi sebagai bukti tes bukan hiasan
+
+Kritik "tes hanya hijau karena tidak mengukur apa pun" dijawab dengan tiga mutasi pada salinan
+repo di `/tmp`. Ketiganya **memerahkan** suite, jadi asersinya benar-benar menjaga perilaku:
+
+| Mutasi | Bagian yang gagal |
+|---|---|
+| hapus `touch /etc/wibutunnel/bot_off` di cabang Stop | [3/8] produsen penanda |
+| buat `wibu-repair` `enable`+`restart` saat penanda ada | [5/8] perilaku repair |
+| masukkan lagi `telegram-bot` ke restart massal | [2/8] gerbang restart |
+
+Satu cacat harness juga ketemu di jalan: `mktemp -d` tanpa pemeriksaan membuat `"$TMP/etc/..."`
+menjadi `"/etc/..."` — sebagai root itu berarti menulis `/etc` dan **memotong `/bin/systemctl`**.
+Kini divalidasi (`-n` + `-d`) sebelum satu berkas pun ditulis.
+
+### Angka akhir di VPS uji (4.1.26)
+
+- OTA dua pass: **32/32 berkas, 0 gagal**; versi `4.1.23 → 4.1.26`
+- hash terpasang == manifest untuk `menu/m-setting.sh`, `sbin/wibu-repair`, `menu/m-backup.sh`
+- **0 failed unit**; haproxy/xray/dropbear/ws-stunnel/telegram-bot/wibu-daemon semua `active`+`enabled`
+- suite offline: **10 suite hijau / 0 merah** (hardening 120 PASS, lisensi 15 PASS)
+- `tools/verify-release.sh`: 13 pemeriksaan OK; 4 aset rilis diunduh ulang dan **byte-identik**
+- residu akun uji `trial-7qys` dibersihkan sampai **0 jejak** di `/etc/xray` + `/etc/wibutunnel`
+
+### Pelajaran yang dibawa ke skill
+
+1. Menghormati "Stop" butuh gerbang pada `start`/`restart`; `enable` saja tidak cukup.
+2. Predikat konfigurasi harus satu untuk semua berkas, kalau tidak menu dan repair saling bantah.
+3. Tes konsumen tanpa tes produsen adalah hijau palsu; buktikan dengan mutasi.
