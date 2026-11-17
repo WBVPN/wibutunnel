@@ -409,6 +409,7 @@ case $sub_setting in
         safe_update "sbin/wibu-kuota"
         safe_update "sbin/wibu-udpgw"
         safe_update "sbin/wibu-acct"
+        safe_update "sbin/wibu-ensure-units"
         safe_update "sbin/wibu-isp"
         safe_update "sbin/wibu-ssl-ulang"
         safe_update "sbin/algojo-wibu"
@@ -469,6 +470,8 @@ case $sub_setting in
         dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
         bot_enable_guard
         systemctl restart algojo-expired wibu-daemon ws-stunnel wibu-acct >/dev/null 2>&1 || true
+        # [v4.1.34] unit TIDAK ikut safe_update -> pastikan unit wajib benar-benar ada
+        [[ -x /usr/local/sbin/wibu-ensure-units ]] && /usr/local/sbin/wibu-ensure-units >/dev/null 2>&1 || true
         bot_boleh_jalan && systemctl restart telegram-bot >/dev/null 2>&1 || true
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."

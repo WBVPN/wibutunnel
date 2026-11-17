@@ -1,0 +1,59 @@
+#!/bin/bash
+# ==========================================
+# WIBU TUNNELING - wibu-ensure-units (v4.1.34)
+# Memastikan unit systemd yang WAJIB ada benar-benar terpasang.
+#
+# Kenapa ada: `safe_update` (menu Setting -> Update Script) hanya menyelaraskan
+# BERKAS skrip; unit systemd tidak pernah ikut. Akibatnya fitur baru yang butuh
+# unit (mis. wibu-acct untuk akuntansi byte SSH) terpasang binernya tetapi tidak
+# pernah berjalan — diam-diam, tanpa error. Skrip ini menutup lubang itu.
+#
+# Sifat: IDEMPOTEN dan tidak menimpa unit yang sudah ada (admin mungkin sudah
+# menyesuaikannya). Hanya menulis unit yang belum ada, lalu daemon-reload,
+# enable, dan start.
+# ==========================================
+set -u
+changed=0
+
+write_unit() { # $1 = nama unit ; stdin = isi
+    local name="$1"
+    if [[ -f "/etc/systemd/system/$name" ]]; then
+        return 0
+    fi
+    cat > "/etc/systemd/system/$name"
+    echo "[ensure-units] dipasang: $name"
+    changed=1
+}
+
+# --- wibu-acct: sampler akuntansi byte SSH (v4.1.33) ---
+if [[ -x /usr/local/bin/wibu-acct || -x /usr/local/sbin/wibu-acct ]]; then
+    write_unit wibu-acct.service <<'EOF'
+[Unit]
+Description=Wibu Tunneling - SSH byte accounting sampler
+After=network.target dropbear.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wibu-acct
+Restart=on-failure
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
+
+if (( changed > 0 )); then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
+# aktifkan yang binernya ada
+if [[ -x /usr/local/bin/wibu-acct || -x /usr/local/sbin/wibu-acct ]]; then
+    systemctl enable wibu-acct.service >/dev/null 2>&1 || true
+    systemctl is-active --quiet wibu-acct.service || systemctl start wibu-acct.service >/dev/null 2>&1 || true
+fi
+
+exit 0

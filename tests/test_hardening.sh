@@ -177,6 +177,7 @@ for _f in "$REPO"/sbin/*; do _n="$(basename "$_f")"; grep -q "\b$_n\b" "$REPO/un
 for _f in "$REPO"/menu/*.sh; do _n="$(basename "$_f" .sh)"; grep -q "\b$_n\b" "$REPO/uninstall.sh" || _unmiss="$_unmiss $_n"; done
 if [[ -z "$_unmiss" ]]; then ok "uninstall.sh menyebut semua berkas sbin/ & menu/"; else
   echo "     uninstall.sh belum menyebut:$_unmiss"; bad "uninstall.sh tidak lengkap (sisa berkas setelah uninstall)"; fi
+t "unit wajib dipasang lewat wibu-ensure-units (OTA tidak membawa unit)" "test -x \"\$REPO/sbin/wibu-ensure-units\" && grep -q 'wibu-ensure-units' \"\$REPO/menu/m-setting.sh\" && grep -q 'wibu-ensure-units' \"\$REPO/sbin/wibu-repair\" && grep -q 'write_unit wibu-acct.service' \"\$REPO/sbin/wibu-ensure-units\""
 t "UDPGW dibersihkan saat uninstall (unit + biner + build)" "grep -q 'badvpn-udpgw@.service' \"\$REPO/uninstall.sh\" && grep -q '/usr/sbin/badvpn-udpgw' \"\$REPO/uninstall.sh\" && grep -q '/usr/local/src/badvpn-src' \"\$REPO/uninstall.sh\""
 for u in xray haproxy dropbear ws-stunnel telegram-bot algojo-expired wibu-daemon network-tune wibutunnel-firewall wibu-acct; do
   grep -q "$u" "$REPO/README.md" || { echo "     README belum menyebut unit: $u"; _rmiss=1; }

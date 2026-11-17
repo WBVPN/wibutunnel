@@ -4,6 +4,21 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.34 (2026-11-17)
+
+- **Unit systemd tidak ikut Update Script, jadi fitur baru bisa terpasang sebagai biner yang tidak
+  pernah berjalan.** Terbukti saat meng-OTA `wibu-acct` (v4.1.33) ke VPS: binernya terpasang dengan
+  hash benar, tetapi `wibu-acct.service` tidak ada — akuntansi sesi pendek tetap tidak jalan, tanpa
+  satu pun pesan error.
+- **Skrip baru `sbin/wibu-ensure-units`**: menulis unit wajib yang belum ada (idempoten, **tidak
+  menimpa** unit yang sudah dikustomisasi), lalu `daemon-reload` + `enable` + `start`. Dipanggil
+  oleh `setup.sh` (akhir instalasi), jalur **Update Script** di `m-setting.sh`, dan **Auto-Repair**
+  (`wibu-repair`).
+- Cakupan saat ini: `wibu-acct.service`. Menambah unit baru = tambahkan satu blok `write_unit` di
+  skrip itu, dan OTA berikutnya akan memasangnya sendiri.
+
+---
+
 ### v4.1.33 (2026-11-17)
 
 - **BUG: kuota SSH tidak menghitung sesi pendek sama sekali.** `ss -tie` hanya bisa membaca
