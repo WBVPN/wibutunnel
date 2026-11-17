@@ -169,7 +169,7 @@ echo "common.sh safe_jq_edit permission check: PASS"
 echo "11. Checking m-setting.sh dos2unix order before systemctl restart..."
 awk '
 /dos2unix \/usr\/local\/bin\/\* \/usr\/local\/sbin\/\*/ { dos_line = NR }
-/systemctl restart telegram-bot algojo-expired/ { restart_line = NR }
+/systemctl restart .*algojo-expired/ { restart_line = NR }
 END {
     if (!dos_line || !restart_line || dos_line >= restart_line) {
         exit 1

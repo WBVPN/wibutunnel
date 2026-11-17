@@ -16,13 +16,28 @@ source /etc/wibutunnel/lock.conf 2>/dev/null || LOCK_DURATION=15
 # diam-diam: panel tetap jalan, notifikasi limit/expired hilang tanpa jejak.
 # Guard token: tanpa token unit sengaja dibiarkan disabled (kalau di-enable ia gagal
 # start tiap boot dan `systemctl status` menampilkan "failed").
+# Predikat tunggal "bot boleh hidup": token DAN chat id ada (bot-daemon keluar dengan
+# exit 1 kalau salah satu kosong, jadi ini syarat sebenarnya). Dipakai guard, repair,
+# dan installer supaya tidak ada berkas yang enable sementara berkas lain disable.
+bot_conf_lengkap() {
+    [[ -s /etc/wibutunnel/bot.conf ]] || return 1
+    grep -qE '^BOT_TOKEN="[^"]+"' /etc/wibutunnel/bot.conf 2>/dev/null || return 1
+    grep -qE '^CHAT_ID="[^"]+"' /etc/wibutunnel/bot.conf 2>/dev/null || return 1
+}
+
 bot_enable_guard() {
     # Admin yang sengaja mematikan bot (menu [6] -> [3] Stop) tidak boleh dihidupkan
     # kembali oleh restart-all / Update Script: penanda bot_off dihormati di sini.
     [[ -f /etc/wibutunnel/bot_off ]] && return 0
-    if [[ -s /etc/wibutunnel/bot.conf ]] && grep -qE '^BOT_TOKEN="[^"]+' /etc/wibutunnel/bot.conf 2>/dev/null; then
-        systemctl enable telegram-bot.service >/dev/null 2>&1 || true
-    fi
+    bot_conf_lengkap || return 0
+    systemctl enable telegram-bot.service >/dev/null 2>&1 || true
+}
+
+# Gerbang untuk start/restart: menyalakan unit yang mati tetap menghidupkan bot walau
+# status enabled-nya "disabled" (persis yang dulu terjadi pada restart-all/update).
+bot_boleh_jalan() {
+    [[ -f /etc/wibutunnel/bot_off ]] && return 1
+    bot_conf_lengkap
 }
 
 # B2: UPDATE menu mengikuti rilis terbaru (main) supaya perbaikan setelah rilis tetap sampai ke VPS.
@@ -218,7 +233,8 @@ case $sub_setting in
         else
             echo -e "$LINE"; echo -e "         ${WHITE}MERESTART SERVICES...${NC}"; echo -e "$LINE"
             bot_enable_guard
-            systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon telegram-bot network-tune cron 2>/dev/null || true
+            systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon network-tune cron 2>/dev/null || true
+            bot_boleh_jalan && systemctl restart telegram-bot 2>/dev/null || true
             echo -e "${GREEN}Semua service berhasil direstart!${NC}"
         fi
         # [ADD] Pemeriksa akun tanpa catatan exp: klien di config tanpa baris exp
@@ -449,7 +465,8 @@ case $sub_setting in
         
         dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
         bot_enable_guard
-        systemctl restart telegram-bot algojo-expired wibu-daemon ws-stunnel >/dev/null 2>&1 || true
+        systemctl restart algojo-expired wibu-daemon ws-stunnel >/dev/null 2>&1 || true
+        bot_boleh_jalan && systemctl restart telegram-bot >/dev/null 2>&1 || true
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
         exec m-setting
@@ -463,12 +480,17 @@ case $sub_setting in
         else
             text_sts="${RED}Mati (Stopped)${NC}"
         fi
-        if [[ -f /etc/wibutunnel/bot_off ]]; then
-            text_boot="${YELLOW}dimatikan manual${NC} (Stop di menu - tidak akan hidup sendiri)"
-        elif [[ "$(systemctl is-enabled telegram-bot 2>/dev/null)" == "enabled" ]]; then
-            text_boot="${GREEN}enabled${NC} (hidup lagi setelah reboot)"
+        if [[ "$(systemctl is-enabled telegram-bot 2>/dev/null)" == "enabled" ]]; then
+            text_en="${GREEN}enabled${NC}"
         else
-            text_boot="${RED}disabled${NC} (mati setelah reboot!)"
+            text_en="${RED}disabled${NC}"
+        fi
+        if [[ -f /etc/wibutunnel/bot_off ]]; then
+            text_boot="${YELLOW}dimatikan manual${NC} (Stop di menu) · unit: ${text_en}"
+        elif [[ "$text_en" == *enabled* ]]; then
+            text_boot="${text_en} (hidup lagi setelah reboot)"
+        else
+            text_boot="${text_en} (mati setelah reboot!)"
         fi
         echo -e " Status Daemon Bot : $text_sts"
         echo -e " Aktif saat Boot   : $text_boot\n"

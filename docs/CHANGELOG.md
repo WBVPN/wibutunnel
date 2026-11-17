@@ -4,6 +4,35 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.26 (2026-11-17)
+
+- **`Stop` manual kini menggerbangi `start`/`restart`, bukan hanya `enable`.** Temuan reviewer atas
+  v4.1.25: `bot_enable_guard` hanya mencegah `systemctl enable`, sementara baris berikutnya tetap
+  `systemctl restart telegram-bot` — dan `restart` menyalakan unit yang sedang mati **walau** status
+  enabled-nya `disabled`. Jadi bot hidup lagi sampai reboot, lalu mati lagi: gejala yang sama,
+  arah berlawanan. Sekarang `telegram-bot` dikeluarkan dari daftar restart massal dan hanya
+  dinyalakan lewat `bot_boleh_jalan && systemctl restart telegram-bot`.
+- **`wibu-repair` cabang penanda**: `stop` + `disable` + `reset-failed` (dulu hanya `stop`, sehingga
+  unit yang terlanjur enabled bangkit lagi saat boot dan status `failed` lama menempel).
+- **Restore backup menulis penanda** `bot_off`: niat "matikan bot agar tidak bentrok 409 dengan VPS
+  lama" sekarang bertahan, tidak dibatalkan Auto-Repair/Update berikutnya.
+- **Predikat konfigurasi diseragamkan**: `bot_conf_lengkap()` (token **dan** chat id) dipakai guard,
+  `wibu-repair`, dan installer. Sebelumnya menu menilai cukup token sementara repair menuntut token
+  + chat id, sehingga Auto-Repair menghidup-matikan bot pada setiap putaran.
+- **`setup.sh` tidak lagi menghapus `/etc/wibutunnel/bot_off`**: alasan lamanya (penanda terbawa
+  backup) tidak terbukti — berkas backup tidak pernah memuat penanda itu — dan efek nyatanya adalah
+  membatalkan `Stop` admin saat skrip dijalankan ulang.
+- **Status menu menampilkan dua fakta**: penanda Stop **dan** `is-enabled` sebenarnya, supaya keadaan
+  "unit enabled tapi bot dimatikan manual" tidak lagi tersembunyi.
+- **Tes: 8 bagian, bukan 6.** Ditambah uji *produsen* penanda (Stop benar-benar menulis berkasnya),
+  perilaku `wibu-repair` dengan `systemctl` di-stub (3 skenario), gerbang restart, dan pemeriksaan
+  predikat installer. Ketiganya **dibuktikan MERAH lewat tiga mutasi** (hapus `touch`, repair
+  menghidupkan bot, bot dimasukkan lagi ke restart massal) sebelum diterima.
+- **Harness tes dibuat aman**: `mktemp -d` divalidasi; kegagalan `mktemp` tidak lagi bisa berubah
+  menjadi tulisan ke `/etc` atau pemotongan `/bin/systemctl` (jalur `"$TMP/x"` menjadi `"/x"`).
+
+---
+
 ### v4.1.25 (2026-11-17)
 
 - **`Stop` manual dihormati.** Penanda `/etc/wibutunnel/bot_off` dipasang saat admin memilih

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.25
+# MASTER INSTALLER WIBU TUNNELING - v4.1.26
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -148,7 +148,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.25}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.26}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -388,7 +388,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.25" > /etc/wibutunnel/version
+echo "4.1.26" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -1061,7 +1061,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.25}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.26}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 # [FIX-CACHE] Cache manifest HARUS per-ref: cache tetap membuat rilis berikutnya memverifikasi
 # berkas baru terhadap manifest LAMA (gejala: "hash tidak cocok" untuk berkas yang baru diubah,
@@ -1418,12 +1418,13 @@ sleep 2
 systemctl is-active --quiet wibu-daemon || { echo "wibu-daemon failed to start"; systemctl status wibu-daemon; exit 1; }
 
 systemctl daemon-reload
-# Penanda "bot dimatikan manual" bisa ikut terbawa dari backup yang dipulihkan; instalasi
-# baru harus mulai dari keadaan bersih supaya bot tidak diam-diam tetap mati.
-rm -f /etc/wibutunnel/bot_off
-# [FIX] Unit bot hanya diaktifkan kalau tokennya ada. Sebelumnya selalu di-enable sehingga
-# `systemctl status telegram-bot` menampilkan "failed" pada instalasi yang belum diisi token.
-if [[ -s /etc/wibutunnel/bot.conf ]] && grep -qE '^BOT_TOKEN="[^"]+' /etc/wibutunnel/bot.conf 2>/dev/null; then
+# [FIX] Unit bot hanya diaktifkan kalau konfigurasinya LENGKAP (token + chat id). bot-daemon
+# keluar dengan exit 1 bila salah satu kosong, jadi meng-enable-nya lebih awal hanya membuat
+# `systemctl status` menampilkan "failed" di tiap boot. Predikat ini sama dengan
+# bot_conf_lengkap() di menu/m-setting.sh dan cabang yang sama di sbin/wibu-repair.
+if [[ -s /etc/wibutunnel/bot.conf ]] \
+   && grep -qE '^BOT_TOKEN="[^"]+"' /etc/wibutunnel/bot.conf 2>/dev/null \
+   && grep -qE '^CHAT_ID="[^"]+"' /etc/wibutunnel/bot.conf 2>/dev/null; then
     systemctl enable telegram-bot.service >/dev/null 2>&1 || true
     systemctl restart telegram-bot.service >/dev/null 2>&1 || true
 else
@@ -1582,7 +1583,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.25" > /etc/wibutunnel/version
+echo "4.1.26" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

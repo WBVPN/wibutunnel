@@ -313,6 +313,9 @@ do_restore() {
         echo -e "    bertabrakan (409) dengan VPS lama yang memakai token sama.${NC}"
         echo -e "${YELLOW}    Aktifkan lagi setelah yakin: Setting -> [6] Setup Bot Telegram,"
         echo -e "    atau: systemctl enable --now telegram-bot${NC}"
+        # Penanda bot_off: tanpa ini, Auto-Repair / Update Script berikutnya menghidupkan
+        # bot lagi dan bentrok 409 dengan VPS lama yang memakai token sama.
+        touch /etc/wibutunnel/bot_off
         systemctl stop telegram-bot 2>/dev/null || true
         systemctl disable telegram-bot 2>/dev/null || true
     fi

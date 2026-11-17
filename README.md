@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.25
+# 🦋 WIBUTUNNEL v4.1.26
 
 Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.25-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.26-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 **[Instalasi](#-instalasi)** · **[Fitur](#-fitur)** · **[Bot Telegram](#-bot-telegram)** · **[Perintah](#-perintah)** · **[Port](#-port--alur)** · **[Keamanan](#-keamanan)** · **[Uji](#-uji)** · **[Troubleshooting](#-troubleshooting)** · **[Changelog](docs/CHANGELOG.md)**
@@ -35,7 +35,7 @@ menjalankannya. Hash tidak cocok → berhenti sebelum menyentuh apa pun.
 ```bash
 # pasang (langsung dari repo, tanpa perantara)
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 4ec308e535a3ca3381cb5ebfa4d7a4193ea6350b730ceb4822a55b6c61ad3e08
+sha256sum setup.sh     # harap: d7297d1070de07de69d6eb2b503402874543429aa9485cfc5598a6da4f0f205f
 bash setup.sh
 
 # hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)

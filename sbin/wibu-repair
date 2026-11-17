@@ -225,8 +225,11 @@ done
 
 source /etc/wibutunnel/bot.conf 2>/dev/null
 if [[ -f /etc/wibutunnel/bot_off ]]; then
-    # Admin sengaja mematikan bot (menu [6] -> [3] Stop): repair tidak boleh menghidupkannya.
+    # Admin sengaja mematikan bot (menu [6] -> [3] Stop): repair tidak boleh menghidupkannya,
+    # dan unit tidak boleh tertinggal enabled (kalau tidak, ia bangkit lagi saat boot).
     systemctl stop telegram-bot >/dev/null 2>&1 || true
+    systemctl disable telegram-bot >/dev/null 2>&1 || true
+    systemctl reset-failed telegram-bot >/dev/null 2>&1 || true
 elif [[ -n "${BOT_TOKEN:-}" && -n "${CHAT_ID:-}" ]]; then
     systemctl enable telegram-bot >/dev/null 2>&1 || true
     systemctl restart telegram-bot >/dev/null 2>&1 || true
