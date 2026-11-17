@@ -1,6 +1,6 @@
 # Hasil Uji Nyata di VPS
 
-> Jejak uji dari v4.0.6 sampai v4.1.29 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
+> Jejak uji dari v4.0.6 sampai v4.1.31 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
 
 Diuji pada VPS kosong **Ubuntu 20.04** (1 vCPU / 965 MB), domain `test.priasawit.web.id`,
 IP terdaftar di `izin.txt` sampai 2026-12-15. Semua temuan di bawah ditemukan karena
@@ -588,3 +588,73 @@ FAIL  berkas tanpa kutip (format lama) ditolak -> upgrade mematikan bot yang tad
 Pelajaran: **uji penulis dan pembaca bersama-sama.** Delapan bagian sebelumnya menguji pembaca
 (predikat, repair, gerbang) dan semuanya hijau — cacatnya ada di penulis yang tidak pernah dijalankan
 tes mana pun.
+
+---
+
+## v4.1.30 → v4.1.31 — siklus penuh: uninstall, lalu pasang dari nol
+
+Uji yang paling jujur: hapus panel dari VPS, lalu pasang lagi lewat jalur yang dipakai pengguna
+(`install.sh` dari Release, token diisi saat instalasi). Dua bug muncul, keduanya tidak akan
+terlihat dari suite offline.
+
+### v4.1.30 — "uninstall bersih" ternyata tidak bersih
+
+Setelah `uninstall.sh` selesai dan mengucapkan "VPS sudah bersih", kenyataannya:
+
+| Sisa | Bukti |
+|---|---|
+| `wibu-kuota`, `wibu-udpgw` | masih ada di `/usr/local/{bin,sbin}` |
+| unit `badvpn-udpgw@.service` | masih `enabled` |
+| biner `/usr/sbin/badvpn-udpgw` + `/usr/local/src/badvpn-src` | masih ada |
+| **6 proses** `badvpn-udpgw` | masih mendengarkan `127.0.0.1:7100-7600` |
+
+Perbaikan: kedua skrip masuk daftar hapus; UDPGW dibersihkan (stop per-instance, disable, hapus
+unit + biner + direktori build, `pkill`). Ditambah **invarian** di `test_hardening.sh`: setiap
+berkas `sbin/*` dan `menu/*.sh` wajib disebut `uninstall.sh`. Sesudah perbaikan, diulang di VPS:
+
+```
+berkas tersisa: 0 | unit: 0 | proses udpgw: 0 | port 7100-7600: 0 | sshd port 22: OK
+```
+
+### v4.1.31 — instalasi baru ABORT karena pin Xray basi
+
+Percobaan install pertama berhenti di tengah:
+
+```
+HASH TIDAK COCOK (dapat=91fd40e9… harap=a562d128…)
+[FATAL] Hash instaleler Xray tidak cocok/kosong. ABORT
+```
+
+Fail-closed bekerja persis seperti desainnya — dan justru itu yang membuktikan instalasi baru
+**tidak mungkin** dilakukan sebelum pin diperbarui. Pin diganti setelah inspeksi isi skrip upstream
+(34.831 byte, `#!/usr/bin/env bash`, 176 rujukan `xray`, memasang `/usr/local/bin/xray` + unit),
+bukan sekadar menyalin angka. Nilai baru dipakai `setup.sh` **dan** `uninstall.sh`, dengan tes baru
+yang mewajibkan keduanya identik.
+
+### Hasil instalasi bersih (v4.1.31, VPS kosong)
+
+`bash install.sh test.priasawit.web.id` → **EXIT=0**, panel tampil, lisensi `STAGING` 29 hari.
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Versi terpasang | `4.1.31` (sama dengan judul README) |
+| Unit | 9/9 `active` + `enabled` (xray, haproxy, dropbear, ws-stunnel, telegram-bot, algojo-expired, wibu-daemon, network-tune, wibutunnel-firewall) |
+| UDPGW | 6/6 instance jalan; port 7100-7600 lokal |
+| Port publik | 22, 80, 109, 143, 443 — sesuai tabel README |
+| Port lokal | 10015 + 10085-10093 semuanya listen (sesuai tabel README) |
+| Config | `haproxy -c` valid · `xray -test` OK · stats API menjawab |
+| Perintah README | 15/15 ada (`menu`, `m-vless`, … `wibu-audit-akun`) |
+| Failed unit / error log | 0 / 0 baris |
+
+**Regresi yang dikunci oleh siklus ini** — bug v4.1.29 hanya bisa dibuktikan lewat instalasi baru:
+`setup.sh` menulis `bot.conf` ber-kutip, dan hasilnya di VPS:
+
+```
+BOT_TOKEN="8905724783:***"     <- ber-kutip, ditulis installer
+CHAT_ID="5851934765"
+unit: active/enabled            <- guard menerima formatnya sendiri
+webhook: ""                     <- murni polling
+```
+
+Sebelum v4.1.29, berkas ini ditulis tanpa kutip, dibaca oleh predikat yang menuntut kutip, dan bot
+tidak akan pernah `enabled` — persis yang tidak terlihat pada VPS yang sudah berjalan.
