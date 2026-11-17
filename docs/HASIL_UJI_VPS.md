@@ -1,6 +1,6 @@
 # Hasil Uji Nyata di VPS
 
-> Jejak uji dari v4.0.6 sampai v4.1.31 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
+> Jejak uji dari v4.0.6 sampai v4.1.32 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
 
 Diuji pada VPS kosong **Ubuntu 20.04** (1 vCPU / 965 MB), domain `test.priasawit.web.id`,
 IP terdaftar di `izin.txt` sampai 2026-12-15. Semua temuan di bawah ditemukan karena
@@ -658,3 +658,24 @@ webhook: ""                     <- murni polling
 
 Sebelum v4.1.29, berkas ini ditulis tanpa kutip, dibaca oleh predikat yang menuntut kutip, dan bot
 tidak akan pernah `enabled` — persis yang tidak terlihat pada VPS yang sudah berjalan.
+
+### v4.1.32 — perintah instalasi README sendiri yang gagal
+
+Bentuk yang tertulis di README (`curl …/install.sh | bash`) diuji apa adanya di VPS:
+
+```
+[+] Menonaktifkan IPv6 untuk mencegah masalah routing...
+[!] Input berakhir (EOF). Instalasi dihentikan.
+RC=1
+```
+
+Pada mode pipa, `stdin` dipakai skrip sehingga pertanyaan domain tidak bisa dijawab. README kini
+memuat dua bentuk yang benar, dan bentuk satu baris diuji ulang di VPS yang sama:
+
+| Bentuk | Hasil |
+|---|---|
+| `curl -o install.sh` lalu `bash install.sh` | **EXIT=0**, 4.1.31 terpasang |
+| `… | bash -s -- test.priasawit.web.id` | **EXIT=0**, naik ke 4.1.32, panel tampil, lisensi valid |
+
+Pelajaran: dokumentasi instalasi harus dijalankan **persis seperti tertulis** pada mesin kosong —
+bukan disimpulkan dari kenyataan bahwa "instalasi pernah berhasil".
