@@ -4,6 +4,22 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.24 (2026-11-17)
+
+- **Bot Telegram tahan reboot.** Menu Setting → [6] dulu hanya `start`/`restart` unit, tidak pernah
+  `enable`: bot hidup sampai reboot pertama lalu mati **diam-diam** — panel tetap jalan, notifikasi
+  limit/expired hilang tanpa jejak. Sekarang `bot_enable_guard` dipanggil di semua jalur yang
+  menyalakan bot (simpan token, opsi Start, restart-all, dan Update Script).
+- **Status boot ditampilkan di menu bot**: `Aktif saat Boot : enabled / disabled (mati setelah reboot!)`
+  supaya kondisi ini bisa diaudit tanpa `systemctl`.
+- **Opsi [3] Stop ikut `disable`** — state jadi jujur: bot yang dimatikan manual tidak bangkit sendiri.
+- **Guard token dipertahankan**: tanpa `BOT_TOKEN`, unit tetap tidak di-enable (tidak ada status
+  `failed` di tiap boot). Dijaga `tests/test_bot_enable.sh` (baru, offline).
+- **Default `WIBU_REF` usang dibetulkan**: blok pemasangan berkas masih menyimpan `v4.1.17`
+  sebagai fallback — selaras dengan versi rilis sekarang.
+
+---
+
 ### v4.1.23 (2026-11-16)
 
 - **Mode webhook bot DICABUT total** (keputusan pemilik): panel kembali ke satu cara kerja bot —

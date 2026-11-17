@@ -11,6 +11,17 @@ check_license
 source /etc/wibutunnel/bot.conf 2>/dev/null
 source /etc/wibutunnel/lock.conf 2>/dev/null || LOCK_DURATION=15
 
+# [FIX v4.1.24] Pastikan unit bot "enabled" setiap kali dinyalakan dari menu.
+# Sebelumnya menu hanya start/restart -> bot hidup sampai reboot pertama, lalu mati
+# diam-diam: panel tetap jalan, notifikasi limit/expired hilang tanpa jejak.
+# Guard token: tanpa token unit sengaja dibiarkan disabled (kalau di-enable ia gagal
+# start tiap boot dan `systemctl status` menampilkan "failed").
+bot_enable_guard() {
+    if [[ -s /etc/wibutunnel/bot.conf ]] && grep -qE '^BOT_TOKEN="[^"]+' /etc/wibutunnel/bot.conf 2>/dev/null; then
+        systemctl enable telegram-bot.service >/dev/null 2>&1 || true
+    fi
+}
+
 # B2: UPDATE menu mengikuti rilis terbaru (main) supaya perbaikan setelah rilis tetap sampai ke VPS.
 #     Setiap berkas tetap diverifikasi sha256 terhadap SHA256SUMS dari ref yang sama.
 #     (Installer setup.sh tetap memakai TAG RILIS yang beku = reproducible.)
@@ -203,6 +214,7 @@ case $sub_setting in
             /usr/local/bin/wibu-repair
         else
             echo -e "$LINE"; echo -e "         ${WHITE}MERESTART SERVICES...${NC}"; echo -e "$LINE"
+            bot_enable_guard
             systemctl restart xray dropbear ws-stunnel haproxy algojo-expired wibu-daemon telegram-bot network-tune cron 2>/dev/null || true
             echo -e "${GREEN}Semua service berhasil direstart!${NC}"
         fi
@@ -433,6 +445,7 @@ case $sub_setting in
         [[ -x /usr/local/sbin/network-tune ]] && /usr/local/sbin/network-tune >/dev/null 2>&1 || true
         
         dos2unix /usr/local/bin/* /usr/local/sbin/* >/dev/null 2>&1
+        bot_enable_guard
         systemctl restart telegram-bot algojo-expired wibu-daemon ws-stunnel >/dev/null 2>&1 || true
         echo -e "\n${GREEN}Update Selesai! Semua menu sudah versi terbaru.${NC}"
         read -n 1 -s -r -p "Tekan tombol apa saja..."
@@ -447,7 +460,13 @@ case $sub_setting in
         else
             text_sts="${RED}Mati (Stopped)${NC}"
         fi
-        echo -e " Status Daemon Bot : $text_sts\n"
+        if [[ "$(systemctl is-enabled telegram-bot 2>/dev/null)" == "enabled" ]]; then
+            text_boot="${GREEN}enabled${NC} (hidup lagi setelah reboot)"
+        else
+            text_boot="${RED}disabled${NC} (mati setelah reboot!)"
+        fi
+        echo -e " Status Daemon Bot : $text_sts"
+        echo -e " Aktif saat Boot   : $text_boot\n"
         echo -e " [1] Ganti BOT TOKEN & CHAT ID"
         echo -e " [2] Hidupkan (Start) Bot"
         echo -e " [3] Matikan (Stop) Bot"
@@ -493,6 +512,7 @@ EOFBOT
                         echo -e " ${CYAN}[i] Webhook token lama dilepas.${NC}"
                     fi
                     curl -4 -s -X POST "https://api.telegram.org/bot${input_token}/deleteWebhook" >/dev/null 2>&1
+                    bot_enable_guard
                     systemctl restart telegram-bot >/dev/null 2>&1
 
                     echo -e " ${CYAN}[+] Mengirim pesan konfirmasi koneksi...${NC}"
@@ -508,6 +528,7 @@ EOFBOT
                         echo -e " ${YELLOW}    Pastikan Anda sudah klik /start di bot @${bot_user}!${NC}"
                     fi
                     echo -e "\n ${GREEN}Bot Telegram berhasil disimpan dan diaktifkan!${NC}"
+                    echo -e " ${GREEN}[✓] Unit di-enable: bot otomatis hidup lagi setelah reboot.${NC}"
                 fi
                 ;;
             2)
@@ -516,13 +537,16 @@ EOFBOT
                     echo -e "${RED}[!] BOT TOKEN belum dikonfigurasi. Pilih opsi [1] dahulu.${NC}"
                 else
                     curl -4 -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook" >/dev/null 2>&1
+                    bot_enable_guard
                     systemctl start telegram-bot >/dev/null 2>&1
                     echo -e "${GREEN}Bot Telegram berhasil dihidupkan!${NC}"
+                    echo -e "${GREEN}[✓] Unit di-enable: bot otomatis hidup lagi setelah reboot.${NC}"
                 fi
                 ;;
             3)
                 systemctl stop telegram-bot >/dev/null 2>&1
-                echo -e "${YELLOW}Bot Telegram telah dimatikan!${NC}"
+                systemctl disable telegram-bot.service >/dev/null 2>&1 || true
+                echo -e "${YELLOW}Bot Telegram telah dimatikan (tidak otomatis hidup saat reboot)!${NC}"
                 ;;
             4)
                 > /etc/wibutunnel/tmp/bot_error.log
