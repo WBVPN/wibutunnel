@@ -1,6 +1,6 @@
 # Hasil Uji Nyata di VPS
 
-> Jejak uji dari v4.0.6 sampai v4.1.32 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
+> Jejak uji dari v4.0.6 sampai v4.1.36 — bagian terbaru di bawah. Semua angka di sini berasal dari eksekusi nyata, bukan perkiraan.
 
 Diuji pada VPS kosong **Ubuntu 20.04** (1 vCPU / 965 MB), domain `test.priasawit.web.id`,
 IP terdaftar di `izin.txt` sampai 2026-12-15. Semua temuan di bawah ditemukan karena
@@ -679,3 +679,75 @@ memuat dua bentuk yang benar, dan bentuk satu baris diuji ulang di VPS yang sama
 
 Pelajaran: dokumentasi instalasi harus dijalankan **persis seperti tertulis** pada mesin kosong —
 bukan disimpulkan dari kenyataan bahwa "instalasi pernah berhasil".
+
+---
+
+## v4.1.33 → v4.1.36 — limit IP login & limit bandwidth: diuji dengan trafik nyata
+
+Permintaan pemilik: "pengecekan IP login baik SSH atau v2ray, sama limit BW-nya semoga beneran
+jalan". Jadi bukan membaca kode — akun uji dibuat, trafik sungguhan dialirkan, dan hasilnya diukur.
+
+### Persiapan uji
+
+| Akun | Protokol | Limit IP | Limit BW |
+|---|---|---|---|
+| `ujissh` | SSH (dropbear :143) | 1 | 1 GB |
+| `ujivless` | VLESS (WS+TLS via haproxy :443) | 1 | 1 GB |
+
+Klien: `xray-core v26.11.9` di mesin uji (IP publik 43.156.147.95) + sesi kedua dari VPS itu sendiri
+(103.150.60.84) untuk memperoleh **dua IP klien berbeda** tanpa memalsukan apa pun.
+
+### Hasil: limit IP
+
+| Uji | Hasil terukur |
+|---|---|
+| SSH, 2 IP bersamaan (limit 1) | `locked_users: ujissh:…:SSH_IP_LIMIT`, sesi diputus, `passwd -l` → login **ditolak**, auto-unlock 15 menit (timer), sesudah itu login normal lagi |
+| VLESS, 2 IP bersamaan (limit 1) | `locked_users: ujivless:…:IP_LIMIT` + user masuk `routing.rules` (blocked) → permintaan berikutnya **ditolak** (`http_code=000`, log `rejected`) |
+
+Deteksi IP-nya sendiri benar di kedua jalur: `ssh_active_ips` mengembalikan `103.150.60.84
+43.156.147.95`, dan `live_ip_pairs` membaca `accepted … email: ujivless` dari
+`/var/log/xray/access.log` dengan IP klien asli (bukan 127.0.0.1 — rantai PROXY protocol bekerja).
+
+### Hasil: limit bandwidth (kuota)
+
+| Uji | Hasil terukur |
+|---|---|
+| SSH, trafik 12 × 100 MB | tercatat **1.405.717.160 byte** → `QUOTA_EXCEEDED`, login ditolak |
+| SSH, setelah `renew` | usage **direset**, lock dibersihkan, status `P`, login **berhasil** |
+| VLESS, trafik 11 × 100 MB | tercatat **1.081.624.257 byte** → `QUOTA_EXCEEDED`, user dikeluarkan dari config → koneksi **gagal** (`000`) |
+
+### Akurasi akuntansi (yang paling mudah salah)
+
+| Sesi | Payload | Tercatat | Rasio |
+|---|---|---|---|
+| SSH, 50 MB dalam 4,0 dtk | 50.000.000 | 49.673.576 | **0,99×** |
+| SSH, 12 × 100 MB | 1.258.291.200 | 1.405.717.160 | 1,12× (termasuk overhead) |
+| SSH, 20 MB dalam 1,7 dtk | 20.000.000 | 4.615.592 | 0,23× — **batas yang diketahui** |
+| Xray (statistik server) | 30 MB | 30.052.691 | 1,00× (uplink+downlink persis) |
+
+### Empat bug yang muncul justru karena uji ini
+
+1. **Kuota SSH tidak menghitung sesi <60 detik** (v4.1.33). Unduh 50 MB dalam 7 detik → 0 byte.
+   Diperbaiki dengan sampler `wibu-acct` tiap detik (sekarang 0,5 detik).
+2. **Unit systemd tidak ikut OTA** (v4.1.34). Biner `wibu-acct` terpasang tetapi unitnya tidak ada —
+   akuntansi tetap mati, tanpa error. Diperbaiki dengan `wibu-ensure-units`.
+3. **Pemakaian terhitung dua kali** (v4.1.35). Soket keluar yang dibuat trafik pelanggan sendiri
+   ikut dijumlahkan: satu unduhan 48,5 MB → 42,9 MB + 47,2 MB.
+4. **Regresi: 0 byte** (v4.1.36). Soket "sisi-klien" dikenali dari baris `LISTEN` di `ss -tie -tnp`,
+   padahal perintah itu tidak mencetak LISTEN tanpa `-l` → daftar kosong, semua soket dibuang.
+
+Pelajaran: tiga dari empat bug itu **tidak terlihat** dari suite offline maupun pembacaan kode.
+Yang menemukannya adalah angka yang diukur setelah trafik nyata dialirkan.
+
+### Batas yang jujur
+
+`ss` hanya bisa membaca counter soket yang **masih hidup**, jadi byte antara sampel terakhir dan
+socket close tidak pernah terbaca. Untuk sesi normal galatnya <1%; untuk burst sangat pendek
+(1-2 detik) galatnya besar — terukur 0,23× pada sesi 20 MB/1,7 detik. Usulan berikutnya: fallback
+ke counter `conntrack` untuk soket yang baru menutup.
+
+### Kebersihan sesudah uji
+
+Akun uji dihapus sampai **0 jejak**: `passwd` 0 entri, config xray 0 klien, `limit_ip.db`,
+`limit_bw.db`, `user_usage.db`, `locked_users.db`, `user_acct.db` semua 0 baris, dan
+`/etc/wibutunnel/recovery/*.json` dibersihkan. Semua layanan tetap `active`, 0 failed unit.
