@@ -54,6 +54,14 @@ for u in user61 user600 user601; do
     if echo "$OUT" | awk -v u="$u" '$1==u' | grep -q .; then bad "$u (>60 dtk) MASIH dihitung aktif"; else ok "$u (>60 dtk) tidak lagi dihitung"; fi
 done
 
+# jendela boleh ditulis sebagai angka polos (tanpa kata "seconds")
+OUTBARE=$(XRAY_ACCESS_LOG="$LOG" LIVE_IP_WINDOW=61 live_ip_pairs 2>/dev/null)
+if echo "$OUTBARE" | awk '$1=="user61"' | grep -q .; then ok "LIVE_IP_WINDOW=61 (angka polos) dipahami"; else bad "angka polos tanpa 'seconds' gagal di-parse"; fi
+
+# nilai rusak TIDAK boleh membuat seluruh log dihitung (itu memicu kunci palsu)
+OUTBAD=$(XRAY_ACCESS_LOG="$LOG" LIVE_IP_WINDOW="garbage" live_ip_pairs 2>/dev/null)
+if [[ -z "${OUTBAD//[[:space:]]/}" ]]; then ok "jendela rusak -> tidak ada IP dihitung (fail-safe)"; else bad "jendela rusak -> menghitung '${OUTBAD:0:40}…' (memicu kunci palsu)"; fi
+
 OUT120=$(XRAY_ACCESS_LOG="$LOG" LIVE_IP_WINDOW=120 live_ip_pairs 2>/dev/null)
 if echo "$OUT120" | awk '$1=="user61"' | grep -q .; then ok "jendela bisa diubah (LIVE_IP_WINDOW=120 -> user61 masuk)"; else bad "LIVE_IP_WINDOW diabaikan"; fi
 

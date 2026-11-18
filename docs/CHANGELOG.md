@@ -4,6 +4,23 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.40 (2026-11-18)
+
+**Fail-safe jendela IP.** Kalau `WIBU_IP_TTL` / `LIVE_IP_WINDOW` diisi nilai yang tidak bisa
+dibaca `date` (salah ketik, satuan keliru), `thresh` menjadi kosong dan **seluruh isi
+`access.log` dianggap aktif** — persis kondisi yang memicu kunci "melebihi limit IP" palsu.
+Sekarang nilai angka polos dipahami (`60` = 60 detik) dan nilai rusak jatuh ke jendela **0**
+(tidak ada IP dihitung), bukan menghitung semuanya.
+
+Ditemukan saat mencoba mengukur ulang efek jendela 600 dtk di VPS: `LIVE_IP_WINDOW=600`
+(ditulis tanpa kata "seconds" oleh saya sendiri) gagal di-parse dan menghasilkan hitungan IP
+yang salah. Nilai yang sakral tidak boleh punya jalur "gagal terbuka".
+
+Tes `tests/test_ip_live.sh` 11 → **13 asersi**: angka polos dipahami, dan nilai rusak harus
+menghasilkan **nol** IP.
+
+---
+
 ### v4.1.39 (2026-11-18)
 
 **Limit IP kini menghitung koneksi yang benar-benar hidup, bukan jejak log 10 menit.**

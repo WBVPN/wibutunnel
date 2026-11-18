@@ -608,7 +608,13 @@ live_ip_pairs() {
     # terakhir", jadi hitungannya mendekati koneksi yang benar-benar hidup.
     # Jalur SSH tidak memakai jendela waktu sama sekali: dihitung dari socket
     # ESTABLISHED (lihat ssh_ss_lines).
-    thresh=$(date -d "${LIVE_IP_WINDOW:-${WIBU_IP_TTL:-60} seconds} ago" +'%Y/%m/%d %H:%M:%S')
+    # Nilai bisa ditulis sebagai angka polos ("60" = 60 detik) atau dengan satuan
+    # ("120 seconds"). Kalau nilainya rusak, JANGAN menghitung seluruh isi log —
+    # dulu thresh menjadi kosong dan semua baris dianggap "aktif" (kunci palsu).
+    local _win="${LIVE_IP_WINDOW:-${WIBU_IP_TTL:-60}}"
+    [[ "$_win" =~ ^[0-9]+$ ]] && _win="$_win seconds"
+    thresh=$(date -d "$_win ago" +'%Y/%m/%d %H:%M:%S' 2>/dev/null)
+    [[ -n "$thresh" ]] || thresh=$(date +'%Y/%m/%d %H:%M:%S')
     awk -v thresh="$thresh" '
         { if ($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1 " " $2 < thresh) exit }
         /accepted/ && /email: / {
