@@ -600,10 +600,15 @@ live_ip_pairs() {
     local log="${XRAY_ACCESS_LOG:-/var/log/xray/access.log}"
     local thresh
     [[ ! -s "$log" ]] && return 0
-    # WIBU_IP_TTL: berapa lama sebuah IP masih dianggap "sedang terhubung".
-    # 600 detik (bukan 120) supaya pelanggan yang berpindah jaringan / roaming
-    # tidak langsung dianggap lepas, dan limit IP tidak salah mengunci.
-    thresh=$(date -d "${LIVE_IP_WINDOW:-${WIBU_IP_TTL:-600} seconds} ago" +'%Y/%m/%d %H:%M:%S')
+    # WIBU_IP_TTL / LIVE_IP_WINDOW: jendela "masih terhubung" untuk jalur XRAY.
+    # [v4.1.39] Diturunkan 600 -> 60 detik. Alasannya di lapangan: dengan 600 detik,
+    # pelanggan yang sudah berhenti konek masih dihitung memakai IP lama, sehingga
+    # pindah jaringan (WiFi -> data) dalam 10 menit terhitung 2 IP dan kena kunci
+    # padahal satu orang satu perangkat. 60 detik = "ada trafik dalam satu menit
+    # terakhir", jadi hitungannya mendekati koneksi yang benar-benar hidup.
+    # Jalur SSH tidak memakai jendela waktu sama sekali: dihitung dari socket
+    # ESTABLISHED (lihat ssh_ss_lines).
+    thresh=$(date -d "${LIVE_IP_WINDOW:-${WIBU_IP_TTL:-60} seconds} ago" +'%Y/%m/%d %H:%M:%S')
     awk -v thresh="$thresh" '
         { if ($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1 " " $2 < thresh) exit }
         /accepted/ && /email: / {
@@ -684,9 +689,16 @@ SSH_SESSION_PORTS='^(22|109|143|2222)$'
 ssh_ss_lines() {
     local l lp
     while IFS= read -r l; do
+        [[ -n "$l" ]] || continue
+        # Sumber hidup: `ss -tnp state established` (hanya socket yang benar-benar
+        # tersambung). SSH_SS_SRC dipakai uji offline, dan karena itu berkas contoh
+        # tidak difilter nama program.
+        if [[ -z "${SSH_SS_SRC:-}" ]]; then
+            printf '%s\n' "$l" | grep -Eq 'dropbear|sshd' || continue
+        fi
         lp=$(ssh_parse_line "$l" | cut -f1)
         [[ "$lp" =~ $SSH_SESSION_PORTS ]] && printf '%s\n' "$l"
-    done < <(ss -tnp state established 2>/dev/null | grep -E 'dropbear|sshd')
+    done < <( [[ -n "${SSH_SS_SRC:-}" ]] && cat "$SSH_SS_SRC" || ss -tnp state established 2>/dev/null )
 }
 
 # Peta pid->user dari log autentikasi dropbear. Dropbear dijalankan dengan -E

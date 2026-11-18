@@ -13,7 +13,10 @@ LOCK_DURATION=15
 if [ -f "$LOCK_CONF" ]; then source "$LOCK_CONF"; fi
 [[ ! -f "$DB_IP" ]] && exit 0
 
-# [MATA ELANG V3] asosiasi user<->IP dari log, liveness dari socket ESTABLISHED :443
+# [v4.1.39] Asosiasi user<->IP dan LIVENESS keduanya dari access.log, jendela 60 detik
+# (WIBU_IP_TTL/LIVE_IP_WINDOW). Sebelumnya komentar di sini menjanjikan liveness dari
+# socket ESTABLISHED :443, padahal itu tidak pernah ada di kode — dan di jalur CDN
+# socket :443 memang milik haproxy/Cloudflare, bukan milik pelanggan.
 LOGIN_DATA=$(live_ip_pairs)
 USERS_TO_LOCK=()
 declare -A _LOCKED_USERS=()

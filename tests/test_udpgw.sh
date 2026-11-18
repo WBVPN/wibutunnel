@@ -43,7 +43,7 @@ grep -q 'struct.pack("!H", dst_port)' "$REPO_DIR/tests/test_udpgw_live.sh" || { 
 grep -q 'PacketProto' "$REPO_DIR/docs/HASIL_UJI_VPS.md" || { echo "FAIL: docs belum menjelaskan bingkai"; exit 1; }
 echo "PASS: uji live + dokumentasi protokol (bingkai PacketProto, port network order)"
 
-echo "=== TEST 4: toleransi IP (WIBU_IP_TTL=600) ==="
+echo "=== TEST 4: jendela IP aktif (default 60 dtk, dapat disetel) ==="
 export XRAY_ACCESS_LOG="$TMPD/access.log"
 NOW_TS=$(date '+%Y/%m/%d %H:%M:%S')
 OLD_TS=$(date -d '300 seconds ago' '+%Y/%m/%d %H:%M:%S')
@@ -55,12 +55,14 @@ ANCIENT_TS=$(date -d '2 hours ago' '+%Y/%m/%d %H:%M:%S')
 } > "$XRAY_ACCESS_LOG"
 source "$REPO_DIR/common.sh"
 OUT=$(live_ip_pairs)
-grep -q "^roaming.one 43.156.147.95$" <<< "$OUT" || { echo "FAIL: IP 5 menit lalu harus terbaca -> '$OUT'"; exit 1; }
+# [v4.1.39] Hitungan IP kini "koneksi yang benar-benar hidup": default 60 detik.
+grep -q "^baru.dua 203.0.113.9$" <<< "$OUT" || { echo "FAIL: IP yang baru saja aktif harus terbaca -> '$OUT'"; exit 1; }
+grep -q "^roaming.one" <<< "$OUT" && { echo "FAIL: IP 5 menit lalu seharusnya TIDAK lagi dihitung (jendela 60 dtk)"; exit 1; }
 grep -q "^lama.sekali" <<< "$OUT" && { echo "FAIL: IP 2 jam lalu seharusnya diabaikan"; exit 1; }
-echo "PASS: 5 menit lalu terbaca, 2 jam lalu diabaikan"
-[[ "$(WIBU_IP_TTL=60 bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; live_ip_pairs" | grep -c 'roaming.one')" == "0" ]] \
-    || { echo "FAIL: WIBU_IP_TTL harus bisa disetel"; exit 1; }
-echo "PASS: WIBU_IP_TTL dapat disetel"
+echo "PASS: 60 dtk terbaca, 5 menit & 2 jam diabaikan"
+[[ "$(WIBU_IP_TTL=600 bash -c "source '$REPO_DIR/common.sh' >/dev/null 2>&1; live_ip_pairs" | grep -c 'roaming.one')" == "1" ]] \
+    || { echo "FAIL: WIBU_IP_TTL harus bisa disetel (600 -> IP 5 menit lalu muncul lagi)"; exit 1; }
+echo "PASS: jendela dapat disetel (WIBU_IP_TTL=600 mengembalikan perilaku lama)"
 
 echo "=== TEST 5: ganti token bot aman (polling, tanpa webhook nyangkut) ==="
 grep -q 'bot_selfheal_polling' "$REPO_DIR/menu/bot-daemon.sh" || { echo "FAIL: daemon tanpa self-heal"; exit 1; }

@@ -4,6 +4,37 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.39 (2026-11-18)
+
+**Limit IP kini menghitung koneksi yang benar-benar hidup, bukan jejak log 10 menit.**
+
+Dengan jendela 600 detik, pelanggan yang sudah berhenti konek masih dihitung memakai IP lama.
+Akibat nyatanya: pindah jaringan (WiFi → data) dalam rentang 10 menit terhitung **2 IP**, lalu
+akun kena kunci 15 menit padahal satu orang satu perangkat.
+
+| jalur | cara lama | cara sekarang |
+|---|---|---|
+| XRAY | `access.log` dalam **600 dtk** | `access.log` dalam **60 dtk** (`WIBU_IP_TTL` / `LIVE_IP_WINDOW`) |
+| SSH | sudah dari socket (tidak berubah) | tetap `ss -tnp state established`, port sesi saja (22/109/143/2222) |
+
+Tambahan kecil: `ssh_ss_lines()` sekarang menerima berkas contoh (`SSH_SS_SRC`) untuk uji offline,
+dan komentar menyesatkan di `algojo-wibu` ("liveness dari socket ESTABLISHED :443") dihapus — klaim
+itu tidak pernah ada di kodenya.
+
+**Tes baru `tests/test_ip_live.sh` (11 asersi, dibuktikan MERAH dulu):** entri 30 dtk & 59 dtk
+dihitung; 61 dtk, 5 menit, dan 2 jam tidak; jendela bisa disetel; sesi SSH terdeteksi dari socket
+ESTABLISHED; user yang hanya muncul di catatan log autentikasi **tidak** dihitung; socket non-sesi
+(port 59000) diabaikan.
+
+Efek samping yang ikut diperbaiki: `tests/test_udpgw.sh` TEST 4 dulu memaku perilaku lama ("IP 5
+menit lalu harus terbaca") — sekarang memaku perilaku baru, dan tetap menguji bahwa
+`WIBU_IP_TTL=600` mengembalikan perilaku lama.
+
+Mutasi yang diuji: jendela dikembalikan 600 (tertangkap), hook `SSH_SS_SRC` dihapus (tertangkap),
+filter port sesi dilepas (tertangkap).
+
+---
+
 ### v4.1.38 (2026-11-18)
 
 Tiga cacat pada `kuota_scan_ssh()` (jalur cepat v4.1.37), ditemukan lewat review mandiri +
