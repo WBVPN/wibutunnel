@@ -4,6 +4,38 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.41 (2026-11-19)
+
+**Rilis dokumen & mutu uji.** Tidak ada perubahan pada penegakan (limit IP, kuota, sesi) maupun
+konfigurasi Xray/HAProxy — yang diperbaiki adalah jalur pemasangan, teks keluaran, dan daya jaga tes.
+
+- `install.sh` berhenti menyarankan `... | bash` **tanpa** argumen domain. Pada mode pipa `stdin`
+  sudah habis dipakai membaca skrip dan proses `setup.sh` mewarisinya, sehingga pertanyaan domain
+  dijawab `Input berakhir (EOF)`. Sekarang ada penjaga dini: stdin bukan terminal + domain kosong →
+  berhenti dengan pesan jelas **sebelum** apt/konfigurasi disentuh (terbukti: `bash install.sh </dev/null` → exit 1).
+- `tests/test_ip_cdn.sh`: fixture `access.log` memakai tanggal **relatif**. Dengan tanggal mati
+  (`2026/11/18`) + `LIVE_IP_WINDOW=86400`, `awk` berhenti pada baris pertama yang kedaluwarsa — jadi
+  2 asersi merah **sendiri** sehari setelah fixture ditulis, tanpa ada kode yang berubah. Terukur
+  2026-11-19: 16/18 merah → 18/18 hijau setelah diperbaiki.
+- `tests/test_hardening.sh`: +3 asersi (penjaga pipa `install.sh`, perintah pasang `verify-release`,
+  fixture tanpa tanggal mati) dan sekarang **keluar ≠ 0** bila ada FAIL — sebelumnya selalu `exit 0`,
+  sehingga hasil merahnya tidak bisa dipakai sebagai gerbang.
+- `tools/verify-release.sh`: mencetak dua bentuk perintah pasang yang benar (interaktif + satu baris
+  dengan domain sebagai argumen).
+- `README.md`: bagian Instalasi memisahkan **Cara 1 (interaktif)** dan **Cara 2 (satu baris, domain
+  wajib)** + sebab `| bash` polos gagal; tabel Enforcement mendapat baris `wibu-acct` (sampler byte SSH
+  0,5 dtk & kuota SSH jalur cepat ≤5 dtk) yang sebelumnya tidak terdokumentasi.
+- `sbin/wibu-kuota`: catatan refresh usang ("~1 menit") diperbaiki — SSH ~5 dtk via `wibu-acct`,
+  xray ~1 menit via `algojo-kuota`.
+- `SHA256SUMS`: dibuat ulang. Sekaligus memperbaiki entri `izin.txt` yang **basi** sejak commit
+  `izin_add` (izin.txt tidak diverifikasi hash saat instalasi, jadi tidak menggigit — tetapi manifest
+  yang tidak cocok tetap bahaya).
+
+Verifikasi: `test_ip_cdn` 18/18 · `test_ip_live` 13/13 · `test_kuota_latency` 15/15 ·
+`test_hardening` 127 PASS / 0 FAIL · `sha256sum -c SHA256SUMS` bersih.
+
+---
+
 ### v4.1.40 (2026-11-18)
 
 **Fail-safe jendela IP.** Kalau `WIBU_IP_TTL` / `LIVE_IP_WINDOW` diisi nilai yang tidak bisa

@@ -31,8 +31,8 @@ if [[ $# -eq 0 && -z "${DOMAIN:-}" && ! -t 0 ]]; then
     exit 1
 fi
 
-REF="${WIBU_REF:-v4.1.40}"
-EXPECT="06e912dee9e237e2df0124051521fd86a75ae44fbf2f2f0bd9a30781773c3527"
+REF="${WIBU_REF:-v4.1.41}"
+EXPECT="030f0fd214caf4e32b46ff9e7118f5200e4aeae2e93f57699cecc8a85b1e837c"
 PRIMARY="https://raw.githubusercontent.com/WBVPN/wibutunnel/$REF/setup.sh"
 MIRROR="https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@$REF/setup.sh"
 
