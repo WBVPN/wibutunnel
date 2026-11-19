@@ -21,7 +21,9 @@
 set -eu
 
 # Mode pipa tanpa domain = pasti gagal di tengah jalan (stdin EOF). Berhenti di sini.
-if [[ $# -eq 0 && -z "${DOMAIN:-}" && ! -t 0 ]]; then
+# PENGECUALIAN: WIBU_BOOTSTRAP_ONLY=1 (verifikasi saja) tidak butuh domain sama sekali —
+# jangan pernah memblokirnya, kalau tidak mode "cek hash tanpa memasang" mati di mode pipa.
+if [[ $# -eq 0 && -z "${DOMAIN:-}" && ! -t 0 && "${WIBU_BOOTSTRAP_ONLY:-0}" != "1" ]]; then
     echo "[!] stdin bukan terminal dan domain belum diberikan." >&2
     echo "    Ini yang dimaksud 'mode pipa': stdin habis dipakai membaca skrip ini," >&2
     echo "    jadi pertanyaan domain tidak bisa dijawab." >&2

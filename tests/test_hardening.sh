@@ -186,6 +186,10 @@ done
 
 echo "== I. Mode pemasangan & kestabilan uji =="
 t "install.sh menolak mode pipa tanpa domain (penjaga dini)" "grep -q 'stdin bukan terminal dan domain belum diberikan' \"\$REPO/install.sh\""
+# Penjaga itu tidak boleh ikut memblokir mode verifikasi-saja: WIBU_BOOTSTRAP_ONLY=1 tidak
+# butuh domain, jadi harus dikecualikan di syarat penjaganya.
+t "penjaga pipa mengecualikan WIBU_BOOTSTRAP_ONLY=1 (verifikasi saja tetap jalan)" \
+  "grep -qE '! -t 0 && .*WIBU_BOOTSTRAP_ONLY' \"\$REPO/install.sh\""
 t "verify-release mencetak perintah pasang yang benar (domain jadi argumen)" "grep -q 'bash -s -- vpn.domain-anda.com' \"\$REPO/tools/verify-release.sh\""
 # Fixture yang diuji lewat jendela waktu (LIVE_IP_WINDOW) WAJIB bertanggal relatif.
 # Tanggal mati membuat tes merah sendiri sehari kemudian tanpa ada kode yang berubah
