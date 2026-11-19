@@ -261,9 +261,6 @@ Uninstall menghapus seluruh bagian panel — termasuk **UDPGW** (unit `badvpn-ud
 `/usr/sbin/badvpn-udpgw`, direktori build, dan proses yang masih mendengarkan port 7100-7600).
 Akses SSH (port 22) tidak disentuh.
 
-```bash
-```
-
 Riwayat rilis: [`docs/CHANGELOG.md`](docs/CHANGELOG.md) · Rilis & aset: https://github.com/WBVPN/wibutunnel/releases
 
 ---
