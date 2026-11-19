@@ -4,6 +4,27 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.43 (2026-11-19)
+
+**Tampilan uninstaller.** Tidak ada perubahan logika penghapusan — yang berubah hanya keluarannya,
+karena versi v4.1.42 mencetak progress meter `curl` di tengah proses dan baris `[i]`/`[!]` yang
+berserakan sehingga terlihat seperti script setengah jadi.
+
+- Progress meter hilang: unduhan uninstaller resmi Xray memakai `curl -sS` (diam, tapi pesan error
+  tetap tampil). Dulu `% Total % Received … Dload Upload` ikut tercetak di antara langkah-langkah.
+- Keluaran berformat langkah: `[1/7] Menghentikan layanan panel` … `[7/7] Sisa sistem` dengan centang
+  per langkah, bukan baris `[i]`/`[!]` tanpa konteks.
+- Header menyebut **domain & versi** panel yang sedang dihapus (dibaca sebelum `/etc/wibutunnel`
+  dihapus), dan ringkasan akhir menyebut path backup, jumlah akun yang dihapus, keputusan swap,
+  penegasan bahwa port 22 tidak disentuh, plus perintah pasang ulang.
+- `tests/test_hardening.sh` tidak berubah jumlahnya (134 asersi); `README` hash `setup.sh` +
+  `uninstall.sh` diperbarui, `SHA256SUMS` dibuat ulang.
+
+Verifikasi suite: `test_ip_cdn` 18/18 · `test_ip_live` 13/13 · `test_kuota_latency` 15/15 ·
+`test_hardening` 134 PASS / 0 FAIL · `sha256sum -c SHA256SUMS` bersih.
+
+---
+
 ### v4.1.42 (2026-11-19)
 
 **Satu perintah pasang, tanpa domain di command.** Domain (dan token bot) ditanya di tengah

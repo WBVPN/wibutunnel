@@ -20,7 +20,28 @@ xray_verify_sha256() {
     return 0
 }
 
-echo -e "\e[33mMemulai proses uninstall WIBU TUNNELING...\e[0m"
+# ---------------------------------------------------------------- tampilan
+C_INFO=$'\e[1;36m'; C_OK=$'\e[1;32m'; C_WARN=$'\e[1;33m'; C_ERR=$'\e[1;31m'
+C_DIM=$'\e[2m'; C_OFF=$'\e[0m'
+LINE="──────────────────────────────────────────────────────"
+step() { printf '\n %s[%s]%s %s\n' "$C_INFO" "$1" "$C_OFF" "$2"; }
+ok()   { printf '        %s✓%s %s\n' "$C_OK" "$C_OFF" "$*"; }
+info() { printf '        %s·%s %s\n' "$C_DIM" "$C_OFF" "$*"; }
+warn() { printf '        %s!%s %s\n' "$C_WARN" "$C_OFF" "$*"; }
+fail() { printf '        %s✗%s %s\n' "$C_ERR" "$C_OFF" "$*" >&2; }
+
+PANEL_DOMAIN="$(cat /etc/xray/domain 2>/dev/null || echo '-')"
+PANEL_VER="$(cat /etc/wibutunnel/version 2>/dev/null || echo '-')"
+AKUN_DIHAPUS=0
+SWAP_HASIL="tidak ada /swapfile"
+
+printf '\n%s\n' "$LINE"
+printf ' %s🧹 UNINSTALL WIBUTUNNEL%s\n' "$C_INFO" "$C_OFF"
+printf ' %sdomain%s : %s\n' "$C_DIM" "$C_OFF" "$PANEL_DOMAIN"
+printf ' %sversi %s : %s\n' "$C_DIM" "$C_OFF" "$PANEL_VER"
+printf '%s\n' "$LINE"
+
+step "1/7" "Menghentikan layanan panel"
 
 # [FIX] Akun SSH panel adalah user sistem sungguhan (`add_ssh_user`: useradd -m -s /bin/bash -G
 # ssh_tunnel). Sebelumnya uninstall TIDAK menghapusnya, sementara sshd port 22 tidak disentuh ->
@@ -38,12 +59,12 @@ hapus_akun_panel() {
             pkill -KILL -u "$u" >/dev/null 2>&1 || true
             userdel -r "$u" >/dev/null 2>&1 || userdel "$u" >/dev/null 2>&1 || true
             if id -u "$u" >/dev/null 2>&1; then
-                echo -e "\e[31m[!] gagal hapus akun: $u (manual: userdel -r $u)\e[0m"
+                warn "gagal hapus akun: $u (manual: userdel -r $u)"
             else
-                echo -e "\e[33m  - akun SSH dihapus: $u\e[0m"
+                ok "dihapus: $u"; AKUN_DIHAPUS=$((AKUN_DIHAPUS+1))
             fi
         else
-            echo -e "\e[33m[!] lewati '$u' - bukan anggota grup $grup\e[0m"
+            info "dilewati: $u (bukan anggota grup $grup)"
         fi
     done < "$exp_file"
 }
@@ -57,28 +78,34 @@ systemctl stop telegram-webhook.socket 2>/dev/null
 systemctl disable telegram-webhook.socket 2>/dev/null
 systemctl stop wibutunnel-firewall.service wibutunnel-firewall.timer 2>/dev/null
 systemctl disable wibutunnel-firewall.service wibutunnel-firewall.timer 2>/dev/null
+ok "xray, haproxy, dropbear, ws-stunnel, wibu-daemon, bot, firewall"
 
-# Backup SEMUA data user sebelum dihapus. Gagal backup = batalkan uninstall.
+step "2/7" "Backup data panel"
 SAVED="/root/wibutunnel-backup-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$SAVED" || { echo -e "\e[31m[!] Gagal buat $SAVED, uninstall dibatalkan.\e[0m"; exit 1; }
+mkdir -p "$SAVED" || { fail "gagal buat $SAVED — uninstall dibatalkan"; exit 1; }
 BACKUP_PATHS=()
 for p in /etc/xray /etc/wibutunnel /usr/local/etc/xray /etc/haproxy /etc/iptables; do
     [ -e "$p" ] && BACKUP_PATHS+=("$p")
 done
 if [ ${#BACKUP_PATHS[@]} -gt 0 ]; then
     tar -czf "$SAVED/data.tar.gz" "${BACKUP_PATHS[@]}" 2>/dev/null || {
-        echo -e "\e[31m[!] Backup gagal, uninstall dibatalkan. Cek disk/permission.\e[0m"; exit 1; }
-    echo -e "\e[33m[!] Backup data disimpan di $SAVED/data.tar.gz\e[0m"
+        fail "backup gagal — uninstall dibatalkan (cek disk/permission)"; exit 1; }
+    BACKUP_FILE="$SAVED/data.tar.gz"
+    ok "tersimpan: $SAVED/data.tar.gz"
 else
-    echo -e "\e[33m[!] Tidak ada data untuk dibackup.\e[0m"
+    BACKUP_FILE=""
+    warn "tidak ada data yang perlu dibackup"
 fi
 
 # Penanda /swapfile dibuat panel (dibaca SEBELUM /etc/wibutunnel dihapus).
 SWAP_PANEL=0; [ -f /etc/wibutunnel/.swapfile_panel ] && SWAP_PANEL=1
 
 # [FIX] Hapus akun SSH pelanggan sebelum data konfigurasinya dibuang.
-echo -e "\e[33m[i] Menghapus akun SSH pelanggan...\e[0m"
+step "3/7" "Akun SSH pelanggan"
 hapus_akun_panel /etc/xray/ssh_exp.conf "${SSH_GROUP:-ssh_tunnel}"
+[ "$AKUN_DIHAPUS" -eq 0 ] && info "tidak ada akun pelanggan yang tersisa"
+
+step "4/7" "Konfigurasi & core Xray"
 
 # Hapus file konfigurasi dan database
 umount -f /var/log/xray 2>/dev/null
@@ -88,18 +115,21 @@ rm -rf /usr/local/etc/xray /etc/haproxy /etc/wibutunnel /etc/xray /var/log/xray
 if command -v xray >/dev/null 2>&1; then
     # [C1] Uninstaller resmi HANYA dijalankan setelah hash cocok (tanpa verifikasi = risiko RCE).
     XRAY_TMP="$(mktemp /tmp/xray-uninstall.XXXXXX.sh)" || XRAY_TMP=""
-    if [ -n "$XRAY_TMP" ] && curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 90 -o "$XRAY_TMP" "$XRAY_INSTALL_URL" \
+    if [ -n "$XRAY_TMP" ] && curl -4 -sS -fL --retry 3 --connect-timeout 10 --max-time 90 -o "$XRAY_TMP" "$XRAY_INSTALL_URL" \
         && xray_verify_sha256 "$XRAY_TMP" "$XRAY_INSTALL_SHA256"; then
+        info "uninstaller resmi Xray diunduh & sha256 cocok"
         bash "$XRAY_TMP" remove >/dev/null 2>&1   # [FIX] bentuk berkas, bukan "-s --"
     else
-        echo -e "\e[33m[ABORT] Unduh/verifikasi instaleler Xray gagal - uninstaller resmi DILEWATI, lanjut pembersihan manual.\e[0m"
+        warn "unduh/verifikasi uninstaller Xray gagal — dilewati, lanjut pembersihan manual"
     fi
 fi
 rm -rf /usr/local/share/xray /usr/local/bin/xray /etc/tmpfiles.d/xray.conf
 rm -f /usr/lib/systemd/system/xray.service /usr/lib/systemd/system/xray@.service
 id -u xray >/dev/null 2>&1 && userdel xray >/dev/null 2>&1
 id -g xray >/dev/null 2>&1 && groupdel xray >/dev/null 2>&1
+ok "/config, /etc/xray, /etc/haproxy, core Xray, user xray"
 
+step "5/7" "Firewall & QoS"
 # Kembalikan iptables ke kondisi bersih
 if command -v iptables >/dev/null 2>&1; then
     # [C2] Hapus HANYA aturan owner-match milik wibutunnel (cocokkan pola),
@@ -123,7 +153,9 @@ if command -v iptables >/dev/null 2>&1; then
     command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1
 fi
 systemctl disable netfilter-persistent >/dev/null 2>&1
+ok "aturan panel dihapus · aturan mangle lain dibiarkan"
 
+step "6/7" "Biner, unit systemd & UDPGW"
 # Hapus file executable menu & daemon
 # [FIX] Daftar hapus lengkap: sebelumnya algojo-ssh, lock-user, unlock-user, ws-stunnel & wibu-daemon
 # tertinggal di /usr/local/sbin|bin setelah uninstall.
@@ -178,7 +210,9 @@ pkill -f 'badvpn-udpgw' >/dev/null 2>&1 || true
 rm -f /usr/sbin/badvpn-udpgw /usr/local/sbin/badvpn-udpgw /usr/local/bin/badvpn-udpgw
 rm -rf /usr/local/src/badvpn-src
 systemctl daemon-reload
+ok "menu, daemon, unit systemd, badvpn-udpgw"
 
+step "7/7" "Sisa sistem: profil, fstab, swap, paket"
 # Hapus logrotate
 rm -f /etc/logrotate.d/xray
 
@@ -195,12 +229,17 @@ sed -i '/tmpfs \/tmp tmpfs/d' /etc/fstab 2>/dev/null
 
 # Hapus swapfile — HANYA kalau panel yang membuatnya. VPS bisa sudah punya swap sendiri di
 # /swapfile sebelum panel dipasang; dulu file itu ikut dihapus tanpa syarat (swap VPS hilang).
-if [ "$SWAP_PANEL" = 1 ]; then
+if [ "$SWAP_PANEL" = 1 ] && [ -e /swapfile ]; then
     swapoff /swapfile 2>/dev/null
     rm -f /swapfile
-    echo -e "\e[33m[!] /swapfile dibuat panel - dihapus.\e[0m"
+    SWAP_HASIL="dihapus (dibuat panel)"
+    info "$SWAP_HASIL"
+elif [ -e /swapfile ]; then
+    SWAP_HASIL="dipertahankan (bukan buatan panel)"
+    info "$SWAP_HASIL"
 else
-    echo -e "\e[33m[i] /swapfile bukan buatan panel - DIBIARKAN (swap VPS tetap aktif).\e[0m"
+    SWAP_HASIL="tidak ada /swapfile"
+    info "$SWAP_HASIL"
 fi
 
 # Revert sysctl modifications (commented out by default - uncomment to revert network optimizations)
@@ -219,11 +258,21 @@ fi
 # (/etc/wibutunnel/ssh-banner) -> apt-get install mengembalikan error -> instalasi berhenti.
 if [[ -f /etc/default/dropbear ]] && grep -q 'wibutunnel' /etc/default/dropbear 2>/dev/null; then
     sed -i '/^DROPBEAR_BANNER=.*wibutunnel/d' /etc/default/dropbear
-    echo -e "\e[33m[i] rujukan banner wibutunnel dihapus dari /etc/default/dropbear\e[0m"
+    info "rujukan banner wibutunnel dibuang dari /etc/default/dropbear"
 fi
 
 # Uninstall paket bawaan (opsional)
 apt-get remove --purge -y haproxy vnstat dropbear >/dev/null 2>&1
 apt-get autoremove -y >/dev/null 2>&1
+ok "haproxy, vnstat, dropbear di-purge"
 
-echo -e "\e[32mUninstalasi Selesai! VPS sudah bersih dari WIBU TUNNELING.\e[0m"
+printf '\n%s\n' "$LINE"
+printf ' %s✓ UNINSTALL SELESAI%s\n' "$C_OK" "$C_OFF"
+printf '%s\n' "$LINE"
+[ -n "${BACKUP_FILE:-}" ] && printf ' %sbackup%s : %s\n' "$C_DIM" "$C_OFF" "$BACKUP_FILE"
+printf ' %sakun  %s : %s dihapus\n' "$C_DIM" "$C_OFF" "$AKUN_DIHAPUS"
+printf ' %sswap  %s : %s\n' "$C_DIM" "$C_OFF" "$SWAP_HASIL"
+printf ' %ssshd  %s : port 22 tidak disentuh\n' "$C_DIM" "$C_OFF"
+printf '%s\n' "$LINE"
+printf ' %sPasang ulang kapan saja%s\n' "$C_DIM" "$C_OFF"
+printf '   bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)\n\n'
