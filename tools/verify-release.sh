@@ -66,9 +66,9 @@ grep -qE "^$hu  uninstall.sh$" "$TMP/SHA256SUMS" && ok "manifest memuat hash uni
 echo
 if [[ $fail -eq 0 ]]; then
     echo "HASIL: rantai instalasi VALID untuk VPS baru (tag $tag)."
-    echo "Perintah pasang (interaktif — domain & bot ditanyakan):"
-    echo "    curl -4 -fsSL -o install.sh $DL/install.sh && bash install.sh"
-    echo "Perintah pasang (satu baris tanpa TTY — domain WAJIB jadi argumen):"
+    echo "Perintah pasang (satu perintah, domain ditanya di tengah proses):"
+    echo "    bash <(curl -4 -fsSL $DL/install.sh)"
+    echo "Otomasi tanpa TTY (domain WAJIB jadi argumen):"
     echo "    curl -4 -fsSL $DL/install.sh | bash -s -- vpn.domain-anda.com"
 else
     echo "HASIL: ADA YANG GAGAL - jangan sebarkan link ini sampai diperbaiki."

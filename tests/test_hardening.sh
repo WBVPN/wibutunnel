@@ -185,14 +185,21 @@ done
 [[ $_rmiss -eq 0 ]] && ok "README menyebut semua perintah, daemon & unit yang dikelola" || bad "README ketinggalan dari kode"
 
 echo "== I. Mode pemasangan & kestabilan uji =="
-t "install.sh menolak mode pipa tanpa domain (penjaga dini)" "grep -q 'stdin bukan terminal dan domain belum diberikan' \"\$REPO/install.sh\""
+t "install.sh menolak pipa tanpa terminal & tanpa domain (penjaga dini)" "grep -q 'Tidak ada terminal dan domain belum diberikan' \"\$REPO/install.sh\""
 # Penjaga itu tidak boleh ikut memblokir mode verifikasi-saja: WIBU_BOOTSTRAP_ONLY=1 tidak
 # butuh domain, jadi harus dikecualikan di syarat penjaganya.
 t "penjaga pipa mengecualikan WIBU_BOOTSTRAP_ONLY=1 (verifikasi saja tetap jalan)" \
-  "grep -qE '! -t 0 && .*WIBU_BOOTSTRAP_ONLY' \"\$REPO/install.sh\""
+  "grep -qE '! -t 0 .*WIBU_BOOTSTRAP_ONLY' \"\$REPO/install.sh\""
+# Satu link tanpa domain: installer wajib menyerahkan /dev/tty ke setup.sh, karena pada mode
+# pipa fd 0 sudah EOF dan pertanyaan domain tidak bisa dijawab.
+t "install.sh menyerahkan terminal ke setup.sh (exec ... </dev/tty)" \
+  "grep -q 'exec bash \"\$TMP\" \"\$@\" </dev/tty' \"\$REPO/install.sh\""
+t "README: satu perintah pasang, domain ditanya di tengah proses" \
+  "grep -q 'bash <(curl -4 -fsSL' \"\$REPO/README.md\""
 # Panjang berkas berubah tiap kali skripnya disentuh; angka mati di README jadi bohong tanpa suara.
 t "README tidak memaku jumlah baris install.sh" "! grep -qE 'bootstrap [0-9]+ baris' \"\$REPO/README.md\""
-t "verify-release mencetak perintah pasang yang benar (domain jadi argumen)" "grep -q 'bash -s -- vpn.domain-anda.com' \"\$REPO/tools/verify-release.sh\""
+t "verify-release mencetak perintah pasang single-link + varian otomasi" \
+  "grep -q 'bash <(curl -4 -fsSL' \"\$REPO/tools/verify-release.sh\" && grep -q 'bash -s -- vpn.domain-anda.com' \"\$REPO/tools/verify-release.sh\""
 # Fixture yang diuji lewat jendela waktu (LIVE_IP_WINDOW) WAJIB bertanggal relatif.
 # Tanggal mati membuat tes merah sendiri sehari kemudian tanpa ada kode yang berubah
 # (terbukti: fixture 2026/11/18 + jendela 86400 -> 2 asersi merah di 2026-11-19).

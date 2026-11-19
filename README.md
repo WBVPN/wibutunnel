@@ -12,38 +12,41 @@ Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VP
 
 ## ⚡ Instalasi
 
-**Cara 1 — interaktif (domain & bot ditanyakan):**
+Satu perintah. Domain (dan token bot) ditanyakan **di tengah proses** — tidak perlu ditulis di command:
 
 ```bash
-curl -4 -fsSL -o install.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh
-bash install.sh
-```
-
-**Cara 2 — satu baris tanpa TTY** (domain **wajib** jadi argumen; token bot diisi belakangan lewat menu):
-
-```bash
-curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash -s -- vpn.domain-anda.com
+bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
 ```
 
 `install.sh` = bootstrap dari **Release GitHub**: mengunduh `setup.sh` dari **tag rilis tetap**
 (cadangan jsDelivr bila GitHub mentok), **memverifikasi sha256**, baru menjalankannya. Hash tidak cocok →
 berhenti sebelum menyentuh apa pun.
 
-**Cek dulu tanpa memasang** (cetak tag + hash, `exit 0` bila cocok):
+Bentuk ini juga jalan dan sama-sama menanyakan domain (installer menyerahkan terminalnya ke `setup.sh`):
 
 ```bash
-curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | WIBU_BOOTSTRAP_ONLY=1 bash
+curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash
 ```
 
-Mode ini **tidak butuh domain**, jadi ia dikecualikan dari penjaga mode pipa di bawah — tetap jalan
-walau dipanggil lewat pipa. Contoh keluaran: `tag rilis : v4.1.41` → `hash : OK` →
-`[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
+<details>
+<summary>Otomasi tanpa terminal (cron/CI) & cek hash tanpa memasang</summary>
 
-> ⚠️ **`... | bash` tanpa argumen domain selalu gagal.** Pada mode pipa, `stdin` habis dipakai membaca
-> skrip, dan proses `setup.sh` mewarisinya — jadi pertanyaan domain dijawab `Input berakhir (EOF)`.
-> Karena itu `install.sh` sekarang berhenti lebih awal dengan pesan jelas (sebelum apt/konfigurasi
-> disentuh) bila stdin bukan terminal dan domain belum diberikan. Pilih salah satu: domain sebagai
-> argumen (`| bash -s -- vpn.domain.com`), atau simpan berkasnya dulu lalu `bash install.sh`.
+Tanpa terminal tidak ada yang bisa menjawab pertanyaan domain, jadi domain **wajib** jadi argumen —
+kalau tidak, installer berhenti dengan pesan jelas sebelum apt/konfigurasi disentuh:
+
+```bash
+curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash -s -- vpn.domain-anda.com
+```
+
+Cek tag + hash tanpa memasang apa pun (`exit 0` bila cocok):
+
+```bash
+WIBU_BOOTSTRAP_ONLY=1 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
+```
+
+Contoh keluaran: `tag rilis : v4.1.41` → `hash : OK` → `[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
+
+</details>
 
 | Syarat | |
 |---|---|

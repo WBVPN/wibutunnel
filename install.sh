@@ -1,35 +1,43 @@
 #!/bin/bash
 # ==========================================================================
-#  Bootstrap instalasi Wibutunnel
+#  Bootstrap instalasi Wibutunnel — SATU perintah, domain ditanya saat proses.
 #  Unduh setup.sh dari TAG RILIS -> verifikasi sha256 -> baru jalankan.
 #
-#  Interaktif (domain & bot ditanyakan) — unduh berkasnya dulu:
-#      curl -4 -fsSL -o install.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh
-#      bash install.sh
+#  PASANG (interaktif; domain & bot ditanyakan di tengah proses):
+#      bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
 #
-#  Satu baris tanpa TTY — domain WAJIB jadi argumen:
-#      curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash -s -- vpn.domain-anda.com
+#  Bentuk lain yang juga jalan:
+#      curl -4 -fsSL <url install.sh> | bash            # terminal disambungkan otomatis
+#      curl -4 -fsSL -o install.sh <url> && bash install.sh
 #
-#  Verifikasi saja (tidak memasang apa pun):
-#      curl -4 -fsSL <url install.sh> | WIBU_BOOTSTRAP_ONLY=1 bash
+#  Verifikasi saja (tidak memasang apa pun) — cetak tag + hash lalu keluar:
+#      WIBU_BOOTSTRAP_ONLY=1 bash <(curl -4 -fsSL <url install.sh>)
 #
-#  KENAPA domain wajib di mode pipa: `... | bash` membuat stdin berisi skrip ini,
-#  dan proses setup.sh yang di-`exec` MEWARISINYA (sudah EOF) -> pertanyaan domain
-#  tidak bisa dijawab ("Input berakhir (EOF)"). Penjaga dini di bawah menghentikan
-#  mode itu dengan pesan jelas, sebelum menyentuh apt/konfigurasi.
+#  Otomasi TANPA terminal (cron/CI): domain WAJIB jadi argumen, karena tidak ada
+#  yang bisa menjawab pertanyaan domain:
+#      curl -4 -fsSL <url install.sh> | bash -s -- vpn.domain-anda.com
+#
+#  CATATAN stdin (penting, jangan diubah tanpa membaca ini):
+#  `... | bash` membuat fd 0 = pipa yang sudah habis, dan proses setup.sh yang
+#  di-`exec` MEWARISINYA -> pertanyaan domain dijawab EOF. Karena itu terminal
+#  diserahkan eksplisit ke proses anak (`exec ... </dev/tty`), BUKAN dengan
+#  mengganti fd 0 di tengah skrip: pada mode pipa bash membaca sisa skrip dari
+#  fd 0, jadi `exec </dev/tty` di sini akan membuat bash membaca perintah dari
+#  terminal, bukan dari skrip.
 # ==========================================================================
 set -eu
 
-# Mode pipa tanpa domain = pasti gagal di tengah jalan (stdin EOF). Berhenti di sini.
-# PENGECUALIAN: WIBU_BOOTSTRAP_ONLY=1 (verifikasi saja) tidak butuh domain sama sekali —
-# jangan pernah memblokirnya, kalau tidak mode "cek hash tanpa memasang" mati di mode pipa.
-if [[ $# -eq 0 && -z "${DOMAIN:-}" && ! -t 0 && "${WIBU_BOOTSTRAP_ONLY:-0}" != "1" ]]; then
-    echo "[!] stdin bukan terminal dan domain belum diberikan." >&2
-    echo "    Ini yang dimaksud 'mode pipa': stdin habis dipakai membaca skrip ini," >&2
-    echo "    jadi pertanyaan domain tidak bisa dijawab." >&2
-    echo "    Pakai salah satu:" >&2
+have_tty() { { : </dev/tty; } 2>/dev/null; }
+
+# Tidak ada terminal DAN tidak ada domain -> pertanyaan domain mustahil dijawab.
+# Berhenti di sini, sebelum apt/konfigurasi disentuh, dengan pesan yang bisa ditindaklanjuti.
+if [[ $# -eq 0 && -z "${DOMAIN:-}" && ! -t 0 ]] && ! have_tty && [[ "${WIBU_BOOTSTRAP_ONLY:-0}" != "1" ]]; then
+    echo "[!] Tidak ada terminal dan domain belum diberikan." >&2
+    echo "    Pertanyaan domain tidak bisa dijawab, jadi instalasi dihentikan di sini." >&2
+    echo "    Di VPS dengan terminal (domain ditanya otomatis):" >&2
+    echo "      bash <(curl -4 -fsSL <url install.sh>)" >&2
+    echo "    Otomasi tanpa TTY (domain sebagai argumen):" >&2
     echo "      curl -4 -fsSL <url install.sh> | bash -s -- vpn.domain-anda.com" >&2
-    echo "      curl -4 -fsSL -o install.sh <url install.sh> && bash install.sh" >&2
     exit 1
 fi
 
@@ -40,14 +48,14 @@ MIRROR="https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@$REF/setup.sh"
 
 echo "== Bootstrap Wibutunnel =="
 echo "   tag rilis : $REF"
-echo "   harap     : ${EXPECT:0:16}…"
+echo "   harap     : ${EXPECT:0:16}..."
 
 TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
 unduh() {
     curl -4 -fsSL --retry 3 --connect-timeout 10 --max-time 90 -o "$TMP" "$1"
 }
 if ! unduh "$PRIMARY" 2>/dev/null; then
-    echo "   GitHub mentok, pakai mirror jsDelivr…"
+    echo "   GitHub mentok, pakai mirror jsDelivr..."
     unduh "$MIRROR"
 fi
 [[ -s "$TMP" ]] || { echo "[!] gagal mengunduh setup.sh" >&2; exit 1; }
@@ -60,9 +68,15 @@ if [[ "$GOT" != "$EXPECT" ]]; then
     echo "    (tag lain? pakai cara manual: lihat README)" >&2
     exit 1
 fi
-echo "   hash      : OK (${GOT:0:16}…)"
+echo "   hash      : OK (${GOT:0:16}...)"
 [[ "${WIBU_BOOTSTRAP_ONLY:-0}" == "1" ]] && { echo "   [i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan."; exit 0; }
 
-echo "   menjalankan instalasi…"
+echo "   menjalankan instalasi..."
 echo "----------------------------------------------------------------------"
+# Serahkan terminal ke setup.sh bila stdin bukan TTY (mode pipa): pertanyaan domain
+# dibaca dari /dev/tty, bukan dari fd 0 yang sudah EOF. Ini baris terakhir skrip,
+# jadi fd 0 milik bash sendiri tidak dipakai lagi setelah titik ini.
+if [[ ! -t 0 ]] && have_tty; then
+    exec bash "$TMP" "$@" </dev/tty
+fi
 exec bash "$TMP" "$@"
