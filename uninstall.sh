@@ -22,6 +22,32 @@ xray_verify_sha256() {
 
 echo -e "\e[33mMemulai proses uninstall WIBU TUNNELING...\e[0m"
 
+# [FIX] Akun SSH panel adalah user sistem sungguhan (`add_ssh_user`: useradd -m -s /bin/bash -G
+# ssh_tunnel). Sebelumnya uninstall TIDAK menghapusnya, sementara sshd port 22 tidak disentuh ->
+# pelanggan yang belum kedaluwarsa tetap bisa login lewat port 22 setelah panel dihapus.
+# Daftar akun ada di /etc/xray/ssh_exp.conf (baris "user:exp"). Penjaga: hanya user yang anggota
+# grup ssh_tunnel DAN uid >= 1000, supaya user sistem milik VPS tidak ikut terhapus.
+hapus_akun_panel() {
+    local exp_file="${1:-/etc/xray/ssh_exp.conf}" grup="${2:-ssh_tunnel}" u uid
+    [ -r "$exp_file" ] || return 0
+    while IFS=: read -r u _rest; do
+        [ -n "$u" ] || continue
+        uid="$(id -u "$u" 2>/dev/null)" || continue
+        [ -n "$uid" ] && [ "$uid" -ge 1000 ] 2>/dev/null || continue
+        if id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx "$grup"; then
+            pkill -KILL -u "$u" >/dev/null 2>&1 || true
+            userdel -r "$u" >/dev/null 2>&1 || userdel "$u" >/dev/null 2>&1 || true
+            if id -u "$u" >/dev/null 2>&1; then
+                echo -e "\e[31m[!] gagal hapus akun: $u (manual: userdel -r $u)\e[0m"
+            else
+                echo -e "\e[33m  - akun SSH dihapus: $u\e[0m"
+            fi
+        else
+            echo -e "\e[33m[!] lewati '$u' - bukan anggota grup $grup\e[0m"
+        fi
+    done < "$exp_file"
+}
+
 # Hentikan semua layanan
 systemctl stop xray haproxy wibu-daemon network-tune ws-stunnel dropbear 2>/dev/null
 systemctl disable xray haproxy wibu-daemon network-tune ws-stunnel dropbear 2>/dev/null
@@ -46,6 +72,13 @@ if [ ${#BACKUP_PATHS[@]} -gt 0 ]; then
 else
     echo -e "\e[33m[!] Tidak ada data untuk dibackup.\e[0m"
 fi
+
+# Penanda /swapfile dibuat panel (dibaca SEBELUM /etc/wibutunnel dihapus).
+SWAP_PANEL=0; [ -f /etc/wibutunnel/.swapfile_panel ] && SWAP_PANEL=1
+
+# [FIX] Hapus akun SSH pelanggan sebelum data konfigurasinya dibuang.
+echo -e "\e[33m[i] Menghapus akun SSH pelanggan...\e[0m"
+hapus_akun_panel /etc/xray/ssh_exp.conf "${SSH_GROUP:-ssh_tunnel}"
 
 # Hapus file konfigurasi dan database
 umount -f /var/log/xray 2>/dev/null
@@ -76,8 +109,17 @@ if command -v iptables >/dev/null 2>&1; then
             iptables -D OUTPUT -m owner ! --uid-owner 0 -p tcp -d 127.0.0.1 --dport "$p" -j REJECT 2>/dev/null || break
         done
     done
-    iptables -t mangle -F 2>/dev/null
-    iptables -t mangle -X 2>/dev/null
+    # [FIX] Jangan `iptables -t mangle -F`: itu membuang SEMUA aturan mangle milik VPS (QoS lain,
+    # fail2ban, klasifikasi buatan admin), bukan hanya punya panel. Yang dihapus hanya 4 aturan
+    # CLASSIFY milik panel -- daftar yang sama dengan sbin/network-tune.sh.
+    for _spec in "-p icmp -j CLASSIFY --set-class 1:1" \
+                 "-p tcp --tcp-flags ACK ACK -j CLASSIFY --set-class 1:1" \
+                 "-p tcp -m length --length 0:128 -j CLASSIFY --set-class 1:1" \
+                 "-p udp -m length --length 0:128 -j CLASSIFY --set-class 1:1"; do
+        while iptables -t mangle -C PREROUTING $_spec 2>/dev/null; do
+            iptables -t mangle -D PREROUTING $_spec 2>/dev/null || break
+        done
+    done
     command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1
 fi
 systemctl disable netfilter-persistent >/dev/null 2>&1
@@ -147,12 +189,19 @@ sed -i '/Auto-start menu/d; /^clear$/d; /^menu$/d' /root/.profile 2>/dev/null
 # Bersihkan fstab entries
 [ -f /etc/fstab ] && [ ! -f /etc/fstab.wibutunnel.bak ] && cp -a /etc/fstab /etc/fstab.wibutunnel.bak
 sed -i '/\/var\/log\/xray/d' /etc/fstab 2>/dev/null
-sed -i '/\/swapfile none swap sw 0 0/d' /etc/fstab 2>/dev/null
+# Baris swap hanya dibuang kalau /swapfile memang buatan panel (lihat SWAP_PANEL di atas).
+[ "$SWAP_PANEL" = 1 ] && sed -i '/\/swapfile none swap sw 0 0/d' /etc/fstab 2>/dev/null
 sed -i '/tmpfs \/tmp tmpfs/d' /etc/fstab 2>/dev/null
 
-# Hapus swapfile
-swapoff /swapfile 2>/dev/null
-rm -f /swapfile
+# Hapus swapfile — HANYA kalau panel yang membuatnya. VPS bisa sudah punya swap sendiri di
+# /swapfile sebelum panel dipasang; dulu file itu ikut dihapus tanpa syarat (swap VPS hilang).
+if [ "$SWAP_PANEL" = 1 ]; then
+    swapoff /swapfile 2>/dev/null
+    rm -f /swapfile
+    echo -e "\e[33m[!] /swapfile dibuat panel - dihapus.\e[0m"
+else
+    echo -e "\e[33m[i] /swapfile bukan buatan panel - DIBIARKAN (swap VPS tetap aktif).\e[0m"
+fi
 
 # Revert sysctl modifications (commented out by default - uncomment to revert network optimizations)
 # sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf

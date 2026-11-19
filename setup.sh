@@ -438,6 +438,9 @@ if ! swapon --show | grep -q "/swapfile"; then
     mkswap /swapfile >/dev/null 2>&1
     swapon /swapfile >/dev/null 2>&1
     echo "/swapfile none swap sw 0 0" >> /etc/fstab
+    # Penanda: /swapfile ini dibuat PANEL. Tanpa penanda, uninstaller tidak boleh menghapus
+    # /swapfile — VPS bisa saja sudah punya swap sendiri di path yang sama sebelum panel dipasang.
+    mkdir -p /etc/wibutunnel && : > /etc/wibutunnel/.swapfile_panel 2>/dev/null || true
 fi
 
 # KERNEL TUNING
@@ -717,13 +720,31 @@ cat > /usr/local/sbin/network-tune << 'EOF'
 #!/bin/bash
 # [FIX] Probe dukungan target CLASSIFY: sebagian kernel VPS tanpa modul ini, dan sebelumnya
 # 4 aturan gagal setiap menit (journal spam + QoS tidak jalan diam-diam).
-iptables -t mangle -F 2>/dev/null && iptables -t mangle -X 2>/dev/null
+#
+# [FIX] JANGAN `iptables -t mangle -F`: skrip ini dijalankan berkala, jadi flush akan menghapus
+# aturan mangle MILIK VPS (QoS lain, firewall, fail2ban) tiap putaran. Yang dihapus hanya 4 aturan
+# CLASSIFY milik panel ini — dan penghapusan itu juga yang membuat penambahan di bawah idempoten.
+WIBU_MANGLE_RULES=(
+    "-p icmp -j CLASSIFY --set-class 1:1"
+    "-p tcp --tcp-flags ACK ACK -j CLASSIFY --set-class 1:1"
+    "-p tcp -m length --length 0:128 -j CLASSIFY --set-class 1:1"
+    "-p udp -m length --length 0:128 -j CLASSIFY --set-class 1:1"
+)
+
+wibu_mangle_del() {
+    local spec
+    for spec in "${WIBU_MANGLE_RULES[@]}"; do
+        while iptables -t mangle -C PREROUTING $spec 2>/dev/null; do
+            iptables -t mangle -D PREROUTING $spec 2>/dev/null || break
+        done
+    done
+}
+
 if iptables -t mangle -A PREROUTING -p icmp -j CLASSIFY --set-class 1:1 2>/dev/null; then
-    iptables -t mangle -D PREROUTING -p icmp -j CLASSIFY --set-class 1:1 2>/dev/null
-    iptables -t mangle -A PREROUTING -p tcp --tcp-flags ACK ACK -j CLASSIFY --set-class 1:1
-    iptables -t mangle -A PREROUTING -p tcp -m length --length 0:128 -j CLASSIFY --set-class 1:1
-    iptables -t mangle -A PREROUTING -p udp -m length --length 0:128 -j CLASSIFY --set-class 1:1
-    iptables -t mangle -A PREROUTING -p icmp -j CLASSIFY --set-class 1:1
+    wibu_mangle_del                                       # termasuk aturan probe di atas
+    for spec in "${WIBU_MANGLE_RULES[@]}"; do
+        iptables -t mangle -A PREROUTING $spec 2>/dev/null
+    done
 else
     echo "[network-tune] Target CLASSIFY tidak didukung kernel ini - aturan QoS dilewati (bukan error)."
 fi

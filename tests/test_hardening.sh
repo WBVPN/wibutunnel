@@ -138,6 +138,11 @@ t "audit akun ikut dipasang instalasi baru" "grep -q 'sbin/wibu-audit-akun' \"\$
 t "unit bot tidak diaktifkan tanpa token" "grep -q 'unit tidak diaktifkan' \"\$REPO/setup.sh\""
 t "penanda versi ditulis ulang di akhir instalasi" "grep -q 'Tulis ULANG penanda versi' \"\$REPO/setup.sh\""
 t "uninstall menghapus semua skrip yang dipasang" "for s in algojo-ssh lock-user unlock-user ws-stunnel wibu-daemon wibu-audit-akun wibutunnel-firewall network-tune; do grep -q \"\$s\" \"\$REPO/uninstall.sh\" || exit 1; done"
+# [v4.1.42] Tiga bahaya uninstaller: akun panel tertinggal, /swapfile milik VPS ikut terhapus,
+# dan aturan mangle VPS dibuang. Ketiganya sudah pernah terjadi; jangan kambuh.
+t "uninstall menghapus akun SSH panel (dari ssh_exp.conf, dibatasi grup)" "grep -q 'hapus_akun_panel /etc/xray/ssh_exp.conf' \"\$REPO/uninstall.sh\" && grep -q 'id -nG' \"\$REPO/uninstall.sh\""
+t "uninstall hanya menghapus /swapfile buatan panel (penanda)" "grep -q '.swapfile_panel' \"\$REPO/uninstall.sh\" && grep -q '.swapfile_panel' \"\$REPO/setup.sh\" && ! grep -qE '^(swapoff|rm -f) /swapfile' \"\$REPO/uninstall.sh\""
+t "tidak ada flush tabel mangle (aturan VPS tidak boleh dibuang)" "! grep -qE '^[[:space:]]*iptables -t mangle -[FX]' \"\$REPO/uninstall.sh\" \"\$REPO/setup.sh\" \"\$REPO/sbin/network-tune.sh\""
 t "dukungan Debian 12: rsyslog ikut dipasang (/dev/log ada)" "grep -q 'python3 rsyslog' \"\$REPO/setup.sh\""
 t "NTP punya fallback (ntp tidak ada di bookworm minimal)" "grep -q 'systemd-timesyncd' \"\$REPO/setup.sh\""
 t "penjaga OS menyebut versi yang didukung" "grep -q 'Didukung: Ubuntu 20.04/22.04/24.04, Debian 11/12' \"\$REPO/setup.sh\""

@@ -22,8 +22,26 @@ proses, jadi tidak ada lagi dua "cara" yang harus dipilih pembaca.
   `<details>` supaya tidak bersaing dengan perintah yang dipakai 99% orang.
 - `tools/verify-release.sh`: mencetak perintah pasang single-link.
 - `tests/test_hardening.sh`: 129 → 131 asersi (penyerahan `/dev/tty`, perintah single-link di README).
+- **Uninstaller: tiga hal yang dulu menghapus milik orang lain.**
+  (1) Akun SSH pelanggan kini **ikut dihapus** (`hapus_akun_panel`, daftar dari `/etc/xray/ssh_exp.conf`,
+      dibatasi uid ≥ 1000 **dan** anggota grup `ssh_tunnel`). Sebelumnya akun tertinggal di `/etc/passwd`
+      dengan shell `/bin/bash`, sementara sshd port 22 tidak disentuh — pelanggan yang belum kedaluwarsa
+      masih bisa login ke VPS setelah panel dihapus.
+  (2) `/swapfile` hanya dihapus bila **panel** yang membuatnya: `setup.sh` menulis penanda
+      `/etc/wibutunnel/.swapfile_panel`, uninstaller membacanya **sebelum** `/etc/wibutunnel` dibuang.
+      Sebelumnya swap milik VPS ikut terhapus tanpa syarat (dan barisnya di `/etc/fstab` juga).
+  (3) Tidak ada lagi `iptables -t mangle -F`. Dulu seluruh tabel mangle di-flush sehingga aturan
+      QoS/firewall/klasifikasi milik admin hilang — bukan cuma di uninstaller, tapi juga di
+      `network-tune` yang dijalankan berkala. Sekarang yang dihapus hanya 4 aturan
+      `CLASSIFY --set-class 1:1` milik panel (daftar sama di ketiga tempat), lalu dipasang ulang —
+      jadi idempoten tanpa menyentuh aturan lain.
+  Yang **belum** diubah dan perlu diketahui: `/etc/iptables/rules.v4` disimpan apa adanya dan
+  `netfilter-persistent` tetap di-disable saat uninstall; `network-tune` juga masih melakukan
+  `tc qdisc del ... root` di setiap interface.
+- `tests/test_hardening.sh`: 131 → 134 asersi (tiga asersi penjaga untuk akun panel, penanda
+  `/swapfile`, dan larangan flush mangle).
 - `SHA256SUMS` dibuat ulang; `EXPECT` di `install.sh` + hash di README mengikuti `setup.sh` baru
-  (`25ed1895…`).
+  (`25ed1895…` → `b1c19fa7…`), hash `uninstall.sh` di README jadi `4805af47…`.
 
 Terbukti di VPS baru (Ubuntu 24.04, `103.150.61.138`, domain `id.priasawit.web.id`, lisensi VPSTEST):
 satu perintah → 8/8 pemeriksaan installer `[OK]` → 10 unit inti `active` **dan** `enabled` →

@@ -64,12 +64,12 @@ Contoh keluaran: `tag rilis : v4.1.42` → `hash : OK` → `[i] WIBU_BOOTSTRAP_O
 ```bash
 # pasang (langsung dari repo, tanpa perantara)
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 25ed1895da6d60aeee772087395a612f409f139f2979c5ce8e44baa7269fb133
+sha256sum setup.sh     # harap: b1c19fa78d3e189012ebf46406619341f26c5033ae40d973b61c3f2423ad184c
 bash setup.sh
 
 # hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)
 curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
-sha256sum uninstall.sh   # harap: 9dc097b2c1bc38a853d468d215c8c35592541c70e3a7f0f265055ee305f65386
+sha256sum uninstall.sh   # harap: 4805af479a60b15d588e5f69b0aec59556b581a8843ad9a0d6bb563c114496f3
 bash uninstall.sh
 ```
 
