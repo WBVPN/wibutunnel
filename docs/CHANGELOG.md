@@ -4,6 +4,37 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.42 (2026-11-19)
+
+**Satu perintah pasang, tanpa domain di command.** Domain (dan token bot) ditanya di tengah
+proses, jadi tidak ada lagi dua "cara" yang harus dipilih pembaca.
+
+- `install.sh` kini menyerahkan terminal ke `setup.sh` — `exec bash "$TMP" "$@" </dev/tty` — bila
+  stdin bukan TTY. Efeknya `curl -4 -fsSL <url install.sh> | bash` juga jalan, bukan cuma
+  `bash <(curl ...)`. Penyerahan sengaja dilakukan di baris **terakhir** (`exec`): pada mode pipa
+  bash membaca sisa skrip dari fd 0, jadi `exec </dev/tty` di tengah skrip akan membuat bash membaca
+  perintah dari terminal.
+- Penjaga dini dipersempit: hanya menyala bila **benar-benar** tidak ada terminal **dan** tidak ada
+  domain (cron/CI). Pesannya sekarang menyebut dua bentuk perintah yang sah.
+- Regresi v4.1.41 diperbaiki: penjaga itu tidak lagi memblokir `WIBU_BOOTSTRAP_ONLY=1` lewat pipa,
+  sehingga mode "cetak tag + hash lalu keluar" tetap bisa dipakai sebagai gerbang rilis.
+- `README.md`: satu blok perintah utama; varian otomasi tanpa TTY dan cek-hash dipindah ke
+  `<details>` supaya tidak bersaing dengan perintah yang dipakai 99% orang.
+- `tools/verify-release.sh`: mencetak perintah pasang single-link.
+- `tests/test_hardening.sh`: 129 → 131 asersi (penyerahan `/dev/tty`, perintah single-link di README).
+- `SHA256SUMS` dibuat ulang; `EXPECT` di `install.sh` + hash di README mengikuti `setup.sh` baru
+  (`25ed1895…`).
+
+Terbukti di VPS baru (Ubuntu 24.04, `103.150.61.138`, domain `id.priasawit.web.id`, lisensi VPSTEST):
+satu perintah → 8/8 pemeriksaan installer `[OK]` → 10 unit inti `active` **dan** `enabled` →
+sertifikat Let's Encrypt valid untuk domain → login akun SSH uji di port 143 `OK` → handshake
+WebSocket `HTTP/1.1 101` → `xray -test` OK → tahan reboot (semua unit kembali, `failed: 0`).
+
+Verifikasi suite: `test_ip_cdn` 18/18 · `test_ip_live` 13/13 · `test_kuota_latency` 15/15 ·
+`test_hardening` 131 PASS / 0 FAIL · `sha256sum -c SHA256SUMS` bersih.
+
+---
+
 ### v4.1.41 (2026-11-19)
 
 **Rilis dokumen & mutu uji.** Tidak ada perubahan pada penegakan (limit IP, kuota, sesi) maupun
