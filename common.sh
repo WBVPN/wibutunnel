@@ -644,6 +644,146 @@ live_ip_pairs() {
 }
 
 # ==========================================
+# PRESENCE (v4.1.45) — status online yang bisa dibuktikan
+#
+# Masalah yang diselesaikan: "online" versi lama = ADA baris `accepted` di
+# access.log dalam 60 detik terakhir. Dua akibatnya:
+#   (a) pelanggan yang konek tapi sedang idle (tidak membuka stream baru)
+#       hilang dari daftar padahal socket-nya masih terbuka;
+#   (b) pelanggan yang sudah disconnect masih tampil sampai 60 detik.
+#
+# presence memakai DUA sinyal dan menggabungkannya:
+#   1) SOCKET  — IP yang punya koneksi ESTABLISHED ke :80/:443. Bukti paling
+#      kuat: selama socket terbuka, user tetap ONLINE walau sedang idle (tidak
+#      membuka stream baru). Kalau client lewat Cloudflare, peer-nya adalah IP
+#      edge CF -> dibuang (satu edge mewakili ribuan orang), sehingga kasus itu
+#      jatuh ke sinyal kedua.
+#   2) AKTIVITAS — trafik nyata di access.log untuk (user, IP): online bila
+#      aktivitas TERBARU <= ONLINE_WINDOW detik. Ini yang menutup jalur CDN,
+#      di mana socket client tidak mungkin dilihat dari server.
+#
+# Keluaran xray_presence:  user|state|age|ip,ip
+#   state = online | offline      age = detik sejak aktivitas terakhir
+# ==========================================
+ONLINE_WINDOW="${ONLINE_WINDOW:-60}"   # detik: batas "online" berbasis aktivitas terakhir
+PRESENCE_TTL="${PRESENCE_TTL:-1800}"   # detik: masih ditampilkan sebagai "terakhir terlihat"
+
+# IP peer (bukan localhost, bukan edge CDN) yang socket-nya terbuka ke :80/:443.
+# XRAY_SS_SRC dipakai uji offline: berisi keluaran `ss -Htn state established`.
+# PENTING: `ss -Htn state established` mengeluarkan 4 kolom karena kolom State
+# hilang saat sudah difilter -> peer adalah kolom TERAKHIR ($NF), bukan $5.
+# (v4.1.45 awal memakai $5 sehingga daftar peer selalu kosong dan sinyal socket
+#  tidak pernah aktif; ditemukan reviewer, dibuktikan: NF=4, $5="".)
+xray_socket_peers() {
+    local src="${XRAY_SS_SRC:-}"
+    if [[ -n "$src" ]]; then
+        [[ -r "$src" ]] || return 0
+        cat "$src"
+    else
+        ss -Htn state established '( sport = :80 or sport = :443 )' 2>/dev/null
+    fi | awk '{ peer=$NF; loc=$(NF-1); sub(/:[0-9]+$/, "", peer); gsub(/^\[|\]$/, "", peer);
+                # hanya socket yang MELAYANI port panel (:80/:443) yang dihitung;
+                # tanpa ini, koneksi SSH/keluar server jadi bukti "xray online".
+                if (loc !~ /:(80|443)$/) next
+                if (peer != "" && peer != "127.0.0.1" && peer != "::1" && peer != "*") print peer }' \
+      | sort -u | while read -r _ip; do
+            [[ -n "$_ip" ]] || continue
+            ip_is_cdn "$_ip" && continue     # edge CDN bukan identitas pelanggan
+            printf '%s\n' "$_ip"
+        done
+}
+
+# Keluaran: user|state|age|ip,ip   state = online | offline
+# IP kosong = tidak ada IP asli yang bisa dipakai sebagai identitas (jalur CDN).
+xray_presence() {
+    local log="${XRAY_ACCESS_LOG:-/var/log/xray/access.log}"
+    local peers mtime now stale
+    [[ -s "$log" ]] || return 0
+
+    peers=$(xray_socket_peers | tr '\n' ' ')
+
+    # Umur dihitung RELATIF terhadap baris terbaru di log + lamanya berkas tidak
+    # disentuh. Dua keuntungan: tidak bergantung zona waktu xray vs panel (log
+    # yang ditulis UTC tidak lagi membuat semua user tampak 8 jam lalu), dan log
+    # yang tidak monoton tidak memotong pemrosesan seperti `exit` versi lama.
+    mtime=$(stat -c %Y "$log" 2>/dev/null || echo 0)
+    now=$(date +%s)
+    stale=$(( now - mtime )); (( stale < 0 )) && stale=0
+
+    tail -n 20000 "$log" 2>/dev/null | awk \
+        -v win="${ONLINE_WINDOW}" -v ttl="${PRESENCE_TTL}" -v peers="$peers" \
+        -v stale="$stale" -v cdn4="$(printf '%s' "$_IP_CDN4" | tr '\n' ' ')" '
+        function dfc(y, m, d,   era, yoe, doy, doe) {
+            y -= (m <= 2); era = int(y / 400); yoe = y - era * 400
+            doy = int((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1
+            doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+            return era * 146097 + doe - 719468
+        }
+        function ipnum(ip,   o) { split(ip, o, "."); return ((o[1]*256 + o[2])*256 + o[3])*256 + o[4] }
+        function pow2(n,   r, i) { r = 1; for (i = 0; i < n; i++) r *= 2; return r }
+        function is_cdn(ip,   i, cidr, net, bits, mask) {
+            if (ip ~ /:/)
+                return (ip ~ /^(::ffff:)?(2400:cb00|2606:4700|2803:f800|2405:b500|2405:8100|2a06:98c0|2c0f:f248):/ ||
+                        ip ~ /^::ffff:(162\.158\.|172\.6[4-9]\.|104\.(1[6-9]|2[0-9])\.)/)
+            if (ip !~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) return 1
+            for (i = 1; i <= NCDN; i++) {
+                cidr = CDN4[i]; if (cidr == "") continue
+                net = cidr; sub(/\/.*/, "", net); bits = cidr; sub(/.*\//, "", bits)
+                if (bits == cidr) bits = 32
+                mask = pow2(32 - bits)
+                if (int(ipnum(ip) / mask) == int(ipnum(net) / mask)) return 1
+            }
+            return 0
+        }
+        BEGIN {
+            split(peers, P, " "); for (i in P) if (P[i] != "") LIVE[P[i]] = 1
+            NCDN = split(cdn4, CDN4, " ")
+        }
+        {
+            if ($1 !~ /^[0-9][0-9][0-9][0-9]\//) next
+            split($1, D, "/"); split($2, T, ":")
+            ts = dfc(D[1], D[2], D[3]) * 86400 + T[1] * 3600 + T[2] * 60 + int(T[3])
+            if (ts > NEWEST) NEWEST = ts
+            if ($0 !~ /accepted/ || $0 !~ /email: /) next
+            ip = ""; em = ""
+            for (i = 1; i <= NF; i++) {
+                if ($i == "accepted") { ip = $(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); gsub(/[\[\]]/, "", ip) }
+                else if ($i == "email:") { em = $(i+1) }
+            }
+            gsub(/[^a-zA-Z0-9._@-]/, "", em)
+            if (em == "" || em == "dummy" || em == "api") next
+            if (ip == "" || ip == "127.0.0.1" || ip == "::1") next
+            k = em SUBSEP ip
+            if (!(k in BEST) || ts > BEST[k]) { BEST[k] = ts; U[em] = 1; CDNS[k] = is_cdn(ip) }
+        }
+        END {
+            if (NEWEST == 0) exit
+            for (k in BEST) {
+                split(k, K, SUBSEP); u = K[1]; ip = K[2]
+                age = (NEWEST - BEST[k]) + stale
+                if (age < 0) age = 0
+                if (age > ttl) continue
+                if (CDNS[k]) { IPS_CDN[u] = (IPS_CDN[u] == "" ? ip : IPS_CDN[u] "," ip) }
+                else          { IPS_DIR[u] = (IPS_DIR[u] == "" ? ip : IPS_DIR[u] "," ip); HASREAL[u] = 1 }
+                # aktivitas TERBARU yang menentukan, bukan yang tertua
+                if (!(u in AGE) || age < AGE[u]) AGE[u] = age
+                if (LIVE[ip]) HASLIVE[u] = 1
+            }
+            for (u in U) {
+                # User yang seluruh aktivitasnya lebih tua dari TTL dilewati di loop
+                # pertama (AGE tidak diisi) -> jangan dicetak sama sekali, kalau tidak
+                # ia muncul sebagai "online|0" palsu.
+                if (!(u in AGE)) continue
+                # IP edge CDN bukan identitas pelanggan: kalau tidak ada IP asli,
+                # kolom IP sengaja dikosongkan (menu menandainya "via CDN").
+                ips = HASREAL[u] ? IPS_DIR[u] : ""
+                st = (HASLIVE[u] || AGE[u] <= win) ? "online" : "offline"
+                printf "%s|%s|%d|%s\n", u, st, AGE[u], ips
+            }
+        }' 2>/dev/null
+}
+
+# ==========================================
 # SSH TUNNEL (Dropbear) — backend account
 # ==========================================
 SSH_GROUP="${SSH_GROUP:-ssh_tunnel}"

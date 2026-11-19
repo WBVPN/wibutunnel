@@ -4,6 +4,41 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.45 (2026-11-20)
+
+**Status online yang bisa dibuktikan (VLESS · VMESS · TROJAN · SSH).** Permintaan user: "on ya tercatat,
+off ya tidak". Versi lama hanya punya satu sinyal — ada baris `accepted` di `access.log` dalam 60 detik
+terakhir — sehingga pelanggan yang tersambung tapi idle hilang dari daftar, sementara yang sudah
+disconnect masih tampil sampai satu menit.
+
+- `common.sh`: `xray_presence()` menggabungkan **dua** sinyal — socket ESTABLISHED ke `:80/:443` dari
+  IP user (bukti paling kuat: selama socket terbuka user tetap online walau idle), dan aktivitas nyata
+  di `access.log` bila socket tak terlihat (jalur CDN). Keluaran `user|state|age|ip,ip`.
+- Umur memakai **aktivitas terbaru**, bukan yang tertua, dan dihitung relatif terhadap baris terbaru
+  di log + lamanya berkas tidak ditulis — supaya log yang tidak monoton atau beda zona waktu (xray UTC,
+  panel lokal) tidak membuat semua pelanggan tampak offline.
+- Edge Cloudflare bukan identitas pelanggan: bila user punya IP asli, IP edge dibuang dari laporan;
+  bila hanya terlihat edge, kolom IP dikosongkan dan statusnya `Online via CDN`.
+- `menu/cek-trafik.sh`: status `Online` / `Terakhir terlihat N lalu`; IP hanya dihitung saat user
+  benar-benar online, sehingga tidak ada lagi `MELANGGAR LIMIT IP` dari koneksi yang sudah tertutup.
+- `menu/bot-daemon.sh`: `/online` memakai presence yang sama — bot dan menu tidak bisa berbeda pendapat.
+- `tests/test_presence.sh` (baru, 20 asersi) mengunci kasus yang sebelumnya lolos: format `ss` asli
+  4 kolom, socket hanya di `:22` tidak dihitung, log tidak monoton, log bergeser 8 jam, user dua IP,
+  IP CDN historis, dan TTL.
+
+Dua bug ditemukan reviewer sebelum rilis dan diperbaiki di rilis yang sama: `ss` dengan filter `state`
+mengeluarkan 4 kolom sehingga `peer=$5` selalu kosong (sinyal socket mati total) → sekarang `$NF` +
+filter port; dan `continue` pada TTL tidak mengeluarkan user dari daftar sehingga muncul `online|0` palsu.
+
+Bukti di VPS uji: `adminwibu|online|5|140.213.58.222,140.213.219.37` dan menu menampilkan
+`Status: Aktif / Online`, `IP Aktif: 2 IP`. Jalur SSH (`ssh_session_count`, berbasis socket):
+saat sesi hidup `1`, setelah logout `0`.
+
+Suite: `test_ip_cdn` 18/18 · `test_ip_live` 13/13 · `test_kuota_latency` 15/15 ·
+`test_presence` 20/20 · `test_hardening` 149 PASS / 0 FAIL.
+
+---
+
 ### v4.1.44 (2026-11-20)
 
 **IP asli pelanggan di balik Cloudflare.** Laporan user: akun VLESS aktif dipakai, tapi menu

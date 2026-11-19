@@ -226,10 +226,31 @@ t "daftar rentang CF divalidasi (menolak baris CIDR rusak)" \
 # Satu definisi "online": menu wajib memakai live_ip_pairs() yang sama dengan algojo-wibu,
 # bukan logika sendiri (dulu: jendela 3 menit tanpa filter CDN -> menu lapor
 # "MELANGGAR LIMIT IP" padahal penegaknya melihat 1 IP).
-t "cek-trafik memakai live_ip_pairs (sumber tunggal dengan penegak limit)" \
-  "grep -q 'live_ip_pairs' \"\$REPO/menu/cek-trafik.sh\" && ! grep -q 'MATA ELANG V2' \"\$REPO/menu/cek-trafik.sh\""
+t "cek-trafik memakai xray_presence (bukan logika sendiri)" \
+  "grep -q 'xray_presence' \"\$REPO/menu/cek-trafik.sh\" && ! grep -q 'MATA ELANG V2' \"\$REPO/menu/cek-trafik.sh\""
 t "cek-trafik punya status khusus untuk pengguna yang hanya terlihat via CDN" \
-  "grep -q 'Aktif via CDN' \"\$REPO/menu/cek-trafik.sh\""
+  "grep -q 'Online via CDN' \"\$REPO/menu/cek-trafik.sh\""
+# Presence v4.1.45: status online harus bisa dibuktikan, bukan cuma "ada log 60 dtk terakhir".
+t "presence memakai socket ESTABLISHED (:80/:443) sebagai bukti hidup" \
+  "grep -q \"ss -Htn state established '( sport = :80 or sport = :443 )'\" \"\$REPO/common.sh\" && grep -q 'xray_socket_peers' \"\$REPO/common.sh\""
+# `ss -Htn state established` mengeluarkan 4 kolom (kolom State hilang), jadi peer = $NF.
+# Versi 4.1.45 pertama memakai $5 -> daftar peer selalu kosong dan sinyal socket mati.
+t "peer ss dibaca dari kolom TERAKHIR, bukan \$5 (format 4 kolom)" \
+  "grep -q 'peer=\$NF' \"\$REPO/common.sh\" && ! grep -q 'peer=\$5' \"\$REPO/common.sh\""
+t "hanya socket :80/:443 yang dihitung (socket SSH tidak dijadikan bukti xray)" \
+  "grep -q 'loc !~ /:(80|443)\$/' \"\$REPO/common.sh\""
+t "umur memakai aktivitas TERBARU (AGE = minimum, bukan maksimum)" \
+  "grep -q 'age < AGE\[u\]' \"\$REPO/common.sh\" && ! grep -q 'age > AGE\[u\]' \"\$REPO/common.sh\""
+t "presence tidak berhenti di baris tua pertama (log tidak monoton)" \
+  "! grep -q 'NOW - ts > ttl) exit' \"\$REPO/common.sh\""
+t "daftar IP hanya dari IP asli; edge CDN dikosongkan" \
+  "grep -q 'ips = HASREAL\[u\] ? IPS_DIR\[u\] : \"\"' \"\$REPO/common.sh\""
+t "bot /online memakai presence yang sama dengan menu" \
+  "grep -q 'xray_presence' \"\$REPO/menu/bot-daemon.sh\""
+t "menu menampilkan 'terakhir terlihat' untuk user yang sudah disconnect" \
+  "grep -q 'Terakhir terlihat' \"\$REPO/menu/cek-trafik.sh\""
+t "suite presence menguji format ss asli (4 kolom), log non-monoton, dan TZ beda" \
+  "grep -q 'sock4' \"\$REPO/tests/test_presence.sh\" && grep -q 'nonmono' \"\$REPO/tests/test_presence.sh\" && grep -q 'TZ beda' \"\$REPO/tests/test_presence.sh\""
 
 echo
 echo "=========== HASIL: $PASS PASS / $FAIL FAIL ==========="

@@ -886,8 +886,13 @@ check_login() {
         return
     fi
 
-    # liveness dari socket aktif; format: user|jumlah_ip|ip1, ip2
-    LOGIN_DATA=$(live_ip_pairs | awk '{u=$1; ips=$2; for(i=3;i<=NF;i++) ips=ips", " $i; print u "|" (NF-1) "|" ips}')
+    # [v4.1.45] presence: online = socket terbuka ATAU trafik <= ONLINE_WINDOW.
+    # Hanya user berstatus online yang dikirim; offline tidak masuk daftar.
+    # format: user|jumlah_ip|ip1, ip2
+    LOGIN_DATA=$(xray_presence 2>/dev/null | awk -F'|' '$2=="online" {
+                     n = split($4, a, ","); s = ""
+                     for (i = 1; i <= n; i++) if (a[i] != "") s = (s == "" ? a[i] : s ", " a[i])
+                     if (s != "") print $1 "|" n "|" s }')
 
     local back_cb="menu_${target_proto,,}"
     [[ "$target_proto" == "ALL" || -z "$target_proto" ]] && back_cb="menu_system"

@@ -24,6 +24,13 @@ DB_USAGE="/etc/wibutunnel/user_usage.db"
 # Mata Elang: Menangkap jenis protokol yang dilempar dari menu
 PROTOCOL_FILTER=${1^^}
 
+age_human() { # $1=detik
+    local a="${1:-0}"
+    if   (( a < 90 ));   then printf '%d detik' "$a"
+    elif (( a < 5400 )); then printf '%d menit' $(( a / 60 ))
+    else printf '%d jam' $(( a / 3600 )); fi
+}
+
 function convert_size() {
     local -i bytes=$1
     if [[ -z "$bytes" || "$bytes" == "0" ]]; then echo "0 B"; return; fi
@@ -59,25 +66,24 @@ for conf in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_e
     done < "$conf"
 done
 
-# [MATA ELANG v3] Sumber TUNGGAL: live_ip_pairs() dari common.sh -- jendela waktu
-# dan filter CDN-nya sama persis dengan yang dipakai algojo-wibu (penegak limit IP).
-# Versi lama punya logika sendiri (jendela 3 menit, tanpa filter CDN) sehingga menu
-# bisa melaporkan "MELANGGAR LIMIT IP" untuk hal yang tidak pernah ditegakkan.
-declare -A USER_IPS
-while IFS= read -r _line; do
-    [[ -z "$_line" ]] && continue
-    _u="${_line%% *}"; _ips="${_line#* }"
-    [[ -n "$_u" && "$_ips" != "$_line" ]] && USER_IPS["$_u"]="$_ips"
-done < <(live_ip_pairs 2>/dev/null)
-
-# Pengguna yang aktif HANYA lewat CDN (IP asli tidak terlihat): ditandai online,
-# tapi tidak dihitung sebagai IP aktif -- karena memang tidak bisa ditegakkan.
-declare -A USER_CDN
-while IFS= read -r _line; do
-    [[ -z "$_line" ]] && continue
-    _u="${_line%% *}"
-    [[ -n "$_u" && -z "${USER_IPS[$_u]:-}" ]] && USER_CDN["$_u"]=1
-done < <(WIBU_IP_IGNORE_CDN=0 live_ip_pairs 2>/dev/null)
+# [MATA ELANG v4] Sumber tunggal: xray_presence() dari common.sh.
+# Status online = ada SOCKET terbuka ke :80/:443 dari IP user itu, ATAU ada
+# trafik nyata dalam ONLINE_WINDOW detik. Pengguna yang sudah disconnect tetap
+# terlihat sebentar sebagai "terakhir terlihat N lalu" (PRESENCE_TTL), bukan
+# hilang mendadak -- supaya beda antara "mati" dan "tidak ada data" jelas.
+declare -A USER_IPS USER_STATE USER_AGE USER_CDN
+while IFS='|' read -r _u _st _age _ips; do
+    [[ -n "${_u:-}" ]] || continue
+    USER_STATE["$_u"]="$_st"
+    USER_AGE["$_u"]="${_age:-0}"
+    _ips="${_ips//,/ }"
+    USER_IPS["$_u"]="$_ips"
+    _all_cdn=1
+    for _ip in $_ips; do
+        ip_is_cdn "$_ip" || { _all_cdn=0; break; }
+    done
+    [[ "$_all_cdn" == "1" ]] && USER_CDN["$_u"]=1
+done < <(xray_presence 2>/dev/null)
 
 declare -A ALL_USERS
 while read -r line; do
@@ -112,6 +118,10 @@ else
         [[ -z "$limit_bw" || "$limit_bw" == "0" ]] && str_limit_bw="Unli" || str_limit_bw="${limit_bw} GB"
         
         ip_list=${USER_IPS[$user]}
+        # Hanya IP milik user yang sedang ONLINE yang dihitung. User offline tetap
+        # ditampilkan (dengan "terakhir terlihat") tapi IP-nya tidak dihitung, supaya
+        # tidak muncul "MELANGGAR LIMIT IP" untuk koneksi yang sudah lama tertutup.
+        [[ "${USER_STATE[$user]:-offline}" == "online" ]] || ip_list=""
         active_ip_count=$(echo "$ip_list" | wc -w)
         [[ -z "$ip_list" ]] && active_ip_count=0
         
@@ -121,10 +131,12 @@ else
             status="${RED}TERKUNCI / LOCKED ⛔${NC}"
         elif [[ "$limit_ip" != "0" && -n "$limit_ip" && $active_ip_count -gt $limit_ip ]]; then
             status="${RED}MELANGGAR LIMIT IP ⚠️${NC}"
-        elif [[ $active_ip_count -gt 0 ]]; then
+        elif [[ "${USER_STATE[$user]:-offline}" == "online" && -z "${USER_IPS[$user]:-}" ]]; then
+            status="${YELLOW}Online via CDN (IP asli tak terlihat) 🌐${NC}"
+        elif [[ "${USER_STATE[$user]:-offline}" == "online" ]]; then
             status="${GREEN}Aktif / Online ✅${NC}"
-        elif [[ -n "${USER_CDN[$user]:-}" ]]; then
-            status="${YELLOW}Aktif via CDN (IP asli tidak terlihat) 🌐${NC}"
+        elif [[ $active_ip_count -gt 0 || "${USER_STATE[$user]:-offline}" == "offline" ]]; then
+            status="${YELLOW}Terakhir terlihat $(age_human "${USER_AGE[$user]:-0}") lalu ⏱${NC}"
         else
             continue
         fi
@@ -144,8 +156,11 @@ else
         if [[ "$active_ip_count" -gt 0 ]]; then
             echo -e " ${WHITE}Alamat IP   :${NC}"
             for ip in $ip_list; do echo -e "   ${CYAN}• $ip${NC}"; done
-        elif [[ -n "${USER_CDN[$user]:-}" ]]; then
+        elif [[ "${USER_STATE[$user]:-offline}" == "online" ]]; then
             echo -e " ${WHITE}Alamat IP   :${NC} ${YELLOW}(tidak terlihat - trafik lewat Cloudflare, headernya tidak terbaca)${NC}"
+        fi
+        if [[ "${USER_STATE[$user]:-offline}" == "offline" && $active_ip_count -gt 0 ]]; then
+            echo -e " ${WHITE}Terakhir    :${NC} $(age_human "${USER_AGE[$user]:-0}") lalu (socket sudah tertutup)"
         fi
         echo -e "${LINE}"
     done
