@@ -184,6 +184,16 @@ for u in xray haproxy dropbear ws-stunnel telegram-bot algojo-expired wibu-daemo
 done
 [[ $_rmiss -eq 0 ]] && ok "README menyebut semua perintah, daemon & unit yang dikelola" || bad "README ketinggalan dari kode"
 
+echo "== I. Mode pemasangan & kestabilan uji =="
+t "install.sh menolak mode pipa tanpa domain (penjaga dini)" "grep -q 'stdin bukan terminal dan domain belum diberikan' \"\$REPO/install.sh\""
+t "verify-release mencetak perintah pasang yang benar (domain jadi argumen)" "grep -q 'bash -s -- vpn.domain-anda.com' \"\$REPO/tools/verify-release.sh\""
+# Fixture yang diuji lewat jendela waktu (LIVE_IP_WINDOW) WAJIB bertanggal relatif.
+# Tanggal mati membuat tes merah sendiri sehari kemudian tanpa ada kode yang berubah
+# (terbukti: fixture 2026/11/18 + jendela 86400 -> 2 asersi merah di 2026-11-19).
+t "fixture access.log test_ip_cdn bertanggal relatif, bukan tanggal mati" \
+  "! grep -qE '^[0-9]{4}/[0-9]{2}/[0-9]{2} ' \"\$REPO/tests/test_ip_cdn.sh\" && grep -q 'ts_ago' \"\$REPO/tests/test_ip_cdn.sh\""
+
 echo
 echo "=========== HASIL: $PASS PASS / $FAIL FAIL ==========="
-exit 0
+# Uji yang selalu keluar 0 tidak bisa menjaga apa pun: kirim status ke pemanggil.
+[[ $FAIL -eq 0 ]] && exit 0 || exit 1

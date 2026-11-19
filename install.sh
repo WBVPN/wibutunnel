@@ -2,11 +2,34 @@
 # ==========================================================================
 #  Bootstrap instalasi Wibutunnel
 #  Unduh setup.sh dari TAG RILIS -> verifikasi sha256 -> baru jalankan.
-#  Aman untuk satu baris:   curl -4 -fsSL https://wibu.loli.web.id/i | bash
+#
+#  Interaktif (domain & bot ditanyakan) — unduh berkasnya dulu:
+#      curl -4 -fsSL -o install.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh
+#      bash install.sh
+#
+#  Satu baris tanpa TTY — domain WAJIB jadi argumen:
+#      curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash -s -- vpn.domain-anda.com
+#
 #  Verifikasi saja (tidak memasang apa pun):
-#      curl -4 -fsSL https://wibu.loli.web.id/i | WIBU_BOOTSTRAP_ONLY=1 bash
+#      curl -4 -fsSL <url install.sh> | WIBU_BOOTSTRAP_ONLY=1 bash
+#
+#  KENAPA domain wajib di mode pipa: `... | bash` membuat stdin berisi skrip ini,
+#  dan proses setup.sh yang di-`exec` MEWARISINYA (sudah EOF) -> pertanyaan domain
+#  tidak bisa dijawab ("Input berakhir (EOF)"). Penjaga dini di bawah menghentikan
+#  mode itu dengan pesan jelas, sebelum menyentuh apt/konfigurasi.
 # ==========================================================================
 set -eu
+
+# Mode pipa tanpa domain = pasti gagal di tengah jalan (stdin EOF). Berhenti di sini.
+if [[ $# -eq 0 && -z "${DOMAIN:-}" && ! -t 0 ]]; then
+    echo "[!] stdin bukan terminal dan domain belum diberikan." >&2
+    echo "    Ini yang dimaksud 'mode pipa': stdin habis dipakai membaca skrip ini," >&2
+    echo "    jadi pertanyaan domain tidak bisa dijawab." >&2
+    echo "    Pakai salah satu:" >&2
+    echo "      curl -4 -fsSL <url install.sh> | bash -s -- vpn.domain-anda.com" >&2
+    echo "      curl -4 -fsSL -o install.sh <url install.sh> && bash install.sh" >&2
+    exit 1
+fi
 
 REF="${WIBU_REF:-v4.1.40}"
 EXPECT="06e912dee9e237e2df0124051521fd86a75ae44fbf2f2f0bd9a30781773c3527"

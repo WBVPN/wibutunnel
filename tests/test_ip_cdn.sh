@@ -53,14 +53,20 @@ done
 echo
 echo "--- 4: live_ip_pairs() membuang IP CDN ---"
 LOG="$TMP/access.log"
-cat > "$LOG" <<'EOF'
-2026/11/18 00:32:22.129836 from 162.158.218.19:13621 accepted tcp:l.apiok.net:443 [vless-ws-ntls >> direct] email: admin
-2026/11/18 00:32:23.096101 from 172.64.178.251:10076 accepted tcp:gateway.facebook.com:443 [vless-ws-ntls >> direct] email: admin
-2026/11/18 00:32:24.768444 from 104.23.232.30:12993 accepted tcp:z-m.example.com:443 [vless-ws-ntls >> direct] email: admin
-2026/11/18 00:32:25.000000 from 43.156.147.95:5555 accepted tcp:example.com:443 [vless-ws-ntls >> direct] email: admin
-2026/11/18 00:32:26.000000 from 2606:4700:3033::1:8080 accepted tcp:example.com:443 [vless-ws-ntls >> direct] email: cdonly
-2026/11/18 00:32:27.000000 from 8.8.8.8:53 accepted tcp:example.com:443 [vless-ws-ntls >> direct] email: biasa
-EOF
+# Fixture WAJIB bertanggal RELATIF. live_ip_pairs() membuang baris yang lebih tua
+# dari jendelanya, dan `awk` di dalamnya `exit` pada baris pertama yang kedaluwarsa.
+# Tanggal mati membuat tes ini MERAH SENDIRI satu hari setelah ditulis — bukan kode
+# yang rusak (terbukti 2026-11-19: fixture 2026/11/18 + LIVE_IP_WINDOW=86400 -> nol
+# baris terbaca, 2 asersi gagal tanpa ada perubahan kode).
+ts_ago() { date -d "-$1 seconds" '+%Y/%m/%d %H:%M:%S.%6N'; }
+{
+    printf '%s from 162.158.218.19:13621 accepted tcp:l.apiok.net:443 [vless-ws-ntls >> direct] email: admin\n'        "$(ts_ago 36)"
+    printf '%s from 172.64.178.251:10076 accepted tcp:gateway.facebook.com:443 [vless-ws-ntls >> direct] email: admin\n' "$(ts_ago 35)"
+    printf '%s from 104.23.232.30:12993 accepted tcp:z-m.example.com:443 [vless-ws-ntls >> direct] email: admin\n'      "$(ts_ago 34)"
+    printf '%s from 43.156.147.95:5555 accepted tcp:example.com:443 [vless-ws-ntls >> direct] email: admin\n'           "$(ts_ago 33)"
+    printf '%s from 2606:4700:3033::1:8080 accepted tcp:example.com:443 [vless-ws-ntls >> direct] email: cdonly\n'      "$(ts_ago 32)"
+    printf '%s from 8.8.8.8:53 accepted tcp:example.com:443 [vless-ws-ntls >> direct] email: biasa\n'                  "$(ts_ago 31)"
+} > "$LOG"
 OUT=$(XRAY_ACCESS_LOG="$LOG" LIVE_IP_WINDOW=86400 live_ip_pairs 2>/dev/null)
 ADMIN_IPS=$(echo "$OUT" | awk '$1=="admin"{ $1=""; print }' | xargs 2>/dev/null)
 if [[ "$ADMIN_IPS" == "43.156.147.95" ]]; then

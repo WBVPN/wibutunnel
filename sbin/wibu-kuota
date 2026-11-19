@@ -28,5 +28,5 @@ while IFS=: read -r u lim; do
     fi
 done < /etc/wibutunnel/limit_bw.db
 echo
-echo "Catatan: angka diperbarui tiap algojo-kuota berjalan (daemon ~1 menit)."
+echo "Catatan: jalur SSH diperbarui tiap ~5 detik (wibu-acct), jalur xray tiap algojo-kuota berjalan (~1 menit)."
 echo "SSH dihitung dari byte kernel akun itu; xray dari statistik resmi xray."

@@ -12,25 +12,29 @@ Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VP
 
 ## ⚡ Instalasi
 
-**Disarankan (interaktif — domain & bot ditanyakan):**
+**Cara 1 — interaktif (domain & bot ditanyakan):**
 
 ```bash
 curl -4 -fsSL -o install.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh
 bash install.sh
 ```
 
-**Satu baris tanpa TTY** (domain wajib jadi argumen; token bot diisi belakangan lewat menu):
+**Cara 2 — satu baris tanpa TTY** (domain **wajib** jadi argumen; token bot diisi belakangan lewat menu):
 
 ```bash
 curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash -s -- vpn.domain-anda.com
 ```
 
-Skrip resmi dari **Release GitHub**: mengunduh `setup.sh` dari **tag rilis**, **memverifikasi sha256**, baru
-menjalankannya. Hash tidak cocok → berhenti sebelum menyentuh apa pun.
+`install.sh` = bootstrap 43 baris dari **Release GitHub**: mengunduh `setup.sh` dari **tag rilis tetap**
+(cadangan jsDelivr bila GitHub mentok), **memverifikasi sha256**, baru menjalankannya. Hash tidak cocok →
+berhenti sebelum menyentuh apa pun. Mau memverifikasi tanpa memasang? Tambahkan `WIBU_BOOTSTRAP_ONLY=1`
+sebelum `bash`.
 
-> Kenapa bukan `... | bash` saja: pada mode pipa `stdin` dipakai skrip, sehingga pertanyaan domain
-> tidak bisa dijawab (`Input berakhir (EOF)`). Instalasi berhenti sebelum menyentuh konfigurasi apa pun.
-> Berikan domain sebagai argumen, atau jalankan berkasnya seperti contoh pertama.
+> ⚠️ **`... | bash` tanpa argumen domain selalu gagal.** Pada mode pipa, `stdin` habis dipakai membaca
+> skrip, dan proses `setup.sh` mewarisinya — jadi pertanyaan domain dijawab `Input berakhir (EOF)`.
+> Karena itu `install.sh` sekarang berhenti lebih awal dengan pesan jelas (sebelum apt/konfigurasi
+> disentuh) bila stdin bukan terminal dan domain belum diberikan. Pilih salah satu: domain sebagai
+> argumen (`| bash -s -- vpn.domain.com`), atau simpan berkasnya dulu lalu `bash install.sh`.
 
 | Syarat | |
 |---|---|
@@ -125,9 +129,15 @@ Trial: format `trial-xxxx` · 1 jam · 1 GB · terhapus otomatis saat habis.
 | Daemon | Cek | Aksi |
 |---|---|---|
 | `algojo-ssh` | limit sesi SSH | kunci 15 menit (auto-unlock) |
-| `algojo-wibu` | limit IP Xray | kunci 15 menit (auto-unlock) |
-| `algojo-kuota` | kuota bandwidth | akun biasa → recovery · trial → hapus |
+| `algojo-wibu` | limit IP Xray (jendela 60 dtk, IP CDN dibuang) | kunci 15 menit (auto-unlock) |
+| `algojo-kuota` | kuota bandwidth (jalur lambat, ~60 dtk) | akun biasa → recovery · trial → hapus |
 | `algojo-expired` | masa aktif | akun biasa → recovery · trial → hapus |
+| `wibu-acct` | sampler byte SSH tiap **0,5 dtk** + kuota SSH jalur cepat tiap **5 dtk** (`WIBU_QUOTA_EVERY`) | kunci seketika (≤5 dtk) + notifikasi |
+
+Jalur cepat `wibu-acct` memeriksa **hanya akun SSH** (tanpa `statsquery` xray, tanpa tulis config), ber-`flock`,
+dan idempoten lewat `locked_users.db` — jadi tidak bisa dobel-hitung/dobel-kunci dengan `algojo-kuota` yang
+tetap jalan tiap ~60 dtk. Teks pesan penguncian dibangun satu fungsi (`kuota_ssh_lock_message()`), dipakai
+jalur cepat maupun jalur lambat.
 
 ---
 
