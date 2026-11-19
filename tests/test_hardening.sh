@@ -190,6 +190,8 @@ t "install.sh menolak mode pipa tanpa domain (penjaga dini)" "grep -q 'stdin buk
 # butuh domain, jadi harus dikecualikan di syarat penjaganya.
 t "penjaga pipa mengecualikan WIBU_BOOTSTRAP_ONLY=1 (verifikasi saja tetap jalan)" \
   "grep -qE '! -t 0 && .*WIBU_BOOTSTRAP_ONLY' \"\$REPO/install.sh\""
+# Panjang berkas berubah tiap kali skripnya disentuh; angka mati di README jadi bohong tanpa suara.
+t "README tidak memaku jumlah baris install.sh" "! grep -qE 'bootstrap [0-9]+ baris' \"\$REPO/README.md\""
 t "verify-release mencetak perintah pasang yang benar (domain jadi argumen)" "grep -q 'bash -s -- vpn.domain-anda.com' \"\$REPO/tools/verify-release.sh\""
 # Fixture yang diuji lewat jendela waktu (LIVE_IP_WINDOW) WAJIB bertanggal relatif.
 # Tanggal mati membuat tes merah sendiri sehari kemudian tanpa ada kode yang berubah

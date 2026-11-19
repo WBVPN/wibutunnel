@@ -25,10 +25,19 @@ bash install.sh
 curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | bash -s -- vpn.domain-anda.com
 ```
 
-`install.sh` = bootstrap 43 baris dari **Release GitHub**: mengunduh `setup.sh` dari **tag rilis tetap**
+`install.sh` = bootstrap dari **Release GitHub**: mengunduh `setup.sh` dari **tag rilis tetap**
 (cadangan jsDelivr bila GitHub mentok), **memverifikasi sha256**, baru menjalankannya. Hash tidak cocok →
-berhenti sebelum menyentuh apa pun. Mau memverifikasi tanpa memasang? Tambahkan `WIBU_BOOTSTRAP_ONLY=1`
-sebelum `bash`.
+berhenti sebelum menyentuh apa pun.
+
+**Cek dulu tanpa memasang** (cetak tag + hash, `exit 0` bila cocok):
+
+```bash
+curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh | WIBU_BOOTSTRAP_ONLY=1 bash
+```
+
+Mode ini **tidak butuh domain**, jadi ia dikecualikan dari penjaga mode pipa di bawah — tetap jalan
+walau dipanggil lewat pipa. Contoh keluaran: `tag rilis : v4.1.41` → `hash : OK` →
+`[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
 
 > ⚠️ **`... | bash` tanpa argumen domain selalu gagal.** Pada mode pipa, `stdin` habis dipakai membaca
 > skrip, dan proses `setup.sh` mewarisinya — jadi pertanyaan domain dijawab `Input berakhir (EOF)`.
