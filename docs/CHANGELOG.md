@@ -4,6 +4,30 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.44 (2026-11-20)
+
+**IP asli pelanggan di balik Cloudflare.** Laporan user: akun VLESS aktif dipakai, tapi menu
+"ONLINE USERS (LIVE)" kosong dan IP-nya tidak terlihat. Penyebabnya bukan akunnya: semua paket
+datang dari edge Cloudflare (`162.158.x`, `172.64.x`, `104.23.x`), dan panel membuang IP CDN demi
+menjaga limit-IP. Padahal Cloudflare sudah mengirim IP asli client di header `CF-Connecting-IP`.
+
+- HAProxy (`http_hub80` & `http_hub443`) menjalankan `http-request set-src hdr(CF-Connecting-IP)`
+  sehingga sambungan ke Xray membawa IP asli lewat PROXY protocol v2 (sudah dipakai semua backend).
+  Xray pun mencatat IP asli, bukan IP edge.
+- Header **hanya** dipercaya bila sambungan datang dari rentang Cloudflare (`acl from_cf src -f
+  /etc/haproxy/cf-ip.lst`); daftar 22 rentang diunduh dari cloudflare.com dan divalidasi CIDR-nya,
+  dengan daftar bawaan sebagai cadangan. Tanpa pagar ini, siapa pun bisa memalsukan header dan
+  lolos dari limit IP.
+- `cek-trafik.sh` kini memakai `live_ip_pairs()` — sumber tunggal yang sama dengan `algojo-wibu` —
+  bukan logika sendiri (dulu: jendela 3 menit, tanpa filter CDN). Efek nyata: menu sempat
+  melaporkan "MELANGGAR LIMIT IP 87 IP" padahal penegaknya melihat 1 IP. Pengguna yang hanya
+  terlihat lewat CDN kini berstatus "Aktif via CDN (IP asli tidak terlihat)", bukan hilang.
+
+Verifikasi di VPS uji: setelah reload, 12 sambungan berturut-turut tercatat `from 140.213.42.251`
+(IP asli, bukan edge CF), menu menampilkan `Status: Aktif / Online`, `IP Aktif: 1 IP (Limit: 10 IP)`.
+
+---
+
 ### v4.1.43 (2026-11-19)
 
 **Tampilan uninstaller.** Tidak ada perubahan logika penghapusan — yang berubah hanya keluarannya,

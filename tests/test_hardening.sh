@@ -211,6 +211,26 @@ t "verify-release mencetak perintah pasang single-link + varian otomasi" \
 t "fixture access.log test_ip_cdn bertanggal relatif, bukan tanggal mati" \
   "! grep -qE '^[0-9]{4}/[0-9]{2}/[0-9]{2} ' \"\$REPO/tests/test_ip_cdn.sh\" && grep -q 'ts_ago' \"\$REPO/tests/test_ip_cdn.sh\""
 
+# --- IP asli di balik Cloudflare (v4.1.44) ---------------------------------
+# HAProxy meneruskan IP asli client lewat PROXY v2 (sudah dipakai semua backend),
+# jadi cukup menimpa src dari header CF-Connecting-IP -- TAPI hanya kalau sambungan
+# datang dari edge Cloudflare, supaya limit-IP tidak bisa dipalsukan header buatan.
+t "HAProxy: set-src dari CF-Connecting-IP ada di kedua hub (80 & 443)" \
+  "[ \$(grep -c 'set-src hdr(CF-Connecting-IP) if from_cf cf_client' \"\$REPO/setup.sh\") -eq 2 ]"
+t "HAProxy: header hanya dipercaya dari rentang Cloudflare (acl from_cf)" \
+  "grep -q 'acl from_cf src -f /etc/haproxy/cf-ip.lst' \"\$REPO/setup.sh\""
+t "daftar rentang CF dibuat SEBELUM haproxy.cfg ditulis (kalau tidak: haproxy gagal start)" \
+  "awk '/install -m 644 \\/tmp\\/cf-ip.lst \\/etc\\/haproxy\\/cf-ip.lst/{a=NR} /cat <<HFEOF > \\/etc\\/haproxy\\/haproxy.cfg/{b=NR} END{exit !(a && b && a<b)}' \"\$REPO/setup.sh\""
+t "daftar rentang CF divalidasi (menolak baris CIDR rusak)" \
+  "grep -q 'tidak valid (\$_bad baris)' \"\$REPO/setup.sh\""
+# Satu definisi "online": menu wajib memakai live_ip_pairs() yang sama dengan algojo-wibu,
+# bukan logika sendiri (dulu: jendela 3 menit tanpa filter CDN -> menu lapor
+# "MELANGGAR LIMIT IP" padahal penegaknya melihat 1 IP).
+t "cek-trafik memakai live_ip_pairs (sumber tunggal dengan penegak limit)" \
+  "grep -q 'live_ip_pairs' \"\$REPO/menu/cek-trafik.sh\" && ! grep -q 'MATA ELANG V2' \"\$REPO/menu/cek-trafik.sh\""
+t "cek-trafik punya status khusus untuk pengguna yang hanya terlihat via CDN" \
+  "grep -q 'Aktif via CDN' \"\$REPO/menu/cek-trafik.sh\""
+
 echo
 echo "=========== HASIL: $PASS PASS / $FAIL FAIL ==========="
 # Uji yang selalu keluar 0 tidak bisa menjaga apa pun: kirim status ke pemanggil.

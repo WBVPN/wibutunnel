@@ -59,14 +59,25 @@ for conf in /etc/xray/vless_exp.conf /etc/xray/vmess_exp.conf /etc/xray/trojan_e
     done < "$conf"
 done
 
-# [MATA ELANG V2 - NEW LOGIC] Deteksi real IP via Log 3 Menit (Support Cloudflare/CDN)
+# [MATA ELANG v3] Sumber TUNGGAL: live_ip_pairs() dari common.sh -- jendela waktu
+# dan filter CDN-nya sama persis dengan yang dipakai algojo-wibu (penegak limit IP).
+# Versi lama punya logika sendiri (jendela 3 menit, tanpa filter CDN) sehingga menu
+# bisa melaporkan "MELANGGAR LIMIT IP" untuk hal yang tidak pernah ditegakkan.
 declare -A USER_IPS
-THRESH=$(date -d '3 minutes ago' +'%Y/%m/%d %H:%M:%S')
-while IFS="|" read -r email count iplist; do
-    if [[ -n "$email" ]]; then
-        USER_IPS["$email"]="$iplist"
-    fi
-done < <(awk -v thresh="$THRESH" '{ if($1 ~ /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/ && $1" "$2 < thresh) exit; if(/accepted/){ for(i=1;i<=NF;i++){ if($i=="accepted"){ ip=$(i-1); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); break } }; email=$NF; gsub(/[^a-zA-Z0-9_-]/, "", email); if(email != "dummy" && email != "api" && ip != "127.0.0.1" && ip != "") { if (!seen[email, ip]++) { ips[email] = (ips[email] ? ips[email]" " : "") ip; counts[email]++ } } } } END { for (e in ips) print e "|" counts[e] "|" ips[e] }' <(tac /var/log/xray/access.log 2>/dev/null) 2>/dev/null)
+while IFS= read -r _line; do
+    [[ -z "$_line" ]] && continue
+    _u="${_line%% *}"; _ips="${_line#* }"
+    [[ -n "$_u" && "$_ips" != "$_line" ]] && USER_IPS["$_u"]="$_ips"
+done < <(live_ip_pairs 2>/dev/null)
+
+# Pengguna yang aktif HANYA lewat CDN (IP asli tidak terlihat): ditandai online,
+# tapi tidak dihitung sebagai IP aktif -- karena memang tidak bisa ditegakkan.
+declare -A USER_CDN
+while IFS= read -r _line; do
+    [[ -z "$_line" ]] && continue
+    _u="${_line%% *}"
+    [[ -n "$_u" && -z "${USER_IPS[$_u]:-}" ]] && USER_CDN["$_u"]=1
+done < <(WIBU_IP_IGNORE_CDN=0 live_ip_pairs 2>/dev/null)
 
 declare -A ALL_USERS
 while read -r line; do
@@ -75,6 +86,7 @@ while read -r line; do
 done < "$DB_BW"
 
 for u in "${!USER_IPS[@]}"; do ALL_USERS["$u"]=1; done
+for u in "${!USER_CDN[@]}"; do ALL_USERS["$u"]=1; done
 
 online_count=0
 
@@ -111,6 +123,8 @@ else
             status="${RED}MELANGGAR LIMIT IP ⚠️${NC}"
         elif [[ $active_ip_count -gt 0 ]]; then
             status="${GREEN}Aktif / Online ✅${NC}"
+        elif [[ -n "${USER_CDN[$user]:-}" ]]; then
+            status="${YELLOW}Aktif via CDN (IP asli tidak terlihat) 🌐${NC}"
         else
             continue
         fi
@@ -130,6 +144,8 @@ else
         if [[ "$active_ip_count" -gt 0 ]]; then
             echo -e " ${WHITE}Alamat IP   :${NC}"
             for ip in $ip_list; do echo -e "   ${CYAN}• $ip${NC}"; done
+        elif [[ -n "${USER_CDN[$user]:-}" ]]; then
+            echo -e " ${WHITE}Alamat IP   :${NC} ${YELLOW}(tidak terlihat - trafik lewat Cloudflare, headernya tidak terbaca)${NC}"
         fi
         echo -e "${LINE}"
     done

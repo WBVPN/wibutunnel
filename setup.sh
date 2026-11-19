@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==========================================
-# MASTER INSTALLER WIBU TUNNELING - v4.1.43
+# MASTER INSTALLER WIBU TUNNELING - v4.1.44
 # Zero-Lag Queue Daemon + Security Patch + Recovery System
 # ==========================================
 # RESIDUAL RISK (v4.1.8):
@@ -148,7 +148,7 @@ fi
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
-WIBU_REF="${WIBU_REF:-v4.1.43}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.44}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 
 # [C1] Pin + verifikasi instaleler Xray. Tanpa pin, menjalankan skrip hulu
@@ -392,7 +392,7 @@ echo "$domain" > /etc/xray/domain
 echo "$domain" > /root/domain
 
 # [PATCH VERSION] Teks versi yang akan tampil di Dashboard
-echo "4.1.43" > /etc/wibutunnel/version
+echo "4.1.44" > /etc/wibutunnel/version
 
 # Lock duration config (dipakai algojo-wibu & m-setting)
 [[ -f /etc/wibutunnel/lock.conf ]] || printf 'LOCK_DURATION=15\n' > /etc/wibutunnel/lock.conf
@@ -903,6 +903,47 @@ fi
 chown -R root:xray /etc/xray 2>/dev/null || true
 chmod 750 /etc/xray 2>/dev/null || true
 
+# --- Rentang IP Cloudflare (untuk MEMPERCAYAI header CF-Connecting-IP) ---
+# Dipakai ACL "from_cf" di http_hub443/http_hub80. Kalau daftar ini tidak ada,
+# HAProxy menolak start - jadi wajib dibuat sebelum config ditulis.
+mkdir -p /etc/haproxy
+if ! { curl -4 -fsSL --max-time 15 https://www.cloudflare.com/ips-v4; echo; \
+        curl -4 -fsSL --max-time 15 https://www.cloudflare.com/ips-v6; echo; } 2>/dev/null \
+       | grep -E '^[0-9a-f:./]+$' | sort -u > /tmp/cf-ip.lst || [ ! -s /tmp/cf-ip.lst ]; then
+    cat > /tmp/cf-ip.lst <<'CFLIST'
+103.21.244.0/22
+103.22.200.0/22
+103.31.4.0/22
+104.16.0.0/13
+104.24.0.0/14
+108.162.192.0/18
+131.0.72.0/222400:cb00::/32
+141.101.64.0/18
+162.158.0.0/15
+172.64.0.0/13
+173.245.48.0/20
+188.114.96.0/20
+190.93.240.0/20
+197.234.240.0/22
+198.41.128.0/17
+2405:8100::/32
+2405:b500::/32
+2606:4700::/32
+2803:f800::/32
+2a06:98c0::/29
+2c0f:f248::/32
+CFLIST
+    echo -e "\e[1;33m[!] Daftar IP Cloudflare gagal diunduh - memakai daftar bawaan.\e[0m"
+fi
+_bad=$(grep -cvE '^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$|^[0-9a-fA-F:]+(/[0-9]{1,3})?$' /tmp/cf-ip.lst 2>/dev/null); _bad=${_bad:-0}
+if [ ! -s /tmp/cf-ip.lst ] || [ "$_bad" -gt 0 ]; then
+    echo -e "\e[1;33m[!] Daftar IP Cloudflare tidak valid ($_bad baris) - memakai daftar bawaan.\e[0m"
+    printf '%s\n' 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 \
+        108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 \
+        162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 > /tmp/cf-ip.lst
+fi
+install -m 644 /tmp/cf-ip.lst /etc/haproxy/cf-ip.lst
+
 # HAProxy Config
 cat <<HFEOF > /etc/haproxy/haproxy.cfg
 global
@@ -992,6 +1033,12 @@ listen http_hub443
     bind 127.0.0.1:8444 accept-proxy
     mode http
     option forwardfor
+    # IP asli client di balik Cloudflare: header HANYA dipercaya dari edge CF,
+    # supaya limit-IP tetap tidak bisa dipalsukan. Hasilnya Xray mencatat IP
+    # asli (bukan 162.158.x/172.6x.x) karena sambungan ke 1008x pakai PROXY v2.
+    acl from_cf src -f /etc/haproxy/cf-ip.lst
+    acl cf_client hdr(CF-Connecting-IP) -m found
+    http-request set-src hdr(CF-Connecting-IP) if from_cf cf_client
     acl is_vless_grpc path_beg /vless/
     acl is_vless_grpc path_beg %2Fvless%2F
     acl is_vmess_grpc path_beg /vmess/
@@ -1015,6 +1062,12 @@ listen http_hub80
     bind 127.0.0.1:8445 accept-proxy
     mode http
     option forwardfor
+    # IP asli client di balik Cloudflare: header HANYA dipercaya dari edge CF,
+    # supaya limit-IP tetap tidak bisa dipalsukan. Hasilnya Xray mencatat IP
+    # asli (bukan 162.158.x/172.6x.x) karena sambungan ke 1008x pakai PROXY v2.
+    acl from_cf src -f /etc/haproxy/cf-ip.lst
+    acl cf_client hdr(CF-Connecting-IP) -m found
+    http-request set-src hdr(CF-Connecting-IP) if from_cf cf_client
     acl is_vless_ntls path_beg /vless-ntls
     acl is_vless_ntls path_beg %2Fvless-ntls
     acl is_vmess_ntls path_beg /vmess-ntls
@@ -1086,7 +1139,7 @@ chmod 644 /etc/wibutunnel/templates/haproxy.cfg
 # [FIX-K1] Rantai pasang: kode diambil dari REF TERPIN (bukan main) dan setiap berkas
 # diverifikasi terhadap SHA256SUMS milik ref yang sama. Fail-closed; bypass hanya via
 # WIBUTUNNEL_ALLOW_UNVERIFIED=1 (peringatan besar + dicatat). Untuk upgrade, naikkan tag.
-WIBU_REF="${WIBU_REF:-v4.1.43}"   # tag rilis TETAP (immutable)
+WIBU_REF="${WIBU_REF:-v4.1.44}"   # tag rilis TETAP (immutable)
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${WIBU_REF}"
 # [FIX-CACHE] Cache manifest HARUS per-ref: cache tetap membuat rilis berikutnya memverifikasi
 # berkas baru terhadap manifest LAMA (gejala: "hash tidak cocok" untuk berkas yang baru diubah,
@@ -1645,7 +1698,7 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # [FIX] Tulis ULANG penanda versi di akhir: data lama yang dipulihkan dari backup bisa
 # mengembalikan /etc/wibutunnel/version ke versi lama sehingga dashboard menampilkan versi salah.
-echo "4.1.43" > /etc/wibutunnel/version
+echo "4.1.44" > /etc/wibutunnel/version
 
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
