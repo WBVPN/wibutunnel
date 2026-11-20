@@ -78,7 +78,43 @@ systemctl stop telegram-webhook.socket 2>/dev/null
 systemctl disable telegram-webhook.socket 2>/dev/null
 systemctl stop wibutunnel-firewall.service wibutunnel-firewall.timer 2>/dev/null
 systemctl disable wibutunnel-firewall.service wibutunnel-firewall.timer 2>/dev/null
-ok "xray, haproxy, dropbear, ws-stunnel, wibu-daemon, bot, firewall"
+systemctl stop wibu-acct.service 2>/dev/null
+systemctl disable wibu-acct.service 2>/dev/null
+
+# Proses panel yang lolos dari `systemctl stop`.
+#
+# Jebakan yang terbukti di VPS uji (v4.1.46): `systemctl stop` TIDAK mematikan unit berstatus
+# "not-found" (file unitnya sudah hilang tapi prosesnya masih jalan). `wibu-acct` yang terus hidup
+# membuat /etc/wibutunnel/user_acct.db & user_usage.db muncul lagi tiap beberapa menit SETELAH
+# uninstall selesai — jadi VPS yang sudah "dibersihkan" jadi kotor lagi. `pgrep` juga tidak
+# menemukannya kalau polanya cuma `wibu-daemon`. Karena itu: matikan prosesnya secara eksplisit,
+# tunggu, lalu naikkan ke SIGKILL kalau masih hidup.
+kill_proses_panel() {
+    local pola=( '/usr/local/bin/wibu-acct' 'wibu-acct' 'wibu-audit-akun' 'algojo-wibu'
+                 'algojo-kuota' 'algojo-ssh' 'wibu-daemon' 'ws-stunnel' 'wibu-kuota'
+                 'wibu-udpgw' 'wibutunnel-firewall' 'network-tune' )
+    local p sisa
+    for p in "${pola[@]}"; do pkill -f "$p" >/dev/null 2>&1 || true; done
+    for _w in 1 2 3 4 5; do
+        sisa=0
+        for p in "${pola[@]}"; do pgrep -f "$p" >/dev/null 2>&1 && sisa=$((sisa + 1)); done
+        [ "$sisa" -eq 0 ] && break
+        sleep 1
+    done
+    if [ "$sisa" -ne 0 ]; then
+        for p in "${pola[@]}"; do pkill -9 -f "$p" >/dev/null 2>&1 || true; done
+        sleep 1
+        sisa=0
+        for p in "${pola[@]}"; do pgrep -f "$p" >/dev/null 2>&1 && sisa=$((sisa + 1)); done
+    fi
+    SISA_PROSES="$sisa"
+}
+kill_proses_panel
+if [ "${SISA_PROSES:-0}" -eq 0 ]; then
+    ok "xray, haproxy, dropbear, ws-stunnel, wibu-daemon, wibu-acct, bot, firewall"
+else
+    warn "masih ada proses panel hidup ($SISA_PROSES pola) — cek: ps -eo args | grep -E 'wibu|algojo'"
+fi
 
 step "2/7" "Backup data panel"
 SAVED="/root/wibutunnel-backup-$(date +%Y%m%d-%H%M%S)"
@@ -321,10 +357,19 @@ for _d in /etc/wibutunnel /etc/xray /etc/haproxy /usr/local/etc/xray /var/log/xr
 done
 SISA_UNIT=$(systemctl list-unit-files --no-legend --plain 2>/dev/null | grep -cE '^(wibu|xray|haproxy|dropbear|ws-stunnel|algojo|badvpn)')
 SISA_FAIL=$(systemctl --failed --no-legend 2>/dev/null | wc -l)
-if [ "$SISA_DIR" -eq 0 ] && [ "$SISA_UNIT" -eq 0 ] && [ "$SISA_FAIL" -eq 0 ]; then
-    ok "tidak ada sisa panel: direktori, unit, dan status systemd bersih"
+# Unit "not-found" tetap terdaftar di systemd walau file unitnya sudah dihapus; kalau masih aktif
+# berarti ada proses panel yang belum mati (lihat kill_proses_panel di step 1).
+SISA_NF=$(systemctl list-units --all --no-legend 2>/dev/null | awk '/not-found/ && /running|active/ {print $1}' | grep -cE 'wibu|xray|haproxy|dropbear|ws-stunnel|algojo|badvpn|telegram')
+SISA_PROC=$(ps -eo args 2>/dev/null | grep -cE '[w]ibu-acct|[w]ibu-daemon|[a]lgojo|[w]s-stunnel|[b]advpn-udpgw|[w]ibutunnel-firewall')
+if [ "$SISA_DIR" -eq 0 ] && [ "$SISA_UNIT" -eq 0 ] && [ "$SISA_FAIL" -eq 0 ] && [ "$SISA_NF" -eq 0 ] && [ "$SISA_PROC" -eq 0 ]; then
+    ok "tidak ada sisa panel: direktori, unit, proses, dan status systemd bersih"
 else
-    warn "sisa panel: $SISA_DIR direktori · $SISA_UNIT unit terdaftar · $SISA_FAIL unit gagal"
+    warn "sisa panel: $SISA_DIR direktori · $SISA_UNIT unit · $SISA_FAIL unit gagal · $SISA_NF unit not-found aktif · $SISA_PROC proses"
+fi
+# /etc/wibutunnel bisa dibuat ulang oleh proses/profil yang masih hidup; jangan tinggalkan jejaknya.
+if [ -e /etc/wibutunnel ]; then
+    rm -rf /etc/wibutunnel
+    [ -e /etc/wibutunnel ] && warn "/etc/wibutunnel muncul kembali setelah sapu bersih" || info "/etc/wibutunnel dihapus ulang setelah pemeriksaan sisa"
 fi
 
 printf '\n%s\n' "$LINE"

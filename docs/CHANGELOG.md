@@ -4,6 +4,26 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.47 (2026-11-20)
+
+**Uninstall tidak lagi meninggalkan proses yang menghidupkan kembali datanya.** Ditemukan saat
+membersihkan VPS uji: `/etc/wibutunnel/user_acct.db` dan `user_usage.db` **muncul lagi beberapa menit
+setelah uninstall selesai**, walau direktori itu sudah dihapus dan laporan uninstall berkata bersih.
+
+Penyebabnya: `systemctl stop` tidak mematikan unit berstatus `not-found`. File unit
+`wibu-acct.service` sudah dihapus di step 6, tapi prosesnya (`/usr/local/bin/wibu-acct`) masih hidup
+dan menulis ulang DB setiap beberapa menit. Pemeriksaan lama hanya melihat *file unit*
+(`systemctl list-unit-files`), sehingga unit `not-found` yang masih **running** tidak terhitung.
+
+- Step 1 sekarang memanggil `kill_proses_panel`: `pkill` untuk semua biner panel (wibu-acct,
+  wibu-audit-akun, algojo-*, wibu-daemon, ws-stunnel, wibu-kuota/udpgw, wibutunnel-firewall,
+  network-tune), menunggu 5 detik, lalu `pkill -9` bila masih hidup — hasilnya diperiksa.
+- Pemeriksaan sisa di akhir kini menghitung empat hal: direktori, unit terdaftar, unit gagal, **unit
+  `not-found` yang masih aktif**, dan **proses panel yang masih jalan**.
+- `/etc/wibutunnel` disapu sekali lagi setelah pemeriksaan; kalau muncul kembali, dilaporkan `warn`.
+- `tests/test_hardening.sh` +4 asersi (kill proses panel, penyebutan wibu-acct, hitung not-found &
+  proses, sapu ulang) → 160 PASS / 0 FAIL.
+
 ### v4.1.46 (2026-11-20)
 
 **Uninstaller benar-benar bersih — dan tidak lagi mengaku bersih.** Diuji di VPS uji: setelah

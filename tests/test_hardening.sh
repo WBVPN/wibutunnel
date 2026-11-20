@@ -153,6 +153,12 @@ t "uninstall menyapu ulang /etc/wibutunnel di akhir" "grep -q 'rm -rf /etc/wibut
 t "uninstall menghapus grup ssh_tunnel bila tak terpakai" "grep -q 'groupdel ssh_tunnel' \"\$REPO/uninstall.sh\""
 t "uninstall mereset status failed unit badvpn-udpgw" "grep -q 'reset-failed \$(systemctl list-units --all --no-legend' \"\$REPO/uninstall.sh\""
 t "uninstall menghitung sisa (direktori/unit/failed) dan melaporkannya" "grep -q 'SISA_DIR' \"\$REPO/uninstall.sh\" && grep -q 'sisa panel:' \"\$REPO/uninstall.sh\""
+# [v4.1.47] `systemctl stop` tidak mematikan unit "not-found": wibu-acct tetap hidup dan membuat
+# ulang /etc/wibutunnel/*.db beberapa menit SETELAH uninstall selesai.
+t "uninstall mematikan proses panel yang lolos dari systemctl (pkill + SIGKILL)" "grep -q 'kill_proses_panel' \"\$REPO/uninstall.sh\" && grep -q 'pkill -9 -f' \"\$REPO/uninstall.sh\""
+t "uninstall menyebut wibu-acct di daftar proses yang dimatikan" "grep -q \"'/usr/local/bin/wibu-acct'\" \"\$REPO/uninstall.sh\""
+t "uninstall menghitung unit not-found aktif & proses sisa" "grep -q 'SISA_NF' \"\$REPO/uninstall.sh\" && grep -q 'SISA_PROC' \"\$REPO/uninstall.sh\""
+t "uninstall menyapu /etc/wibutunnel lagi bila dibuat ulang proses" "grep -q 'muncul kembali setelah sapu bersih' \"\$REPO/uninstall.sh\""
 t "dukungan Debian 12: rsyslog ikut dipasang (/dev/log ada)" "grep -q 'python3 rsyslog' \"\$REPO/setup.sh\""
 t "NTP punya fallback (ntp tidak ada di bookworm minimal)" "grep -q 'systemd-timesyncd' \"\$REPO/setup.sh\""
 t "penjaga OS menyebut versi yang didukung" "grep -q 'Didukung: Ubuntu 20.04/22.04/24.04, Debian 11/12' \"\$REPO/setup.sh\""
