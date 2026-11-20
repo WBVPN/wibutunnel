@@ -359,7 +359,9 @@ SISA_UNIT=$(systemctl list-unit-files --no-legend --plain 2>/dev/null | grep -cE
 SISA_FAIL=$(systemctl --failed --no-legend 2>/dev/null | wc -l)
 # Unit "not-found" tetap terdaftar di systemd walau file unitnya sudah dihapus; kalau masih aktif
 # berarti ada proses panel yang belum mati (lihat kill_proses_panel di step 1).
-SISA_NF=$(systemctl list-units --all --no-legend 2>/dev/null | awk '/not-found/ && /running|active/ {print $1}' | grep -cE 'wibu|xray|haproxy|dropbear|ws-stunnel|algojo|badvpn|telegram')
+# Perhatikan: jangan pakai /active/ saja — string "inactive" juga cocok dan membuat unit mati
+# dihitung sebagai sisa. Kolom 4 adalah state aktif (active|inactive|failed), kolom 3 load state.
+SISA_NF=$(systemctl list-units --all --no-legend 2>/dev/null | awk '$3=="not-found" && ($4=="active" || $4=="activating") {print $2}' | grep -cE 'wibu|xray|haproxy|dropbear|ws-stunnel|algojo|badvpn|telegram')
 SISA_PROC=$(ps -eo args 2>/dev/null | grep -cE '[w]ibu-acct|[w]ibu-daemon|[a]lgojo|[w]s-stunnel|[b]advpn-udpgw|[w]ibutunnel-firewall')
 if [ "$SISA_DIR" -eq 0 ] && [ "$SISA_UNIT" -eq 0 ] && [ "$SISA_FAIL" -eq 0 ] && [ "$SISA_NF" -eq 0 ] && [ "$SISA_PROC" -eq 0 ]; then
     ok "tidak ada sisa panel: direktori, unit, proses, dan status systemd bersih"

@@ -159,6 +159,8 @@ t "uninstall mematikan proses panel yang lolos dari systemctl (pkill + SIGKILL)"
 t "uninstall menyebut wibu-acct di daftar proses yang dimatikan" "grep -q \"'/usr/local/bin/wibu-acct'\" \"\$REPO/uninstall.sh\""
 t "uninstall menghitung unit not-found aktif & proses sisa" "grep -q 'SISA_NF' \"\$REPO/uninstall.sh\" && grep -q 'SISA_PROC' \"\$REPO/uninstall.sh\""
 t "uninstall menyapu /etc/wibutunnel lagi bila dibuat ulang proses" "grep -q 'muncul kembali setelah sapu bersih' \"\$REPO/uninstall.sh\""
+# /active/ juga cocok dengan string "inactive" -> unit mati ikut dihitung sebagai sisa (terbukti 2026-11-20).
+t "hitung unit not-found tidak salah kena 'inactive'" "grep -q 'not-found\\\" && (\\\$4==\\\"active\\\"' \"\$REPO/uninstall.sh\""
 t "dukungan Debian 12: rsyslog ikut dipasang (/dev/log ada)" "grep -q 'python3 rsyslog' \"\$REPO/setup.sh\""
 t "NTP punya fallback (ntp tidak ada di bookworm minimal)" "grep -q 'systemd-timesyncd' \"\$REPO/setup.sh\""
 t "penjaga OS menyebut versi yang didukung" "grep -q 'Didukung: Ubuntu 20.04/22.04/24.04, Debian 11/12' \"\$REPO/setup.sh\""

@@ -4,6 +4,16 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.48 (2026-11-20)
+
+**Pemeriksaan sisa uninstall tidak lagi salah hitung.** Pola `awk '/not-found/ && /running|active/'`
+juga cocok dengan state **`inactive`**, sehingga unit panel yang sudah mati pun dihitung sebagai sisa
+dan memunculkan `warn` padahal VPS sudah bersih (terlihat di VPS uji: `wibu-acct.service not-found
+inactive dead` dihitung sebagai sisa aktif).
+
+- Pencocokan sekarang memakai kolom yang tepat: `$3=="not-found" && ($4=="active" || $4=="activating")`.
+- `tests/test_hardening.sh` +1 asersi (161 asersi) mengunci pola ini supaya tidak kembali longgar.
+
 ### v4.1.47 (2026-11-20)
 
 **Uninstall tidak lagi meninggalkan proses yang menghidupkan kembali datanya.** Ditemukan saat
