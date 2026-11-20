@@ -345,11 +345,43 @@ fi
 rm -rf /etc/wibutunnel /etc/xray /etc/haproxy /usr/local/etc/xray /var/log/xray /config
 rm -f /etc/systemd/system/dropbear.service /etc/systemd/system/haproxy.service
 rm -rf /etc/systemd/system/haproxy.service.d /etc/systemd/system/dropbear.service.d
+# Unit panel yang masih termuat systemd walau berkasnya sudah dihapus ("not-found") tidak bisa
+# dihentikan lewat `systemctl stop <unit>` biasa, dan state "active (exited)" milik oneshot seperti
+# wibutunnel-firewall tetap tersangkut. Hentikan per nama, lalu bersihkan state-nya.
+for _u in wibutunnel-firewall.service wibutunnel-firewall.timer wibu-acct.service xray.service \
+          haproxy.service dropbear.service ws-stunnel.service wibu-daemon.service network-tune.service \
+          telegram-bot.service telegram-webhook.socket algojo-expired.service; do
+    systemctl stop "$_u" >/dev/null 2>&1 || true
+    systemctl reset-failed "$_u" >/dev/null 2>&1 || true
+done
+systemctl stop system-badvpn-udpgw.slice >/dev/null 2>&1 || true
 systemctl daemon-reload >/dev/null 2>&1 || true
 systemctl reset-failed >/dev/null 2>&1 || true
 if getent group ssh_tunnel >/dev/null 2>&1; then
     groupdel ssh_tunnel 2>/dev/null && info "grup ssh_tunnel dihapus" || warn "grup ssh_tunnel tidak bisa dihapus (masih dipakai akun lain)"
 fi
+
+# Unit oneshot dengan RemainAfterExit (mis. wibutunnel-firewall) tetap berstatus "active (exited)"
+# walau file unitnya sudah dihapus, dan itu ikut terhitung sebagai sisa. `systemctl stop` masih
+# sanggup membersihkannya selama unit masih dimuat systemd — jadi coba sekali lagi di akhir.
+for _u in wibutunnel-firewall.service wibutunnel-firewall.timer wibu-acct.service wibu-daemon.service \
+          ws-stunnel.service network-tune.service telegram-bot.service telegram-webhook.socket \
+          algojo-expired.service wibu-acct.service; do
+    systemctl stop "$_u" >/dev/null 2>&1 || true
+done
+systemctl daemon-reload >/dev/null 2>&1 || true
+systemctl reset-failed >/dev/null 2>&1 || true
+
+# Unit oneshot dengan RemainAfterExit (mis. wibutunnel-firewall) tetap berstatus "active (exited)"
+# walau file unitnya sudah dihapus; `systemctl stop` masih sanggup membersihkannya selama unit
+# masih dimuat systemd, jadi coba sekali lagi di akhir sebelum menghitung sisa.
+for _u in wibutunnel-firewall.service wibutunnel-firewall.timer wibu-acct.service wibu-daemon.service \
+          ws-stunnel.service network-tune.service telegram-bot.service telegram-webhook.socket \
+          algojo-expired.service; do
+    systemctl stop "$_u" >/dev/null 2>&1 || true
+done
+systemctl daemon-reload >/dev/null 2>&1 || true
+systemctl reset-failed >/dev/null 2>&1 || true
 
 SISA_DIR=0
 for _d in /etc/wibutunnel /etc/xray /etc/haproxy /usr/local/etc/xray /var/log/xray; do
@@ -361,7 +393,10 @@ SISA_FAIL=$(systemctl --failed --no-legend 2>/dev/null | wc -l)
 # berarti ada proses panel yang belum mati (lihat kill_proses_panel di step 1).
 # Perhatikan: jangan pakai /active/ saja — string "inactive" juga cocok dan membuat unit mati
 # dihitung sebagai sisa. Kolom 4 adalah state aktif (active|inactive|failed), kolom 3 load state.
-SISA_NF=$(systemctl list-units --all --no-legend 2>/dev/null | awk '$3=="not-found" && ($4=="active" || $4=="activating") {print $2}' | grep -cE 'wibu|xray|haproxy|dropbear|ws-stunnel|algojo|badvpn|telegram')
+# Unit oneshot yang sudah kelar tetap terlihat "active (exited)"; itu bukan proses yang hidup.
+# Yang benar-benar mengkhawatirkan cuma state "running" (dulu: wibu-acct hidup terus dan menulis
+# ulang /etc/wibutunnel/*.db). Lihat kolom 5 = sub-state.
+SISA_NF=$(systemctl list-units --all --no-legend 2>/dev/null | awk '$3=="not-found" && $4=="active" && $5=="running" {print $2}' | grep -cE 'wibu|xray|haproxy|dropbear|ws-stunnel|algojo|badvpn|telegram')
 SISA_PROC=$(ps -eo args 2>/dev/null | grep -cE '[w]ibu-acct|[w]ibu-daemon|[a]lgojo|[w]s-stunnel|[b]advpn-udpgw|[w]ibutunnel-firewall')
 if [ "$SISA_DIR" -eq 0 ] && [ "$SISA_UNIT" -eq 0 ] && [ "$SISA_FAIL" -eq 0 ] && [ "$SISA_NF" -eq 0 ] && [ "$SISA_PROC" -eq 0 ]; then
     ok "tidak ada sisa panel: direktori, unit, proses, dan status systemd bersih"

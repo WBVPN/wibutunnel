@@ -4,6 +4,21 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.49 (2026-11-20)
+
+**Sisa terakhir dari uji pasang→uninstall di VPS uji.** Setelah uninstall v4.1.48, VPS sudah bersih —
+`/etc/wibutunnel` tidak muncul lagi setelah ditunggu 4 menit, 0 paket sisa, 0 unit gagal, port hanya
+22 + 53 — kecuali satu: `wibutunnel-firewall.service` masih terdaftar sebagai **`not-found active
+(exited)`**. Unit oneshot dengan `RemainAfterExit` tetap "active" walaupun file unitnya sudah dihapus,
+sehingga terhitung sebagai sisa dan laporan uninstall menjadi `warn` padahal tidak ada proses hidup.
+
+- Di akhir uninstall, unit panel dihentikan sekali lagi (`systemctl stop` masih sanggup membersihkan
+  unit yang sudah `not-found` selama masih dimuat systemd) sebelum sisa dihitung.
+- Pencocokan unit `not-found` dipersempit ke sub-state `running` saja (`$3=="not-found" &&
+  $4=="active" && $5=="running"`): yang berbahaya memang proses yang benar-benar hidup (dulu
+  `wibu-acct` menulis ulang DB), sedangkan unit `exited` tidak.
+- `tests/test_hardening.sh` disesuaikan → 161 PASS / 0 FAIL.
+
 ### v4.1.48 (2026-11-20)
 
 **Pemeriksaan sisa uninstall tidak lagi salah hitung.** Pola `awk '/not-found/ && /running|active/'`
