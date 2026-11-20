@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.45
+# 🦋 WIBUTUNNEL v4.1.46
 
 Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.45-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.46-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 **[Instalasi](#-instalasi)** · **[Fitur](#-fitur)** · **[Bot Telegram](#-bot-telegram)** · **[Perintah](#-perintah)** · **[Port](#-port--alur)** · **[Keamanan](#-keamanan)** · **[Uji](#-uji)** · **[Troubleshooting](#-troubleshooting)** · **[Changelog](docs/CHANGELOG.md)**
@@ -44,7 +44,7 @@ Cek tag + hash tanpa memasang apa pun (`exit 0` bila cocok):
 WIBU_BOOTSTRAP_ONLY=1 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
 ```
 
-Contoh keluaran: `tag rilis : v4.1.45` → `hash : OK` → `[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
+Contoh keluaran: `tag rilis : v4.1.46` → `hash : OK` → `[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
 
 </details>
 
@@ -64,12 +64,12 @@ Contoh keluaran: `tag rilis : v4.1.45` → `hash : OK` → `[i] WIBU_BOOTSTRAP_O
 ```bash
 # pasang (langsung dari repo, tanpa perantara)
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: b896d270125476a41e380225bf03a66e15191ca7a54fabbebeeb57e1a35e8a87
+sha256sum setup.sh     # harap: 3e7e14247320b90e05a1ca627171128610bdcd1d73dfb41f0acf7fb53a37e403
 bash setup.sh
 
 # hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)
 curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
-sha256sum uninstall.sh   # harap: 8972f8c2f068dbe2196135691e3b6757c290d92a9ae4cde1e23b53f7dccc6922
+sha256sum uninstall.sh   # harap: fe683074622ee493e14e9d845688f2e40f266464967a9d5be3d9597a21a040df
 bash uninstall.sh
 ```
 

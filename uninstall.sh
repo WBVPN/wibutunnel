@@ -210,7 +210,15 @@ pkill -f 'badvpn-udpgw' >/dev/null 2>&1 || true
 rm -f /usr/sbin/badvpn-udpgw /usr/local/sbin/badvpn-udpgw /usr/local/bin/badvpn-udpgw
 rm -rf /usr/local/src/badvpn-src
 systemctl daemon-reload
-ok "menu, daemon, unit systemd, badvpn-udpgw"
+# Unit templated badvpn-udpgw@ yang file-nya sudah dihapus tetap tersimpan systemd sebagai
+# unit "not-found failed" dan ikut dihitung di `systemctl --failed`. Tanpa reset-failed,
+# VPS terlihat masih punya 6 unit gagal milik panel.
+systemctl reset-failed $(systemctl list-units --all --no-legend 'badvpn-udpgw@*' 2>/dev/null | awk '{print $1}') >/dev/null 2>&1 || true
+if pgrep -f badvpn-udpgw >/dev/null 2>&1; then
+    warn "proses badvpn-udpgw masih hidup (port 7100-7600)"
+else
+    ok "menu, daemon, unit systemd, badvpn-udpgw"
+fi
 
 step "7/7" "Sisa sistem: profil, fstab, swap, paket"
 # Hapus logrotate
@@ -262,9 +270,62 @@ if [[ -f /etc/default/dropbear ]] && grep -q 'wibutunnel' /etc/default/dropbear 
 fi
 
 # Uninstall paket bawaan (opsional)
-apt-get remove --purge -y haproxy vnstat dropbear >/dev/null 2>&1
-apt-get autoremove -y >/dev/null 2>&1
-ok "haproxy, vnstat, dropbear di-purge"
+#
+# Jebakan yang terbukti di VPS uji (v4.1.45): selama proses rilis, `unattended-upgrades`
+# memegang /var/lib/dpkg/lock-frontend. `apt-get remove --purge` gagal seketika, keluarannya
+# dibuang ke /dev/null, dan uninstaller tetap mencetak ✓ — padahal haproxy dan dropbear masih
+# terpasang. Sekarang: tunggu kunci, purge per paket, lalu VERIFIKASI dengan `dpkg -s`.
+for _i in $(seq 1 150); do
+    fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+    sleep 2
+done
+PAKET_SISA=""
+for _p in haproxy vnstat dropbear; do
+    dpkg -s "$_p" >/dev/null 2>&1 || continue
+    apt-get remove --purge -y "$_p" >/dev/null 2>&1 || true
+    dpkg -s "$_p" >/dev/null 2>&1 && PAKET_SISA="$PAKET_SISA $_p"
+done
+# Sekali coba lagi: unattended-upgrades kadang baru melepas kunci setelah beberapa menit.
+if [ -n "$PAKET_SISA" ]; then
+    info "purge belum berhasil ($PAKET_SISA) — tunggu 60 dtk lalu coba sekali lagi"
+    sleep 60
+    for _p in $PAKET_SISA; do
+        apt-get remove --purge -y "$_p" >/dev/null 2>&1 || true
+    done
+    PAKET_SISA=""
+    for _p in haproxy vnstat dropbear; do
+        dpkg -s "$_p" >/dev/null 2>&1 && PAKET_SISA="$PAKET_SISA $_p"
+    done
+fi
+apt-get autoremove -y >/dev/null 2>&1 || true
+if [ -z "$PAKET_SISA" ]; then
+    ok "haproxy, vnstat, dropbear di-purge (dicek ulang dengan dpkg -s)"
+else
+    warn "masih terpasang:$PAKET_SISA — jalankan: apt-get remove --purge -y$PAKET_SISA"
+fi
+
+# Sapu bersih sisa panel. /etc/wibutunnel bisa HIDUP LAGI setelah step 4 kalau cron/proses panel
+# sempat menulis DB-nya; grup ssh_tunnel dan sisa unit juga tidak dibersihkan versi sebelumnya.
+rm -rf /etc/wibutunnel /etc/xray /etc/haproxy /usr/local/etc/xray /var/log/xray /config
+rm -f /etc/systemd/system/dropbear.service /etc/systemd/system/haproxy.service
+rm -rf /etc/systemd/system/haproxy.service.d /etc/systemd/system/dropbear.service.d
+systemctl daemon-reload >/dev/null 2>&1 || true
+systemctl reset-failed >/dev/null 2>&1 || true
+if getent group ssh_tunnel >/dev/null 2>&1; then
+    groupdel ssh_tunnel 2>/dev/null && info "grup ssh_tunnel dihapus" || warn "grup ssh_tunnel tidak bisa dihapus (masih dipakai akun lain)"
+fi
+
+SISA_DIR=0
+for _d in /etc/wibutunnel /etc/xray /etc/haproxy /usr/local/etc/xray /var/log/xray; do
+    [ -e "$_d" ] && SISA_DIR=$((SISA_DIR + 1))
+done
+SISA_UNIT=$(systemctl list-unit-files --no-legend --plain 2>/dev/null | grep -cE '^(wibu|xray|haproxy|dropbear|ws-stunnel|algojo|badvpn)')
+SISA_FAIL=$(systemctl --failed --no-legend 2>/dev/null | wc -l)
+if [ "$SISA_DIR" -eq 0 ] && [ "$SISA_UNIT" -eq 0 ] && [ "$SISA_FAIL" -eq 0 ]; then
+    ok "tidak ada sisa panel: direktori, unit, dan status systemd bersih"
+else
+    warn "sisa panel: $SISA_DIR direktori · $SISA_UNIT unit terdaftar · $SISA_FAIL unit gagal"
+fi
 
 printf '\n%s\n' "$LINE"
 printf ' %s✓ UNINSTALL SELESAI%s\n' "$C_OK" "$C_OFF"

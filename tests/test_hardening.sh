@@ -143,6 +143,16 @@ t "uninstall menghapus semua skrip yang dipasang" "for s in algojo-ssh lock-user
 t "uninstall menghapus akun SSH panel (dari ssh_exp.conf, dibatasi grup)" "grep -q 'hapus_akun_panel /etc/xray/ssh_exp.conf' \"\$REPO/uninstall.sh\" && grep -q 'id -nG' \"\$REPO/uninstall.sh\""
 t "uninstall hanya menghapus /swapfile buatan panel (penanda)" "grep -q '.swapfile_panel' \"\$REPO/uninstall.sh\" && grep -q '.swapfile_panel' \"\$REPO/setup.sh\" && ! grep -qE '^(swapoff|rm -f) /swapfile' \"\$REPO/uninstall.sh\""
 t "tidak ada flush tabel mangle (aturan VPS tidak boleh dibuang)" "! grep -qE '^[[:space:]]*iptables -t mangle -[FX]' \"\$REPO/uninstall.sh\" \"\$REPO/setup.sh\" \"\$REPO/sbin/network-tune.sh\""
+# [v4.1.46] Uninstall dilaporkan "✓ haproxy, vnstat, dropbear di-purge" padahal cuma vnstat yang
+# hilang: `apt-get remove --purge` ditolak karena kunci dpkg dipegang unattended-upgrades, dan
+# keluarannya dibuang ke /dev/null. Sekarang: tunggu kunci, purge per paket, verifikasi dpkg -s.
+t "uninstall menunggu kunci dpkg sebelum purge" "grep -q 'fuser /var/lib/dpkg/lock-frontend' \"\$REPO/uninstall.sh\""
+t "uninstall memverifikasi hasil purge dengan dpkg -s" "grep -q 'PAKET_SISA' \"\$REPO/uninstall.sh\" && grep -q 'dpkg -s \"\$_p\"' \"\$REPO/uninstall.sh\""
+t "uninstall tidak lagi melaporkan ✓ purge tanpa bukti" "! grep -qE '^apt-get remove --purge -y haproxy' \"\$REPO/uninstall.sh\""
+t "uninstall menyapu ulang /etc/wibutunnel di akhir" "grep -q 'rm -rf /etc/wibutunnel /etc/xray /etc/haproxy' \"\$REPO/uninstall.sh\""
+t "uninstall menghapus grup ssh_tunnel bila tak terpakai" "grep -q 'groupdel ssh_tunnel' \"\$REPO/uninstall.sh\""
+t "uninstall mereset status failed unit badvpn-udpgw" "grep -q 'reset-failed \$(systemctl list-units --all --no-legend' \"\$REPO/uninstall.sh\""
+t "uninstall menghitung sisa (direktori/unit/failed) dan melaporkannya" "grep -q 'SISA_DIR' \"\$REPO/uninstall.sh\" && grep -q 'sisa panel:' \"\$REPO/uninstall.sh\""
 t "dukungan Debian 12: rsyslog ikut dipasang (/dev/log ada)" "grep -q 'python3 rsyslog' \"\$REPO/setup.sh\""
 t "NTP punya fallback (ntp tidak ada di bookworm minimal)" "grep -q 'systemd-timesyncd' \"\$REPO/setup.sh\""
 t "penjaga OS menyebut versi yang didukung" "grep -q 'Didukung: Ubuntu 20.04/22.04/24.04, Debian 11/12' \"\$REPO/setup.sh\""

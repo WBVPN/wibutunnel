@@ -4,6 +4,27 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.46 (2026-11-20)
+
+**Uninstaller benar-benar bersih — dan tidak lagi mengaku bersih.** Diuji di VPS uji: setelah
+uninstall v4.1.45, `[7/7]` mencetak `✓ haproxy, vnstat, dropbear di-purge` padahal hanya **vnstat**
+yang benar-benar hilang. Penyebabnya: `apt-get remove --purge` ditolak karena kunci dpkg sedang
+dipegang `unattended-upgrades`, keluarannya dibuang ke `/dev/null`, dan langkah itu tetap melaporkan
+✓. Sisa lain: `/etc/wibutunnel/` (DB akun & pemakaian), grup `ssh_tunnel`, dan 6 unit
+`badvpn-udpgw@*` berstatus *failed*.
+
+- Menunggu kunci dpkg (maks 5 menit) sebelum purge, mencoba sekali lagi bila masih gagal, lalu
+  **memverifikasi hasilnya dengan `dpkg -s`** — laporan `ok` sekarang berarti paket benar-benar hilang,
+  kalau tidak akan tampil `warn` beserta perintah perbaikannya.
+- Sapu bersih di akhir: `/etc/wibutunnel` (bisa hidup lagi kalau cron panel sempat menulis DB),
+  `/etc/xray`, `/etc/haproxy`, `/usr/local/etc/xray`, `/var/log/xray`, unit dropbear/haproxy,
+  `systemctl reset-failed`, dan `groupdel ssh_tunnel` bila sudah tidak dipakai.
+- Unit `badvpn-udpgw@*` di-`reset-failed` sehingga tidak lagi muncul sebagai unit gagal.
+- Ringkasan akhir menghitung sisa: direktori + unit terdaftar + unit gagal; hasil kosong = benar-benar
+  bersih.
+- `tests/test_hardening.sh` +7 asersi (menunggu kunci dpkg, verifikasi `dpkg -s`, sapu ulang
+  `/etc/wibutunnel`, `groupdel ssh_tunnel`, `reset-failed badvpn`, ringkasan sisa).
+
 ### v4.1.45 (2026-11-20)
 
 **Status online yang bisa dibuktikan (VLESS · VMESS · TROJAN · SSH).** Permintaan user: "on ya tercatat,

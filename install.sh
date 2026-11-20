@@ -41,8 +41,8 @@ if [[ $# -eq 0 && -z "${DOMAIN:-}" && ! -t 0 ]] && ! have_tty && [[ "${WIBU_BOOT
     exit 1
 fi
 
-REF="${WIBU_REF:-v4.1.45}"
-EXPECT="b896d270125476a41e380225bf03a66e15191ca7a54fabbebeeb57e1a35e8a87"
+REF="${WIBU_REF:-v4.1.46}"
+EXPECT="3e7e14247320b90e05a1ca627171128610bdcd1d73dfb41f0acf7fb53a37e403"
 PRIMARY="https://raw.githubusercontent.com/WBVPN/wibutunnel/$REF/setup.sh"
 MIRROR="https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@$REF/setup.sh"
 
