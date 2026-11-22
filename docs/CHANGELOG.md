@@ -4,6 +4,22 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### Belum dirilis
+
+**Merapikan pengalaman instalasi mandiri (tanpa dampingan).** Dua perubahan kecil, tanpa menyentuh
+logika inti:
+
+- README: ditambahkan penjelasan tepat di bawah perintah satu baris — bila IP VPS belum terdaftar,
+  installer berhenti dan menampilkan IP + kontak admin; itu gerbang lisensi, bukan error. Pendaftaran
+  berlaku langsung tanpa perlu rilis baru.
+- `setup.sh`: pesan `AKSES DITOLAK` kini memberi langkah aksi eksplisit ("kirim IP di atas ke Telegram
+  admin, lalu jalankan ulang perintah installer"), bukan hanya menampilkan kontak.
+
+`EXPECT` di `install.sh`, hash di README, dan `SHA256SUMS` sudah disinkronkan
+(`setup.sh` = `d883a2bf…`).
+
+---
+
 ### v4.1.49 (2026-11-20)
 
 **Sisa terakhir dari uji pasang→uninstall di VPS uji.** Setelah uninstall v4.1.48, VPS sudah bersih —

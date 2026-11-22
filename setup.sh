@@ -141,6 +141,8 @@ else
     echo -e "\e[1;33m IP VPS Anda  : $MYIP\e[0m"
     echo -e "\e[1;33m Status       : Ilegal / Tidak Terdaftar\e[0m"
     echo -e "\e[1;36m Telegram     : t.me/wibuvpn\e[0m"
+    echo -e "\e[1;37m Cara daftar  : kirim IP di atas ke Telegram admin,\e[0m"
+    echo -e "\e[1;37m                lalu jalankan ulang perintah installer.\e[0m"
     echo -e "\e[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
     exit 1
 fi

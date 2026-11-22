@@ -18,6 +18,10 @@ Satu perintah. Domain (dan token bot) ditanyakan **di tengah proses** — tidak 
 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
 ```
 
+**IP VPS belum terdaftar?** Installer berhenti dan menampilkan IP VPS + kontak admin — itu
+gerbang lisensi, bukan error. Kirim IP tersebut ke [@wibuvpn](https://t.me/wibuvpn), lalu
+jalankan ulang perintah di atas. Pendaftaran berlaku langsung tanpa perlu rilis baru.
+
 `install.sh` = bootstrap dari **Release GitHub**: mengunduh `setup.sh` dari **tag rilis tetap**
 (cadangan jsDelivr bila GitHub mentok), **memverifikasi sha256**, baru menjalankannya. Hash tidak cocok →
 berhenti sebelum menyentuh apa pun.
@@ -64,7 +68,7 @@ Contoh keluaran: `tag rilis : v4.1.49` → `hash : OK` → `[i] WIBU_BOOTSTRAP_O
 ```bash
 # pasang (langsung dari repo, tanpa perantara)
 curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: 1f454fa50326d84a0d226cfb757b6c66c4803deb61315bf8793a421e7dff5387
+sha256sum setup.sh     # harap: d883a2bfaaf615a65018e618b840c36ba04d51eb2c1b424219e55e54095ff659
 bash setup.sh
 
 # hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)
