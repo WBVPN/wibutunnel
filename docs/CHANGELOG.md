@@ -4,7 +4,7 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
-### Belum dirilis
+### v4.1.50 (2026-11-23)
 
 **Memperkuat jalur pasang-mandiri (tanpa menyentuh logika inti).**
 
@@ -63,7 +63,7 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 - `docs/INSTALASI.md`: daftar virtualisasi disamakan dengan kode (termasuk
   hyperv/bochs/parallels/oracle; nilai tak dikenal → WARN).
 
-`SHA256SUMS` diregenerasi; `setup.sh` = `704571d736d13d6de37c33ae002cfb9dbb003569957b6497a7c85ff2f7c990eb`.
+`SHA256SUMS` diregenerasi; `setup.sh` = `ad279fe372e4b2d6c9fba7013f88f07c8e0654c8a3d1d469d511774d402589e0`.
 
 ---
 

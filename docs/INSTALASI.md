@@ -165,7 +165,7 @@ Untuk memastikan rantai unduhan benar tanpa mengubah sistem:
 WIBU_BOOTSTRAP_ONLY=1 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
 ```
 
-Keluaran yang diharapkan: `tag rilis : v4.1.49` → `hash      : OK` →
+Keluaran yang diharapkan: `tag rilis : v4.1.50` → `hash      : OK` →
 `[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
 
 Cara manual (unduh → verifikasi → pasang) juga tersedia di README; `SHA256SUMS` dan
@@ -264,11 +264,11 @@ simpan direktori itu bila suatu saat ingin memulihkan.
 Bootstrap bisa dipin ke tag tertentu:
 
 ```bash
-WIBU_REF=v4.1.49 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
+WIBU_REF=v4.1.50 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
 ```
 
 `EXPECT` di `install.sh` harus menunjuk hash `setup.sh` pada tag yang sama. Artinya pin hanya
 valid untuk tag yang `setup.sh`-nya cocok dengan `EXPECT` pada `install.sh` yang dipakai — saat
-ini `v4.1.49`. Untuk tag lain, bootstrap akan berhenti dengan "HASH TIDAK COCOK" sampai rilis
+ini `v4.1.50`. Untuk tag lain, bootstrap akan berhenti dengan "HASH TIDAK COCOK" sampai rilis
 tersebut membawa `EXPECT` yang sesuai. Untuk penggunaan normal, biarkan default
 (`releases/latest`) agar selalu mendapat perbaikan terbaru.

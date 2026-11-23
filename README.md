@@ -1,9 +1,9 @@
-# 🦋 WIBUTUNNEL v4.1.49
+# 🦋 WIBUTUNNEL v4.1.50
 
 Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VPN langsung jalan.
 
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Debian-green.svg)
-![Version](https://img.shields.io/badge/Version-v4.1.49-blue.svg)
+![Version](https://img.shields.io/badge/Version-v4.1.50-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)
 
 **[Instalasi](#-instalasi)** · **[Fitur](#-fitur)** · **[Bot Telegram](#-bot-telegram)** · **[Perintah](#-perintah)** · **[Port](#-port--alur)** · **[Keamanan](#-keamanan)** · **[Uji](#-uji)** · **[Troubleshooting](#-troubleshooting)** · **[Changelog](docs/CHANGELOG.md)**
@@ -54,9 +54,9 @@ Cek tag + hash tanpa memasang apa pun (`exit 0` bila cocok):
 WIBU_BOOTSTRAP_ONLY=1 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
 ```
 
-Contoh keluaran: `tag rilis : v4.1.49` → `hash : OK` → `[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
+Contoh keluaran: `tag rilis : v4.1.50` → `hash : OK` → `[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
 
-Pin versi: `WIBU_REF=v4.1.49` (bootstrap bisa dipin ke tag lain; `EXPECT` harus ikut tag tersebut).
+Pin versi: `WIBU_REF=v4.1.50` (bootstrap bisa dipin ke tag lain; `EXPECT` harus ikut tag tersebut).
 
 </details>
 

@@ -41,10 +41,10 @@ if [[ $# -eq 0 && -z "${DOMAIN:-}" && ! -t 0 ]] && ! have_tty && [[ "${WIBU_BOOT
     exit 1
 fi
 
-REF="${WIBU_REF:-v4.1.49}"
+REF="${WIBU_REF:-v4.1.50}"
 # Saat menerbitkan rilis: WIBU_REF (tag) dan EXPECT (sha256 setup.sh PADA TAG ITU)
 # wajib di-bump BERSAMAAN. EXPECT tidak boleh menunjuk setup.sh di main.
-EXPECT="1f454fa50326d84a0d226cfb757b6c66c4803deb61315bf8793a421e7dff5387"
+EXPECT="ad279fe372e4b2d6c9fba7013f88f07c8e0654c8a3d1d469d511774d402589e0"
 PRIMARY="https://raw.githubusercontent.com/WBVPN/wibutunnel/$REF/setup.sh"
 MIRROR="https://cdn.jsdelivr.net/gh/WBVPN/wibutunnel@$REF/setup.sh"
 
