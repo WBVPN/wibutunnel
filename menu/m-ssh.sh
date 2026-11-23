@@ -393,6 +393,121 @@ REOF
 }
 
 # ==========================================
+# SSH LOGIN MONITOR — kartu per user
+# ==========================================
+_ssh_card_top() {
+    printf " ${BLUE}┌"; printf '─%.0s' {1..61}; printf "┐${NC}\n"
+}
+_ssh_card_sep() {
+    printf " ${BLUE}├"; printf '─%.0s' {1..61}; printf "┤${NC}\n"
+}
+_ssh_card_bottom() {
+    printf " ${BLUE}└"; printf '─%.0s' {1..61}; printf "┘${NC}\n"
+}
+_ssh_card_title() {
+    printf " ${BLUE}│${NC} ${WHITE}%-59s${NC} ${BLUE}│${NC}\n" " $1"
+}
+_ssh_card_row() { # $1=label $2=value $3=warna
+    printf " ${BLUE}│${NC} ${WHITE}%-11s${NC} : %b%-45s${NC} ${BLUE}│${NC}\n" "$1" "$3" "$2"
+}
+_ssh_card_text() { # $1=warna $2=teks
+    printf " ${BLUE}│${NC} %b%-59s${NC} ${BLUE}│${NC}\n" "$1" "$2"
+}
+_ssh_card_ip() { # $1=ip $2=warna
+    printf " ${BLUE}│${NC}   ${CYAN}•${NC} %b%-55s${NC} ${BLUE}│${NC}\n" "$2" "$1"
+}
+
+ssh_login_cards() {
+    local snap rows u n ips exp limit_ip ip ip_count
+    local total_users=0 total_sessions=0
+    local -a ip_arr
+
+    clear
+    echo -e "${LINE}"
+    echo -e "          ${WHITE}CEK LOGIN SSH${NC}"
+    echo -e "${LINE}"
+
+    snap=$(ssh_sessions_snapshot 2>/dev/null)
+    if [[ -z "$snap" ]]; then
+        _ssh_card_top
+        _ssh_card_text "$YELLOW" " Tidak ada user SSH yang sedang online."
+        _ssh_card_bottom
+        echo -e "${LINE}"
+        read -p " Tekan Enter..." _
+        return
+    fi
+
+    # Satu snapshot untuk semua user; hitung sesi + IP unik per user.
+    rows=$(printf '%s\n' "$snap" | awk -F'\t' '
+        $1 == "" { next }
+        {
+            u = $1; n[u]++
+            ip = $2
+            if (ip != "" && !seen[u SUBSEP ip]++) {
+                ips[u] = (ips[u] == "" ? ip : ips[u] "," ip)
+            }
+        }
+        END { for (u in n) printf "%s\t%d\t%s\n", u, n[u], ips[u] }
+    ' | sort)
+
+    while IFS=$'\t' read -r u n ips; do
+        [[ -n "$u" ]] || continue
+
+        limit_ip=$(db_get "$u" "$DB_IP")
+        if [[ -z "$limit_ip" || "$limit_ip" == "0" ]]; then
+            limit_ip="Bebas"
+        else
+            limit_ip="${limit_ip} IP"
+        fi
+
+        exp=$(db_get "$u" "$SSH_EXP_FILE" | tail -n1)
+        [[ -z "$exp" ]] && exp="Lifetime"
+
+        if [[ -n "$ips" ]]; then
+            IFS=',' read -r -a ip_arr <<< "$ips"
+            ip_count=${#ip_arr[@]}
+        else
+            ip_count=0
+        fi
+
+        _ssh_card_top
+        _ssh_card_title "SSH LOGIN - $u"
+        _ssh_card_sep
+        _ssh_card_row "USER" "$u" "$GREEN"
+        _ssh_card_row "STATUS" "ONLINE" "$GREEN"
+        _ssh_card_row "SESSIONS" "$n" "$CYAN"
+        _ssh_card_row "IP AKTIF" "$ip_count" "$CYAN"
+        _ssh_card_row "LIMIT IP" "$limit_ip" "$YELLOW"
+        _ssh_card_row "EXPIRED" "$exp" "$CYAN"
+        _ssh_card_sep
+        _ssh_card_text "$WHITE" " ALAMAT IP:"
+
+        if [[ -z "$ips" ]]; then
+            _ssh_card_text "$YELLOW" " - (IP tidak terbaca)"
+        else
+            IFS=',' read -r -a ip_arr <<< "$ips"
+            for ip in "${ip_arr[@]}"; do
+                if [[ "$ip" == "via-WS" ]]; then
+                    _ssh_card_ip "via-WS (IP asli tidak terbaca)" "$YELLOW"
+                else
+                    _ssh_card_ip "$ip" "$CYAN"
+                fi
+            done
+        fi
+        _ssh_card_bottom
+        echo
+
+        total_users=$((total_users + 1))
+        total_sessions=$((total_sessions + n))
+    done <<< "$rows"
+
+    echo -e "${LINE}"
+    printf " ${WHITE}Total online: ${GREEN}%d user${NC} / ${CYAN}%d sesi${NC}\n" "$total_users" "$total_sessions"
+    echo -e "${LINE}"
+    read -p " Tekan Enter..." _
+}
+
+# ==========================================
 # MENU UTAMA
 # ==========================================
 clear
@@ -428,26 +543,7 @@ case $sub_menu in
     6) detail_ssh_menu; exec m-ssh ;;
     7) change_ip_ssh_menu; exec m-ssh ;;
     8) change_bw_ssh_menu; exec m-ssh ;;
-    9)
-        clear
-        echo -e "${LINE}\n ${CYAN}SSH ONLINE (real-time)${NC}\n${LINE}"
-        found=0
-        while IFS= read -r uline; do
-            [[ -z "$uline" ]] && continue
-            u="${uline%%:*}"
-            [[ -z "$u" || "$u" == *dummy* ]] && continue
-            n=$(ssh_session_count "$u")
-            if [[ "$n" -gt 0 ]]; then
-                printf " ${GREEN}%-15s${NC} : %s sesi aktif\n" "$u" "$n"
-                found=1
-            fi
-        done < "$SSH_EXP_FILE"
-        if [[ "$found" -eq 0 ]]; then
-            echo -e " ${YELLOW}Tidak ada user SSH online.${NC}"
-        fi
-        echo -e "${LINE}"
-        read -p " Tekan Enter..."
-        exec m-ssh ;;
+    9) ssh_login_cards; exec m-ssh ;;
     10) lock_unlock_ssh_menu; exec m-ssh ;;
     11) exec menu-recovery SSH ;;
     12) edit_banner_ssh; exec m-ssh ;;

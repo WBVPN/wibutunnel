@@ -4,6 +4,18 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ---
 
+### v4.1.51 (2026-11-23)
+
+**Menu SSH `[9]` kini kartu per user (tampilan ala ARI, data tetap dari `ssh_sessions_snapshot`).**
+
+- `menu/m-ssh.sh`: `ssh_login_cards()` menggantikan daftar polos `user : N sesi`. Tiap user aktif
+  dirender sebagai kartu berisi USER, STATUS, SESSIONS, IP AKTIF, LIMIT IP, EXPIRED, dan daftar
+  alamat IP (unik per user). Jalur WS yang IP aslinya tak terbaca ditandai `via-WS`.
+- `menu/m-ssh.sh`: satu snapshot dipakai untuk semua user (bukan satu `ss` per user), sesi dihitung
+  per baris dan IP di-dedupe; footer menampilkan total user/sesi online.
+- Sumber data tidak berubah: tetap `ssh_sessions_snapshot` di `common.sh` (peer langsung +
+  pemetaan `ws-stunnel`), jadi akurasi dan filter CDN sama seperti sebelumnya.
+
 ### v4.1.50 (2026-11-23)
 
 **Memperkuat jalur pasang-mandiri (tanpa menyentuh logika inti).**
