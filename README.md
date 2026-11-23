@@ -12,11 +12,17 @@ Panel VPN **Xray + SSH** auto-install dengan **bot Telegram**. Satu perintah, VP
 
 ## ⚡ Instalasi
 
-Satu perintah. Domain (dan token bot) ditanyakan **di tengah proses** — tidak perlu ditulis di command:
+Alur singkat:
+
+1. **Daftarkan IP VPS** — kirim IP ke [@wibuvpn](https://t.me/wibuvpn) (gerbang lisensi).
+2. **Arahkan domain** — buat **A record** ke IP VPS; jangan buat AAAA.
+3. **Jalankan installer** — domain (dan token bot) ditanyakan **di tengah proses**, tidak perlu ditulis di command:
 
 ```bash
 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/releases/latest/download/install.sh)
 ```
+
+Panduan langkah-demi-langkah (termasuk cek sebelum pasang dan troubleshooting): [`docs/INSTALASI.md`](docs/INSTALASI.md).
 
 **IP VPS belum terdaftar?** Installer berhenti dan menampilkan IP VPS + kontak admin — itu
 gerbang lisensi, bukan error. Kirim IP tersebut ke [@wibuvpn](https://t.me/wibuvpn), lalu
@@ -50,13 +56,21 @@ WIBU_BOOTSTRAP_ONLY=1 bash <(curl -4 -fsSL https://github.com/WBVPN/wibutunnel/r
 
 Contoh keluaran: `tag rilis : v4.1.49` → `hash : OK` → `[i] WIBU_BOOTSTRAP_ONLY=1 — instalasi tidak dijalankan.`
 
+Pin versi: `WIBU_REF=v4.1.49` (bootstrap bisa dipin ke tag lain; `EXPECT` harus ikut tag tersebut).
+
 </details>
 
 | Syarat | |
 |---|---|
-| OS | Ubuntu 20.04 / 22.04 / 24.04 · Debian 11 / 12 |
+| OS | Ubuntu 20.04 / 22.04 / 24.04 · Debian 11 / 12 (systemd) |
+| CPU | 1 vCPU (x86_64 / aarch64) |
+| RAM | minimal 512 MB · disarankan 1 GB |
+| Disk | minimal 2 GB bebas · disarankan 5 GB |
+| Virtualisasi | KVM / VMware · **bukan** OpenVZ/LXC/container |
+| Port | 80 · 443 · 143 · 109 bebas (reinstall panel lama boleh; nginx/apache2 dihentikan otomatis) |
 | Domain | A record → IP VPS (tanpa AAAA) |
 | Akses | root |
+| Alat | `curl` (wajib; bila belum ada, installer berhenti dengan perintah pemasangan manual) |
 | Lisensi | IP VPS terdaftar di `izin.txt` ([@wibuvpn](https://t.me/wibuvpn)) |
 
 > ⏱️ ~5–10 menit. Kalau berhenti di pemeriksaan lisensi, artinya IP VPS belum terdaftar — bukan error
@@ -65,17 +79,19 @@ Contoh keluaran: `tag rilis : v4.1.49` → `hash : OK` → `[i] WIBU_BOOTSTRAP_O
 <details>
 <summary>🔧 Cara manual (unduh → verifikasi → pasang) & hapus</summary>
 
-```bash
-# pasang (langsung dari repo, tanpa perantara)
-curl -4 -fsSL -o setup.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/setup.sh
-sha256sum setup.sh     # harap: d883a2bfaaf615a65018e618b840c36ba04d51eb2c1b424219e55e54095ff659
-bash setup.sh
+Unduh **dari rilis yang sama** — jangan campur aset dari tag berbeda:
 
-# hapus (cadangan otomatis ke /root/wibutunnel-backup-*/)
-curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
-sha256sum uninstall.sh   # harap: 7c47b985abd29cd9222056cdabcd82fcfe89042c7ed63ef5c391a1b50ac0726d
-bash uninstall.sh
+```bash
+curl -4 -fsSL -o setup.sh     https://github.com/WBVPN/wibutunnel/releases/latest/download/setup.sh
+curl -4 -fsSL -o uninstall.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/uninstall.sh
+curl -4 -fsSL -o SHA256SUMS   https://github.com/WBVPN/wibutunnel/releases/latest/download/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing   # harus "setup.sh: OK" / "uninstall.sh: OK"
+bash setup.sh
 ```
+
+Hash sengaja TIDAK ditulis di README: `SHA256SUMS` dan `setup.sh` diunduh dari rilis yang sama,
+jadi verifikasi selalu mengikuti aset terbaru dan README lama tidak bisa memicu "HASH TIDAK COCOK".
+Hapus panel: `bash uninstall.sh` (cadangan otomatis ke `/root/wibutunnel-backup-*/`).
 
 </details>
 
@@ -257,7 +273,7 @@ m-setting          # [5] Update Script — verifikasi SHA256 per berkas, cadanga
 ```
 
 ```bash
-curl -4 -fsSL -o uninstall.sh https://raw.githubusercontent.com/WBVPN/wibutunnel/main/uninstall.sh
+curl -4 -fsSL -o uninstall.sh https://github.com/WBVPN/wibutunnel/releases/latest/download/uninstall.sh
 bash uninstall.sh  # cadangan otomatis ke /root/wibutunnel-backup-*/
 ```
 

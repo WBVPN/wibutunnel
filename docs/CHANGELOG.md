@@ -6,17 +6,64 @@ Riwayat rilis. Versi terbaru di atas. Tiap rilis punya tag + aset di https://git
 
 ### Belum dirilis
 
-**Merapikan pengalaman instalasi mandiri (tanpa dampingan).** Dua perubahan kecil, tanpa menyentuh
-logika inti:
+**Memperkuat jalur pasang-mandiri (tanpa menyentuh logika inti).**
 
-- README: ditambahkan penjelasan tepat di bawah perintah satu baris — bila IP VPS belum terdaftar,
-  installer berhenti dan menampilkan IP + kontak admin; itu gerbang lisensi, bukan error. Pendaftaran
-  berlaku langsung tanpa perlu rilis baru.
-- `setup.sh`: pesan `AKSES DITOLAK` kini memberi langkah aksi eksplisit ("kirim IP di atas ke Telegram
-  admin, lalu jalankan ulang perintah installer"), bukan hanya menampilkan kontak.
+- `setup.sh`: fungsi `wibu_preflight()` dijalankan setelah gerbang lisensi — memeriksa arsitektur,
+  virtualisasi (tolak OpenVZ/LXC/container; `WIBU_ALLOW_CONTAINER=1` untuk memaksa), RAM, disk,
+  port 80/443/143/109 (pemilik panel → reinstall tetap boleh), systemd, TUN, serta `curl`
+  (wajib) dan `wget` (WARN, dipasang bersama paket dasar setelah preflight).
+  Bila ada yang gagal, instalasi berhenti tanpa memasang paket atau mengubah service
+  (berkas log/izin.txt belum ditulis pada titik itu).
+- `setup.sh`: urutan mutasi diperbaiki — gerbang lisensi berjalan lebih dulu; `curl` hanya
+  **diperiksa** (tanpa `apt`), dan `apt-get update/install` baru dijalankan setelah lisensi
+  valid + preflight lolos. IP tak terdaftar tidak lagi meninggalkan log atau paket apa pun.
+- `setup.sh`: keluaran disalin ke `/root/wibutunnel-install.log` (mode 600) sejak prasyarat
+  lolos; path log dicetak di ringkasan akhir dan saat unduhan gagal. Bila `curl` tidak ada
+  sebelum gerbang, skrip berhenti dengan instruksi pemasangan manual — bukan lagi
+  "GAGAL MENDETEKSI IP PUBLIK".
+- `README.md` + `docs/INSTALASI.md` (baru): alur bernomor untuk non-teknis, syarat sistem lengkap,
+  panduan langkah-demi-langkah, dan cara manual anti-basi — unduh `setup.sh` + `uninstall.sh` +
+  `SHA256SUMS` dari rilis yang sama lalu `sha256sum -c`; hash tidak lagi ditulis di README.
+- `install.sh`: `EXPECT` disamakan dengan sha256 `setup.sh` pada tag `v4.1.49` (sebelumnya memakai
+  hash `main`, sehingga bootstrap default selalu "HASH TIDAK COCOK"). Saat rilis, `WIBU_REF` dan
+  `EXPECT` di-bump bersamaan. `tests/test_hardening.sh` menerima README tanpa hash selama alur
+  rilis+SHA256SUMS ada, dan `tests/test_preflight.sh` baru menguji skenario preflight.
+- `setup.sh`: jalur cadangan Xray kini **sadar-arsitektur** — x86_64 memakai `Xray-linux-64.zip`,
+  arm64 memakai `Xray-linux-arm64-v8a.zip` dengan pin terpisah yang diverifikasi dari unduhan
+  nyata v26.11.9; arsitektur lain berhenti dengan pesan jelas sebelum memasang biner apa pun.
+- `setup.sh`: guard setelah fallback memakai `xray version` (bukan hanya keberadaan berkas),
+  sehingga biner salah arsitektur tidak lolos sampai tahap start service.
+- `setup.sh`: preflight memeriksa **semua** pemilik socket (`ss` multi-owner) dan hanya baris
+  `LISTEN` yang dihitung (baris warning `ss` tidak lagi dianggap listener); pemilik sah dibatasi
+  per port (80/443 → haproxy/xray, 143/109 → dropbear), `nginx`/`apache2` menjadi WARN karena
+  installer sendiri menghentikannya; `ss` ada tetapi gagal membaca → gagal (fail-closed),
+  sedangkan `ss` tidak terpasang → WARN + cek port dilewati (didokumentasikan).
+- `docs/INSTALASI.md`: langkah verifikasi tidak lagi menyuruh membuka "panel web" yang tidak ada —
+  pengelolaan lewat `menu`, dan `https://domain` bisa 503 karena HAProxy hanya pintu tunnel.
+  Daftar virtualisasi serta perilaku `ss` diselaraskan dengan kode preflight.
+- `setup.sh`: log ditutup lewat EXIT trap bersama (`wait` PID tee) — keluaran terakhir tetap
+  tercetak dan log tidak tertinggal 0 byte saat skrip keluar cepat (pty/CI).
+- `setup.sh`: trap penutup log dipasang **segera** setelah log aktif (bukan di akhir), sehingga
+  keluaran terakhir tetap tercetak saat skrip keluar cepat; preflight gagal tidak lagi mencetak
+  error redirection walau log tak bisa dibuat.
+- `tests/test_install_pin.sh` (baru): menjaga `EXPECT` == sha256 `setup.sh` pada `WIBU_REF`,
+  menjalankan `sha256sum -c SHA256SUMS` untuk **seluruh** entri, dan memastikan entri `setup.sh`
+  unik. `tests/test_preflight.sh` kini **25 skenario** (multi-owner, warning-line `ss`, dropbear
+  vs stunnel di 143/109, systemd/TUN absen, wget/curl absen, arsitektur asing, RAM/disk WARN,
+  owner tak terbaca, socket systemd saja, haproxy di 143, dropbear di 80).
+  `tests/test_hardening.sh` memeriksa hash README tidak basi dan perintah manual berada dalam
+  satu blok kode (per-blok, bukan gabungan).
 
-`EXPECT` di `install.sh`, hash di README, dan `SHA256SUMS` sudah disinkronkan
-(`setup.sh` = `d883a2bf…`).
+- `setup.sh`: menu pasca-instalasi **tidak lagi** dijalankan lewat `exec` (yang mematikan trap
+  EXIT sehingga tee log tetap hidup); menu mendapat stdio `/dev/tty` sendiri sehingga log berhenti
+  tepat di akhir installer. Cabang log mati pada pesan gagal preflight dihapus.
+- `tests/test_license_enforcement.sh`: batas atas assert 16 sekarang baris pemanggilan
+  `wibu_preflight`, bukan hanya banner lisensi — `apt-get` yang diselipkan di jendela
+  banner→preflight ikut tertangkap (assert 16b, total 18).
+- `docs/INSTALASI.md`: daftar virtualisasi disamakan dengan kode (termasuk
+  hyperv/bochs/parallels/oracle; nilai tak dikenal → WARN).
+
+`SHA256SUMS` diregenerasi; `setup.sh` = `704571d736d13d6de37c33ae002cfb9dbb003569957b6497a7c85ff2f7c990eb`.
 
 ---
 

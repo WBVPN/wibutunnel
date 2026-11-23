@@ -26,8 +26,27 @@ if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
 fi
 echo -e "\e[1;32m[+] OS terdeteksi: ${PRETTY_NAME:-$ID} ($VERSION_ID)\e[0m"
 
-# Pre-flight tool check
-command -v curl >/dev/null 2>&1 || { apt-get update -y >/dev/null 2>&1 && apt-get install -y curl wget >/dev/null 2>&1; }
+# [R2] Log instalasi: salinan keluaran sejak prasyarat lolos, untuk dikirim saat minta bantuan.
+# Gagal membuat log TIDAK boleh menggagalkan instalasi.
+WIBU_INSTALL_LOG="${WIBU_INSTALL_LOG:-/root/wibutunnel-install.log}"
+# Tee harus ditutup rapi saat EXIT: tanpa wait, keluaran terakhir (termasuk pesan
+# FATAL) bisa hilang dan log tertinggal 0 byte ketika skrip keluar cepat di pty/CI.
+WIBU_TEE_PID=""
+wibu_log_close() {
+    [ -n "${WIBU_TEE_PID:-}" ] || return 0
+    exec 1>&- 2>&-
+    wait "$WIBU_TEE_PID" 2>/dev/null || true
+    WIBU_TEE_PID=""
+    return 0
+}
+# [R1/B-01] Gerbang lisensi butuh curl. Diperiksa TANPA apt: mutasi paket baru
+# boleh terjadi setelah lisensi valid + preflight lolos.
+if ! command -v curl >/dev/null 2>&1; then
+    echo -e "\e[1;31m[GAGAL] curl tidak tersedia - lisensi tidak bisa diverifikasi.\e[0m"
+    echo -e "\e[1;33m        Pasang manual: apt-get update && apt-get install -y curl wget\e[0m"
+    echo -e "\e[1;33m        Lalu jalankan ulang perintah installer.\e[0m"
+    exit 1
+fi
 
 # [FIX Bug #1] Deteksi IP publik dengan validasi dan retry
 echo -e "\e[1;36m[+] Mendeteksi IP publik...\e[0m"
@@ -130,8 +149,7 @@ if [[ -n "$GET_DATA" ]]; then
         fi
     fi
     echo -e "\e[1;32m[+] Lisensi Valid! Selamat Datang, $CLIENT_NAME.\e[0m"
-    # Simpan salinan resmi -> dipakai sebagai cadangan saat VPS offline
-    mkdir -p /etc/wibutunnel && printf '%s\n' "$IZIN_LIST" > /etc/wibutunnel/izin.txt && chmod 600 /etc/wibutunnel/izin.txt
+    # Salinan izin.txt ditulis SETELAH preflight lolos (lihat bawah).
     sleep 1
 else
     clear
@@ -147,6 +165,199 @@ else
     exit 1
 fi
 
+# [R1] Preflight prasyarat — SETELAH gerbang lisensi, SEBELUM apt/konfigurasi.
+# Tujuan: VPS yang tidak memenuhi syarat berhenti di sini tanpa menyentuh sistem.
+# Tanpa sleep di dalam fungsi supaya cepat diuji.
+wibu_preflight() {
+    local _fail=0 _warn=0 _arch _virt _ram_mb _disk_mb _p _used _owner _tools
+    echo -e "\e[1;36m[+] Memeriksa prasyarat sistem...\e[0m"
+
+    # 1. Arsitektur
+    _arch=$(uname -m 2>/dev/null)
+    case "$_arch" in
+        x86_64|aarch64|arm64)
+            echo -e "  \e[32m[OK]\e[0m    Arsitektur: $_arch" ;;
+        *)
+            echo -e "  \e[31m[GAGAL]\e[0m Arsitektur '$_arch' tidak didukung (butuh x86_64/aarch64/arm64)."
+            _fail=$((_fail + 1)) ;;
+    esac
+
+    # 2. Virtualisasi
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+        _virt=$(systemd-detect-virt 2>/dev/null || true)
+        case "$_virt" in
+            openvz|lxc|lxc-libvirt|systemd-nspawn|docker|podman|rkt)
+                if [[ "${WIBU_ALLOW_CONTAINER:-0}" == "1" ]]; then
+                    echo -e "  \e[33m[WARN]\e[0m  Virtualisasi '$_virt' (container) — lanjut karena WIBU_ALLOW_CONTAINER=1."
+                    _warn=$((_warn + 1))
+                else
+                    echo -e "  \e[31m[GAGAL]\e[0m Virtualisasi '$_virt' tidak didukung: butuh KVM/VMware, bukan OpenVZ/LXC/container."
+                    echo -e "           Bila memang container dan siap menanggung risiko: WIBU_ALLOW_CONTAINER=1"
+                    _fail=$((_fail + 1))
+                fi ;;
+            none|kvm|vmware|microsoft|hyperv|xen|bochs|qemu|parallels|oracle|unknown)
+                echo -e "  \e[32m[OK]\e[0m    Virtualisasi: $_virt" ;;
+            *)
+                echo -e "  \e[33m[WARN]\e[0m  Virtualisasi '$_virt' tidak dikenali — lanjut dengan peringatan."
+                _warn=$((_warn + 1)) ;;
+        esac
+    else
+        echo -e "  \e[33m[WARN]\e[0m  systemd-detect-virt tidak ada — cek virtualisasi dilewati."
+        _warn=$((_warn + 1))
+    fi
+
+    # 3. RAM (override uji: WIBU_PREFLIGHT_RAM_MB)
+    _ram_mb="${WIBU_PREFLIGHT_RAM_MB:-}"
+    [[ -n "$_ram_mb" ]] || _ram_mb=$(awk '/^MemTotal:/{printf "%d", $2 / 1024}' /proc/meminfo 2>/dev/null)
+    if [[ "$_ram_mb" =~ ^[0-9]+$ ]]; then
+        if (( _ram_mb < 512 )); then
+            echo -e "  \e[31m[GAGAL]\e[0m RAM ${_ram_mb} MB — minimal 512 MB (disarankan 1 GB)."
+            _fail=$((_fail + 1))
+        elif (( _ram_mb < 1024 )); then
+            echo -e "  \e[33m[WARN]\e[0m  RAM ${_ram_mb} MB — di bawah 1 GB, bisa lambat."
+            _warn=$((_warn + 1))
+        else
+            echo -e "  \e[32m[OK]\e[0m    RAM: ${_ram_mb} MB"
+        fi
+    else
+        echo -e "  \e[33m[WARN]\e[0m  RAM tidak terbaca — lanjut dengan peringatan."
+        _warn=$((_warn + 1))
+    fi
+
+    # 4. Disk bebas pada / (override uji: WIBU_PREFLIGHT_DISK_MB)
+    _disk_mb="${WIBU_PREFLIGHT_DISK_MB:-}"
+    [[ -n "$_disk_mb" ]] || _disk_mb=$(df -Pk / 2>/dev/null | awk 'NR == 2 {printf "%d", $4 / 1024}')
+    if [[ "$_disk_mb" =~ ^[0-9]+$ ]]; then
+        if (( _disk_mb < 2048 )); then
+            echo -e "  \e[31m[GAGAL]\e[0m Disk bebas ${_disk_mb} MB — minimal 2 GB (disarankan 5 GB)."
+            _fail=$((_fail + 1))
+        elif (( _disk_mb < 5120 )); then
+            echo -e "  \e[33m[WARN]\e[0m  Disk bebas ${_disk_mb} MB — di bawah 5 GB."
+            _warn=$((_warn + 1))
+        else
+            echo -e "  \e[32m[OK]\e[0m    Disk bebas /: ${_disk_mb} MB"
+        fi
+    else
+        echo -e "  \e[33m[WARN]\e[0m  Disk tidak terbaca — lanjut dengan peringatan."
+        _warn=$((_warn + 1))
+    fi
+
+    # 5. Port panel. Reinstall TIDAK diblokir: pemilik dari panel dianggap wajar.
+    #    nginx/apache2 juga tidak memblokir karena setup.sh menghentikannya sendiri;
+    #    proses lain tetap harus dihentikan manual. Semua pemilik socket diperiksa
+    #    (bukan hanya yang pertama) supaya socket multi-owner tidak lolos.
+    if command -v ss >/dev/null 2>&1; then
+        for _p in 80 443 143 109; do
+            _used=$(ss -ltnp "sport = :$_p" 2>&1); _ss_rc=$?
+            if (( _ss_rc != 0 )); then
+                echo -e "  \e[31m[GAGAL]\e[0m Port $_p: ss gagal diperiksa (rc=$_ss_rc)."
+                echo -e "           Cek manual: ss -ltnp | grep :$_p"
+                _fail=$((_fail + 1))
+                continue
+            fi
+            _used=$(printf '%s\n' "$_used" | grep '^LISTEN' || true)
+            if [[ -z "$_used" ]]; then
+                echo -e "  \e[32m[OK]\e[0m    Port $_p bebas"
+                continue
+            fi
+            _owners=$(printf '%s\n' "$_used" | grep -o 'users:(.*' | grep -o '"[^"]*"' | tr -d '"' | sort -u | tr '\n' ' ')
+            _owners="${_owners% }"
+            if [[ -z "$_owners" ]]; then
+                echo -e "  \e[31m[GAGAL]\e[0m Port $_p terpakai tetapi pemiliknya tidak terbaca."
+                echo -e "           Cek manual: ss -ltnp | grep :$_p"
+                _fail=$((_fail + 1))
+                continue
+            fi
+            _bad=""; _stop=""; _panel=""
+            for _o in $_owners; do
+                case "$_o" in
+                    systemd) ;;   # socket activation: dinilai dari pemilik lain
+                    nginx|apache2) _stop="$_stop $_o" ;;
+                    haproxy|xray)
+                        case "$_p" in
+                            80|443) _panel="$_panel $_o" ;;
+                            *) _bad="$_bad $_o" ;;
+                        esac ;;
+                    dropbear)
+                        case "$_p" in
+                            143|109) _panel="$_panel $_o" ;;
+                            *) _bad="$_bad $_o" ;;
+                        esac ;;
+                    *) _bad="$_bad $_o" ;;
+                esac
+            done
+            if [[ -n "$_bad" ]]; then
+                echo -e "  \e[31m[GAGAL]\e[0m Port $_p dipakai proses lain:${_bad}"
+                echo -e "           Hentikan dulu proses tersebut, lalu jalankan ulang installer."
+                _fail=$((_fail + 1))
+            elif [[ -n "$_stop" ]]; then
+                echo -e "  \e[33m[WARN]\e[0m  Port $_p dipakai${_stop} — akan dihentikan otomatis oleh installer."
+                _warn=$((_warn + 1))
+            elif [[ -n "$_panel" ]]; then
+                echo -e "  \e[32m[OK]\e[0m    Port $_p dipakai panel (${_panel# }) — reinstall"
+            else
+                echo -e "  \e[33m[WARN]\e[0m  Port $_p hanya dipegang socket systemd — lanjut, pantau saat service start."
+                _warn=$((_warn + 1))
+            fi
+        done
+    else
+        echo -e "  \e[33m[WARN]\e[0m  ss tidak tersedia — pemeriksaan port dilewati (apt-get install -y iproute2)."
+        _warn=$((_warn + 1))
+    fi
+
+    # 6. systemd wajib ada
+    if [[ -d "${WIBU_PREFLIGHT_SYSTEMD_DIR:-/run/systemd/system}" ]]; then
+        echo -e "  \e[32m[OK]\e[0m    systemd aktif"
+    else
+        echo -e "  \e[31m[GAGAL]\e[0m systemd tidak terdeteksi (/run/systemd/system tidak ada) — panel butuh systemd."
+        _fail=$((_fail + 1))
+    fi
+
+    # 7. TUN/TAP (hanya peringatan)
+    if [[ -e "${WIBU_PREFLIGHT_TUN:-/dev/net/tun}" ]]; then
+        echo -e "  \e[32m[OK]\e[0m    /dev/net/tun tersedia"
+    else
+        echo -e "  \e[33m[WARN]\e[0m  /dev/net/tun tidak ada — sebagian fitur tunnel bisa terganggu."
+        _warn=$((_warn + 1))
+    fi
+
+    # 8. curl wajib (gerbang lisensi + unduhan); wget dipasang bersama paket dasar.
+    if command -v curl >/dev/null 2>&1; then
+        echo -e "  \e[32m[OK]\e[0m    curl tersedia"
+    else
+        echo -e "  \e[31m[GAGAL]\e[0m curl tidak tersedia — verifikasi lisensi tidak mungkin."
+        echo -e "           Pasang dulu: apt-get update && apt-get install -y curl"
+        _fail=$((_fail + 1))
+    fi
+    if ! command -v wget >/dev/null 2>&1; then
+        echo -e "  \e[33m[WARN]\e[0m  wget belum ada — dipasang bersama paket dasar setelah preflight."
+        _warn=$((_warn + 1))
+    fi
+
+    if (( _fail > 0 )); then
+        echo ""
+        echo -e "\e[1;31m[GAGAL] $_fail masalah prasyarat ditemukan. Tidak ada perubahan pada sistem.\e[0m"
+        echo -e "\e[1;37m Butuh bantuan? : t.me/wibuvpn\e[0m"
+        return 1
+    fi
+    echo -e "\e[1;32m[+] Prasyarat sistem terpenuhi.\e[0m"
+    return 0
+}
+wibu_preflight || exit 1
+
+# [B-01/F-01] Prasyarat lolos -> baru menulis ke sistem. Log memuat keluaran
+# sejak titik ini (gerbang lisensi & preflight tidak masuk log).
+if : 2>/dev/null >> "$WIBU_INSTALL_LOG"; then
+    chmod 600 "$WIBU_INSTALL_LOG" 2>/dev/null
+    exec > >(tee -a "$WIBU_INSTALL_LOG") 2>&1
+    WIBU_TEE_PID=$!
+    WIBU_LOG_ACTIVE=1
+    # [F4] Trap flush dipasang SEGERA, sebelum fungsi lain didefinisikan.
+    trap 'wibu_log_close' EXIT
+fi
+# Salinan resmi daftar lisensi (cadangan saat VPS offline / minta bantuan).
+mkdir -p /etc/wibutunnel && printf '%s\n' "$IZIN_LIST" > /etc/wibutunnel/izin.txt && chmod 600 /etc/wibutunnel/izin.txt
+
 GITHUB_USER="WBVPN"
 REPO_NAME="wibutunnel"
 # [FIX-K1] Kode diambil dari REF TERPIN + diverifikasi (lihat wibu_verify_file di bawah).
@@ -161,9 +372,12 @@ XRAY_INSTALL_SHA256="${XRAY_INSTALL_SHA256:-91fd40e9b6f222b5819f3ba91f0bfb4bb8c4
 # habis -> "Failed to get release list" 403). Unduhan langsung dari aset rilis = TIDAK memakai API.
 XRAY_VER="${XRAY_VER:-v26.11.9}"
 XRAY_BIN_SHA256="${XRAY_BIN_SHA256:-e87bce586acdb9136aa5b1f1d9c8db9f1ea1d145b6d86368c7f6f662f9f6a66d}"
+# [F1] Pin arm64 terpisah: hash biner di dalam Xray-linux-arm64-v8a.zip, diverifikasi
+# 2026-11-23 untuk $XRAY_VER. Tanpa ini fallback memasang biner x64 di ARM.
+XRAY_BIN_SHA256_ARM64="${XRAY_BIN_SHA256_ARM64:-c2d1e66a130556d32089adcf38202fcb6f9027e41fb456cc2cda9a5fabdc093a}"
 XRAY_TMP=""
 xray_tmp_cleanup() { [ -n "$XRAY_TMP" ] && rm -f "$XRAY_TMP"; return 0; }
-trap xray_tmp_cleanup EXIT
+trap 'xray_tmp_cleanup; wibu_log_close' EXIT
 
 xray_verify_sha256() {
     # $1=berkas $2=hash harap. Cetak alasan ke stderr bila gagal, return 1.
@@ -203,9 +417,19 @@ xray_pasang_cadangan() {
     # [FIX-PORTABILITAS] Pasang Xray tanpa API GitHub, dan TIDAK memakai /tmp untuk menjalankan biner
     # (Ubuntu 24.04: /tmp = tmpfs noexec -> installer resmi gagal "Local Xray binary cannot run").
     # Biner diverifikasi hash-nya terhadap versi terpin.
-    local tmp="/usr/local/src/wibu-xray.$$" zip="Xray-linux-64.zip" got
+    local tmp="/usr/local/src/wibu-xray.$$" zip pin got _m
     rm -rf "$tmp"; mkdir -p "$tmp" || return 1
-    echo -e "\e[1;33m[!] Installer resmi Xray gagal -> jalur cadangan (tanpa API GitHub), versi $XRAY_VER...\e[0m"
+    # [F1] Pilih aset + hash sesuai arsitektur; jangan pernah memasang biner asing.
+    _m="$(uname -m 2>/dev/null)"
+    case "$_m" in
+        x86_64|amd64)      zip="Xray-linux-64.zip";           pin="$XRAY_BIN_SHA256" ;;
+        aarch64|arm64)     zip="Xray-linux-arm64-v8a.zip";    pin="$XRAY_BIN_SHA256_ARM64" ;;
+        *)
+            echo -e "\e[1;31m[!] Jalur cadangan Xray belum mendukung arsitektur '$_m' (hanya x86_64/arm64).\e[0m"
+            echo -e "\e[1;33m    Pakai installer resmi: bash <(curl -fsSL $XRAY_INSTALL_URL) install\e[0m"
+            rm -rf "$tmp"; return 1 ;;
+    esac
+    echo -e "\e[1;33m[!] Installer resmi Xray gagal -> jalur cadangan (tanpa API GitHub), versi $XRAY_VER ($_m)...\e[0m"
     if ! curl -4 -fSL --retry 3 --connect-timeout 10 --max-time 180 -o "$tmp/$zip" \
          "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/${zip}"; then
         echo -e "\e[1;31m[!] Unduh arsip Xray gagal.\e[0m"; rm -rf "$tmp"; return 1
@@ -215,7 +439,7 @@ xray_pasang_cadangan() {
             -o Dpkg::Options::=--force-confold unzip >/dev/null 2>&1 || true; }
     ( cd "$tmp" && unzip -o -q "$zip" ) || { echo -e "\e[1;31m[!] Ekstraksi arsip Xray gagal.\e[0m"; rm -rf "$tmp"; return 1; }
     got="$(sha256sum "$tmp/xray" 2>/dev/null | awk '{print $1}')"
-    if [ "$got" != "$XRAY_BIN_SHA256" ]; then
+    if [ "$got" != "$pin" ]; then
         echo -e "\e[1;31m[!] Hash biner Xray tidak cocok (dapat=$got). Batal.\e[0m"
         rm -rf "$tmp"; return 1
     fi
@@ -837,11 +1061,12 @@ mkdir -p /usr/local/src 2>/dev/null || true
 export TMPDIR=/usr/local/src
 xray_installer_run install
 # [FIX] Bila installer resmi gagal (mis. 403 kuota API GitHub), coba jalur cadangan tanpa API.
-if ! command -v xray >/dev/null 2>&1 || ! id xray >/dev/null 2>&1; then
+# [F1] Cek `xray version`, bukan hanya keberadaan berkas: biner salah arsitektur tetap "ada".
+if ! command -v xray >/dev/null 2>&1 || ! id xray >/dev/null 2>&1 || ! xray version >/dev/null 2>&1; then
     xray_pasang_cadangan || true
 fi
 # gagal dini dengan pesan jelas bila Xray tetap tidak terpasang
-if ! command -v xray >/dev/null 2>&1 || ! id xray >/dev/null 2>&1; then
+if ! command -v xray >/dev/null 2>&1 || ! id xray >/dev/null 2>&1 || ! xray version >/dev/null 2>&1; then
     echo -e "\\e[1;31m[FATAL] Xray gagal terpasang (binary/user 'xray' tidak ada).\\e[0m"
     echo -e "\\e[33m        Cek koneksi ke github.com/XTLS atau jalankan ulang; instalasi DIHENTIKAN sebelum merusak konfigurasi.\\e[0m"
     exit 1
@@ -1694,6 +1919,10 @@ systemctl is-active --quiet wibu-daemon && echo -e "Algojo Daemon       : \e[32m
 if [[ "${_dl_fail:-0}" == "1" ]]; then
     echo -e "\e[1;31m[!] Ada file yang gagal diunduh. Instalasi TIDAK lengkap.\e[0m"
     echo -e "\e[1;33m    Perbaiki koneksi lalu jalankan ulang setup.sh, atau pakai m-setting [5].\e[0m"
+    if [[ "${WIBU_LOG_ACTIVE:-0}" == "1" ]]; then
+        echo -e "\e[1;37m    Log instalasi : $WIBU_INSTALL_LOG\e[0m"
+        echo -e "\e[1;37m    Kirim log ke  : t.me/wibuvpn bila butuh bantuan.\e[0m"
+    fi
     exit 1
 fi
 
@@ -1705,6 +1934,10 @@ echo "4.1.49" > /etc/wibutunnel/version
 echo -e "         \e[1;32mINSTALASI SELESAI DENGAN SUKSES!\e[0m         "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e " Ketik \e[1;36mmenu\e[0m untuk membuka panel admin."
+if [[ "${WIBU_LOG_ACTIVE:-0}" == "1" ]]; then
+    echo -e " Log instalasi : \e[1;36m$WIBU_INSTALL_LOG\e[0m"
+    echo -e " Simpan log ini; kirim ke \e[1;36mt.me/wibuvpn\e[0m bila butuh bantuan."
+fi
 echo ""
 read -r -p " Apakah Anda ingin reboot VPS sekarang? [y/N]: " ans_reboot
 if [[ "$ans_reboot" =~ ^[Yy]$ ]]; then
@@ -1713,5 +1946,13 @@ if [[ "$ans_reboot" =~ ^[Yy]$ ]]; then
 else
     echo -e "\e[1;32m[✓] Membuka menu WIBUTUNNEL...\e[0m"
     sleep 1
-    exec menu
+    # [R-01] Menu dijalankan dengan stdio ke tty, bukan ke tee: log instalasi
+    # berhenti di akhir installer (tidak ikut merekam sesi menu), dan trap EXIT
+    # tetap jalan karena shell tidak diganti `exec`.
+    if [[ -t 0 && -w /dev/tty ]]; then
+        menu </dev/tty >/dev/tty 2>&1
+    else
+        menu
+    fi
+    exit 0
 fi

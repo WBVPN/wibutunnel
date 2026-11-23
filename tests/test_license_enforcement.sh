@@ -93,5 +93,20 @@ ck "14. pembulatan ke bawah: +30 hari = 30 (dapat '$D')" "$ok" "1"
 LBP=$(. "$REPO_DIR/common.sh" >/dev/null 2>&1; license_expiry_label "2020-01-01")
 ck "15. tanggal lampau -> '0 Hari', bukan negatif" "$LBP" "0 Hari"
 
+# 16-17. [B-01] Tidak ada mutasi sistem sebelum gerbang lisensi / sebelum preflight.
+#        Menjaga urutan: curl hanya diperiksa, apt + log + izin.txt belakangan.
+GATE=$(grep -n 'Memeriksa Lisensi Script' "$REPO_DIR/setup.sh" | head -1 | cut -d: -f1)
+PRE_APT=$(awk -v g="${GATE:-0}" 'NR < g && /^[[:space:]]*(DEBIAN_FRONTEND=[^ ]*[[:space:]]+)?apt-get[[:space:]]/ {c++} END {print c+0}' "$REPO_DIR/setup.sh")
+ck "16. tidak ada apt-get sebelum gerbang lisensi" "$PRE_APT" "0"
+
+# [R-02] Jendela antara banner gerbang dan pemanggilan preflight juga harus bebas apt-get.
+PF=$(grep -n 'wibu_preflight || exit 1' "$REPO_DIR/setup.sh" | head -1 | cut -d: -f1)
+GATE_APT=$(awk -v g="${GATE:-0}" -v p="${PF:-0}" 'NR > g && NR < p && /^[[:space:]]*(DEBIAN_FRONTEND=[^ ]*[[:space:]]+)?apt-get[[:space:]]/ {c++} END {print c+0}' "$REPO_DIR/setup.sh")
+ck "16b. tidak ada apt-get antara gerbang lisensi dan preflight" "$GATE_APT" "0"
+
+PF_LINE=$(grep -n 'wibu_preflight || exit 1' "$REPO_DIR/setup.sh" | head -1 | cut -d: -f1)
+EARLY_IZ=$(awk -v p="${PF_LINE:-0}" 'NR < p && /wibutunnel\/izin\.txt/ && !/^[[:space:]]*#/ {c++} END {print c+0}' "$REPO_DIR/setup.sh")
+ck "17. izin.txt baru ditulis setelah preflight" "$EARLY_IZ" "0"
+
 echo "=========== LISENSI: $PASS PASS / $FAIL FAIL ==========="
 [[ $FAIL -eq 0 ]]

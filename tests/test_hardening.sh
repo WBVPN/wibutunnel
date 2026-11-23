@@ -40,8 +40,22 @@ t "setup.sh tidak menarik kode dari main"       "! grep -qE '^GITHUB_RAW=.*/main
 echo "== D. API Xray 10085 tidak bisa diakses non-root =="
 t "aturan iptables owner-match (sintaks nft benar)" "grep -q -- '-m owner ! --uid-owner 0' \"\$REPO/setup.sh\"" 
 t "tidak memakai bentuk '! -m owner' (tidak valid di nft)" "! grep -q -- '! -m owner --uid-owner 0' \"\$REPO/setup.sh\" \"\$REPO/uninstall.sh\""
-t "hash di README cocok dengan setup.sh sebenarnya" "grep -q $(sha256sum $REPO/setup.sh | cut -d' ' -f1) $REPO/README.md && ! grep -qE 'harap: __HASH' $REPO/README.md"
-t "hash di README cocok dengan uninstall.sh sebenarnya" "grep -q $(sha256sum $REPO/uninstall.sh | cut -d' ' -f1) $REPO/README.md && ! grep -qE 'harap: __HASH' $REPO/README.md"
+_h_setup=$(sha256sum "$REPO/setup.sh" | cut -d' ' -f1)
+# [F7] README anti-basi: hash yang ditulis HARUS cocok berkas repo, dan perintah
+# manual (URL setup.sh + sha256sum -c SHA256SUMS) harus dalam SATU blok kode yang sama.
+_blk_ok=$(awk '
+/^```/ { if (inb) { if (url && sum) ok=1; inb=0 } else { inb=1; url=0; sum=0 } ; next }
+inb && /releases\/latest\/download\/setup\.sh/ { url=1 }
+inb && /sha256sum -c SHA256SUMS/ { sum=1 }
+END { if (inb && url && sum) ok=1; print ok+0 }
+' "$REPO/README.md")
+_all_hashes=$(find "$REPO" -maxdepth 1 -type f ! -name README.md -exec sha256sum {} + 2>/dev/null | awk '{print $1}')
+_hash_bad=0
+for _h in $(grep -oE '[0-9a-f]{64}' "$REPO/README.md" | sort -u); do
+    printf '%s\n' "$_all_hashes" | grep -qx "$_h" || _hash_bad=$((_hash_bad + 1))
+done
+t "README: URL setup.sh + sha256sum -c dalam satu blok kode" "[ '$_blk_ok' = 1 ]"
+t "README: hash 64-hex tidak basi (cocok berkas repo)"        "[ '$_hash_bad' = 0 ]"
 t "loop domain punya penjaga EOF"              "grep -q 'Input berakhir (EOF)' \"\$REPO/setup.sh\""
 t "unit firewall persisten ada"                "grep -qE 'wibutunnel-firewall' \"\$REPO/setup.sh\""
 t "uninstall tidak flush seluruh iptables"     "! grep -qE '^[[:space:]]*iptables -F' \"\$REPO/uninstall.sh\""
